@@ -9,15 +9,15 @@ import { AgentAnswer, AgentEvent, AgentRunInput, AgentSource, AgentTrace, Covera
 import { getSourceClaims, sourceMatchesAsset } from '../src/services/intakeClient';
 import { useNura } from '../src/state/NuraContext';
 import { useAIState } from '../src/state/AIStateContext';
-import { motion } from '../src/theme';
+import { brandScenes, motion } from '../src/theme';
 import { scopeProfileContext } from '../src/services/agentContextScope.mjs';
 import { registryBriefCitations, registryBriefDisplayText } from '../src/services/registryBrief.mjs';
 
 const C = {
-  bg: '#21182F',
+  bg: brandScenes.atmosphere.base,
   ink: '#FFF9F3',
-  muted: '#D8CDDF',
-  faint: '#B7A9C2',
+  muted: '#F2EAF0',
+  faint: '#DED0E0',
   line: 'rgba(255, 249, 246, 0.20)',
   white: '#FFF9F3',
   surface: 'rgba(255, 249, 246, 0.10)',
@@ -228,12 +228,12 @@ export default function Ask() {
 
   return <KeyboardAvoidingView style={s.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <StatusBar style="light" />
-    <LinearGradient pointerEvents="none" colors={['#49365F', '#765777', '#A77B8D', '#765777', '#24182F']} locations={[0, 0.28, 0.5, 0.72, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+    <LinearGradient pointerEvents="none" colors={brandScenes.atmosphere.colors} locations={brandScenes.atmosphere.locations} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
     <Animated.View pointerEvents="none" style={[s.warmLight, { transform: [{ translateX: warmX }, { translateY: warmY }] }]}>
-      <LinearGradient colors={['rgba(237, 180, 145, 0.38)', 'rgba(237, 180, 145, 0.15)', 'rgba(237, 180, 145, 0)']} locations={[0, 0.4, 1]} start={{ x: 0.7, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[brandScenes.atmosphere.peachGlow, 'rgba(237,180,145,0.13)', 'rgba(237,180,145,0)']} locations={[0, 0.4, 1]} start={{ x: 0.7, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
     </Animated.View>
     <Animated.View pointerEvents="none" style={[s.lilacLight, { transform: [{ translateX: lilacX }, { translateY: lilacY }] }]}>
-      <LinearGradient colors={['rgba(162, 135, 205, 0.30)', 'rgba(162, 135, 205, 0.11)', 'rgba(162, 135, 205, 0)']} locations={[0, 0.42, 1]} start={{ x: 0.2, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[brandScenes.atmosphere.lilacGlow, 'rgba(162,135,205,0.11)', 'rgba(162,135,205,0)']} locations={[0, 0.42, 1]} start={{ x: 0.2, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
     </Animated.View>
     <View style={s.header}><Pressable accessibilityLabel="Close Ask Nura" style={s.close} onPress={() => router.back()}><Text style={s.closeText}>⌄</Text></Pressable><View style={s.headerMain}><Orb size={45} /><View style={{ flex: 1 }}><Text style={s.brand}>Ask Nura</Text><Text style={s.tagline}>YOUR HEALTH, UNDERSTOOD</Text></View><Pressable onPress={() => { if (!busy && agentMessages.length) { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); clearAgentMessages(); setAnswer(null); setTrace([]); setError(''); } }} disabled={busy || !agentMessages.length} style={s.clear}><Text style={[s.clearText, (!agentMessages.length || busy) && s.disabledText]}>Clear</Text></Pressable></View></View>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

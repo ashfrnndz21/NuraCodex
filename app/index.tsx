@@ -18,7 +18,7 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Orb } from '../src/components/Orb';
 import { useNura, HealthTopic } from '../src/state/NuraContext';
-import { motion } from '../src/theme';
+import { brandScenes, motion } from '../src/theme';
 
 type Signal = { id: string; label: string };
 type FocusArea = {
@@ -33,10 +33,10 @@ type OnboardingStep = 'welcome' | 'identity' | 'today' | 'focus';
 type LiveSignal = { label: string; value: string; color: string; complete: boolean };
 
 const palette = {
-  canvas: '#21182F',
+  canvas: brandScenes.atmosphere.base,
   ink: '#FFF9F4',
-  muted: 'rgba(255,249,244,0.78)',
-  soft: 'rgba(255,249,244,0.58)',
+  muted: '#F2EAF0',
+  soft: '#DED0E0',
   line: 'rgba(255,255,255,0.20)',
   cream: '#FBF6F0',
   peach: '#E8B48F',
@@ -826,9 +826,9 @@ export default function ProfileSetup() {
 
   return (
     <View style={styles.page}>
-      <LinearGradient pointerEvents="none" colors={['#49365F', '#765777', '#A77B8D', '#765777', '#24182F']} locations={[0, 0.28, 0.5, 0.72, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientFill} />
-      <LinearGradient pointerEvents="none" colors={['rgba(237,180,145,.30)', 'rgba(237,180,145,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientWarm} />
-      <LinearGradient pointerEvents="none" colors={['rgba(162,135,205,.23)', 'rgba(162,135,205,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientViolet} />
+      <LinearGradient pointerEvents="none" colors={brandScenes.atmosphere.colors} locations={brandScenes.atmosphere.locations} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientFill} />
+        <LinearGradient pointerEvents="none" colors={[brandScenes.atmosphere.peachGlow, 'rgba(237,180,145,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientWarm} />
+        <LinearGradient pointerEvents="none" colors={[brandScenes.atmosphere.lilacGlow, 'rgba(162,135,205,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientViolet} />
       <StatusBar style="light" />
       <View style={styles.content}>
         <View style={styles.topbar}>

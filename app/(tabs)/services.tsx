@@ -7,7 +7,7 @@ import { useNura, HealthFeedItem } from '../../src/state/NuraContext';
 import { getAgentStatus } from '../../src/services/agentClient';
 import { FeedActivity, FeedBrief, searchHealthFeed } from '../../src/services/feedClient';
 import { groupHealthFeedItems } from '../../src/services/feedDedupe.mjs';
-import { colors, motion, shadow } from '../../src/theme';
+import { brandScenes, colors, motion, shadow } from '../../src/theme';
 
 type SearchStatus = 'checking' | 'ready' | 'unavailable';
 
@@ -40,7 +40,7 @@ function FeedCard({ item, index, reducedMotion, brief, onSave, onDismiss, onAsk,
   }, [index, opacity, reducedMotion, rise]);
   return <Animated.View style={{ opacity, transform: [{ translateY: rise }] }}>
     <Surface style={styles.feedCard}>
-      {index === 0 && <LinearGradient colors={['#C8DDF1', '#EBC9BE', '#796C91']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.editorialArt}>
+      {index === 0 && <LinearGradient colors={brandScenes.feed.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.editorialArt}>
         <View pointerEvents="none" style={styles.editorialHalo} />
         <View style={styles.editorialArtCopy}><Text style={styles.editorialEyebrow}>YOUR HEALTH JOURNEY</Text><Text numberOfLines={2} style={styles.editorialTopic}>{item.topic}</Text></View>
         <View style={styles.editorialBadge}><Text style={styles.editorialBadgeText}>PUBLIC HEALTH SOURCE</Text></View>

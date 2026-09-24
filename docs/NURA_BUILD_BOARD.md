@@ -356,3 +356,10 @@ The user should review a stable story slice, not act as the team's error detecto
 - Visually checked the updated Ask screen in the browser phone preview. History, Home and Explore were also reviewed; no search, model request, upload or profile-data change was made.
 - `npm run typecheck`, `npm run lint -- --no-cache` and `git diff --check` passed. No repository test suite was run for this visual-only change.
 - This closes one palette mismatch, not a user story or release gate. Acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. The full reduced-motion/native/viewport visual audit and end-to-end story checks remain open; no user acceptance milestone is ready from this slice.
+
+### Mixed-tone color system refinement — 25 September 2026
+
+- Consolidated the recurring scene recipes in `src/theme.ts`: onboarding, Ask Nura and the shared atmosphere now use the same deeper plum–mauve–rose gradient; the Home feature uses its coordinated plum-to-rose blend; Explore artwork uses blue, peach and lilac.
+- Shifted the record/feed canvas closer to neutral paper while preserving warm cards, category colors and cobalt actions. Selected health-area chips now use the same cobalt treatment as the Explore reference.
+- Compared the running phone preview on Ask, Home, History and Explore. The views retain their distinct roles: immersive Nura moments and light evidence reading. Existing sample results remained untouched; no new source search, upload or profile edit was performed.
+- TypeScript, lint and diff checks passed. This is a palette-system refinement only; the acceptance baseline remains **0/11 user stories, 0/8 production gates, 0/19 packages**. Native, reduced-motion and full story acceptance checks remain open.

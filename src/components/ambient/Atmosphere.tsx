@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { brandScenes } from '../../theme';
 
 export function Atmosphere() {
   const [drift] = useState(() => new Animated.Value(0));
@@ -15,7 +16,7 @@ export function Atmosphere() {
   const x = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -30] });
   const y = drift.interpolate({ inputRange: [0, 1], outputRange: [0, 26] });
   return <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-    <LinearGradient colors={['#B28292', '#946F89', '#755A83', '#57416F', '#30213F']} locations={[0, 0.16, 0.40, 0.70, 1]} start={{ x: 1, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
+    <LinearGradient colors={brandScenes.atmosphere.colors} locations={brandScenes.atmosphere.locations} start={{ x: 1, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
     <Animated.View style={[styles.peachLight, { transform: [{ translateX: x }, { translateY: y }] }]} />
     <Animated.View style={[styles.lilacLight, { transform: [{ translateX: y }, { translateY: x }] }]} />
   </View>;

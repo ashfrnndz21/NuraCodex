@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { Orb } from '../../src/components/Orb';
 import { useNura } from '../../src/state/NuraContext';
 import { parseHealthDate } from '../../src/utils/healthDate';
-import { colors, motion, shadow, timelineColors } from '../../src/theme';
+import { brandScenes, colors, motion, shadow, timelineColors } from '../../src/theme';
 
 type RecentItem = { id: string; title: string; detail: string; date: string; type: string; source: string; icon: string };
 const domains = [
@@ -69,7 +69,7 @@ export default function Home() {
       {!ready && <View style={styles.storageNotice}><Text style={styles.storageBody}>Opening your health profile…</Text></View>}
 
       <View style={styles.hero}>
-        <LinearGradient pointerEvents="none" colors={['#493452', '#795A7B', '#AD7D8F']} locations={[0, 0.56, 1]} start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+        <LinearGradient pointerEvents="none" colors={brandScenes.home.colors} locations={brandScenes.home.locations} start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
         <View style={styles.heroBloom} />
         <View style={styles.heroContent}>
           <View style={styles.heroKicker}><View style={styles.heroDot} /><Text style={styles.heroKickerText}>YOUR 720 PROFILE</Text></View>

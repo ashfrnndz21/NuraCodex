@@ -1,12 +1,31 @@
 import { Platform } from 'react-native';
 
 export const colors = {
-  // Nura's light records/feed world: lavender-tinted canvas, warm paper cards,
-  // plum navigation, and blue reserved for focused actions and source links.
-  bg: '#F4EFF5', bg2: '#ECE5EF', surface: '#FFFCF8', surfaceStrong: '#F3ECF4',
+  // Nura has two deliberate color worlds: atmospheric plum for Nura-led
+  // moments, and quiet paper for reading records and trusted health content.
+  bg: '#F6F4F6', bg2: '#EEE9F0', surface: '#FFFCF8', surfaceStrong: '#F2ECF4',
   border: '#E1D7E4', text: '#302733', muted: '#716875', quiet: '#9A909F',
-  violet: '#705179', plum: '#493452', mauve: '#946F89', lilac: '#EFE5F0', aqua: '#1767D8', mint: '#E4F0E6', peach: '#F0D9CD',
+  violet: '#705179', plum: '#493452', mauve: '#946F89', lilac: '#EFE5F0', cobalt: '#1767D8', aqua: '#1767D8', mint: '#E4F0E6', peach: '#F0D9CD',
   accent: '#EDE2EF', ink: '#302733', warning: '#A96518', success: '#287954', cream: '#FFF8F0', rose: '#B98191',
+} as const;
+
+// Shared scene recipes keep the reference's plum–mauve atmosphere and
+// blue–peach–lilac editorial artwork consistent across routes.
+export const brandScenes = {
+  atmosphere: {
+    base: '#24182F',
+    colors: ['#49365F', '#765777', '#87647F', '#765777', '#24182F'],
+    locations: [0, 0.28, 0.5, 0.72, 1],
+    peachGlow: 'rgba(237,180,145,0.28)',
+    lilacGlow: 'rgba(162,135,205,0.23)',
+  },
+  home: {
+    colors: ['#49365F', '#765777', '#9A7187'],
+    locations: [0, 0.56, 1],
+  },
+  feed: {
+    colors: ['#BFD8EF', '#E8C1B5', '#796D98'],
+  },
 } as const;
 
 // A restrained, category-led palette keeps health history colorful and legible.
