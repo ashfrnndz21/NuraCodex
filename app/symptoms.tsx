@@ -7,8 +7,9 @@ import { Orb } from '../src/components/Orb';
 import { useNura } from '../src/state/NuraContext';
 import { useAIState } from '../src/state/AIStateContext';
 import { AgentAnswer, AgentEvent, AgentSource, AgentTrace, getAgentStatus, runNuraAgent } from '../src/services/agentClient';
+import { colors } from '../src/theme';
 
-const C = { bg: '#F7F6F8', ink: '#282530', muted: '#77727F', quiet: '#9993A0', line: '#E5E1E8', white: '#FFFFFF', plum: '#483250', blue: '#1264F5', paleBlue: '#EAF1FF', amber: '#FFF3DD', amberInk: '#754D18', green: '#E4F2E9', lilac: '#F0EAF5', redInk: '#8B3D39', red: '#FFF0ED' };
+const C = { bg: colors.bg, ink: colors.ink, muted: colors.muted, quiet: colors.quiet, line: colors.border, white: colors.surface, plum: colors.plum, blue: colors.cobalt, paleBlue: colors.bluePale, amber: '#FFF3DD', amberInk: colors.warning, green: colors.mint, lilac: colors.lilac, redInk: '#8B3D39', red: '#FFF0ED' };
 const urgentPrompts = [
   { id: 'breathing', title: 'New severe trouble breathing or chest pain', detail: 'If you selected this, don’t wait for an app response.', url: 'https://www.cdc.gov/heart-disease/about/heart-attack.html' },
   { id: 'stroke', title: 'Sudden face or arm weakness, speech trouble, or severe confusion', detail: 'If you selected this, seek emergency help now.', url: 'https://www.cdc.gov/stroke/signs-symptoms/index.html' },

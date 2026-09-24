@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useNura, type TreatmentRecord, type TreatmentStatus } from '../src/state/NuraContext';
-import { motion } from '../src/theme';
+import { colors, motion } from '../src/theme';
 
-const C = { bg: '#F7F6F8', white: '#FFFFFF', ink: '#282630', muted: '#706D78', faint: '#96929D', border: '#E4E1E8', blue: '#1767D8', bluePale: '#EAF1FD', amber: '#B97721', amberPale: '#FBF0DE', mint: '#DFF2EA', plum: '#483250' };
+const C = { bg: colors.bg, white: colors.surface, ink: colors.ink, muted: colors.muted, faint: colors.quiet, border: colors.border, blue: colors.cobalt, bluePale: colors.bluePale, amber: colors.warning, amberPale: '#FBF0DE', mint: colors.mint, plum: colors.plum };
 const today = () => new Date().toISOString().slice(0, 10);
 const dateLabel = (value: string) => {
   if (!value) return 'Date not provided';

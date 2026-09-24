@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { DocumentContext, DocumentContextEntry } from '../services/intakeClient';
+import { colors } from '../theme';
 
 const dateLabels: Record<string, string> = {
   report_date: 'Report date', collected_at: 'Collected', received_at: 'Received',
@@ -41,15 +42,15 @@ export function DocumentContextCard({ context, compact = false }: { context: Doc
 }
 
 const styles = StyleSheet.create({
-  card: { marginTop: 14, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: '#E4DDE9', backgroundColor: '#FBF9FC' },
+  card: { marginTop: 14, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceStrong },
   compact: { marginTop: 10, padding: 12, borderRadius: 15 },
-  heading: { color: '#73528B', fontSize: 9, fontWeight: '700', letterSpacing: 1.1 },
-  caption: { color: '#79727F', fontSize: 10, lineHeight: 15, marginTop: 5 },
-  documentType: { color: '#302C36', fontSize: 13, fontWeight: '600', marginTop: 10 },
-  notesHeading: { color: '#85738F', fontSize: 8, fontWeight: '700', letterSpacing: .8, marginTop: 12, marginBottom: 3 },
-  row: { marginTop: 10, paddingTop: 9, borderTopWidth: 1, borderTopColor: '#EDE8F0' },
-  rowLabel: { color: '#827A88', fontSize: 9, fontWeight: '600' },
-  rowValue: { color: '#34303A', fontSize: 11, lineHeight: 16, marginTop: 3 },
-  page: { color: '#2872CE', fontSize: 8, fontWeight: '700', letterSpacing: .5, marginTop: 4 },
-  quote: { color: '#716A78', fontSize: 9, lineHeight: 14, fontStyle: 'italic', marginTop: 4 },
+  heading: { color: colors.violet, fontSize: 9, fontWeight: '700', letterSpacing: 1.1 },
+  caption: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
+  documentType: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 10 },
+  notesHeading: { color: colors.violet, fontSize: 8, fontWeight: '700', letterSpacing: .8, marginTop: 12, marginBottom: 3 },
+  row: { marginTop: 10, paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.border },
+  rowLabel: { color: colors.muted, fontSize: 9, fontWeight: '600' },
+  rowValue: { color: colors.text, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  page: { color: colors.cobalt, fontSize: 8, fontWeight: '700', letterSpacing: .5, marginTop: 4 },
+  quote: { color: colors.muted, fontSize: 9, lineHeight: 14, fontStyle: 'italic', marginTop: 4 },
 });

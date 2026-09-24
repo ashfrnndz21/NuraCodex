@@ -8,8 +8,9 @@ import { Orb } from '../src/components/Orb';
 import { useNura } from '../src/state/NuraContext';
 import { useAIState } from '../src/state/AIStateContext';
 import { AgentAnswer, AgentEvent, AgentSource, AgentTrace, runNuraAgent } from '../src/services/agentClient';
+import { brandScenes, colors } from '../src/theme';
 
-const C = { ink: '#FBF6F0', muted: 'rgba(251,246,240,.76)', soft: 'rgba(251,246,240,.56)', line: 'rgba(255,255,255,.18)', cream: '#FBF6F0', plum: '#2A203B', blue: '#A9D5FF', peach: '#E8B48F', green: '#A9D3AE' };
+const C = { ink: colors.cream, muted: 'rgba(255,248,240,.82)', soft: 'rgba(255,248,240,.62)', line: 'rgba(255,255,255,.21)', cream: colors.cream, plum: colors.plum, blue: '#C6DEFF', peach: '#F0BE9F', green: '#B7DFC1' };
 
 export default function ProfileSummary() {
   const { facts, topics, links, addAgentMessage, addFact } = useNura();
@@ -93,8 +94,8 @@ export default function ProfileSummary() {
   }
 
   return <View style={s.page}>
-    <LinearGradient pointerEvents="none" colors={['#57446F', '#392D51', '#211930']} locations={[0, .48, 1]} style={StyleSheet.absoluteFill} />
-    <LinearGradient pointerEvents="none" colors={['rgba(235,184,151,.26)', 'rgba(235,184,151,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.warmGlow} />
+    <LinearGradient pointerEvents="none" colors={brandScenes.atmosphere.colors} locations={brandScenes.atmosphere.locations} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+    <LinearGradient pointerEvents="none" colors={[brandScenes.atmosphere.peachGlow, 'rgba(243,183,155,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.warmGlow} />
     <StatusBar style="light" />
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <Pressable accessibilityRole="button" onPress={() => router.back()} style={s.back}><Text style={s.backText}>‹  BACK TO YOUR PROFILE</Text></Pressable>
@@ -148,7 +149,7 @@ function Count({ value, label }: { value: number; label: string }) {
 }
 
 const s = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#211930' }, content: { width: '100%', maxWidth: 520, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 34, paddingBottom: 42 },
+  page: { flex: 1, backgroundColor: brandScenes.atmosphere.base }, content: { width: '100%', maxWidth: 520, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 34, paddingBottom: 42 },
   warmGlow: { position: 'absolute', top: -65, right: -100, width: 300, height: 300, borderRadius: 160 }, back: { alignSelf: 'flex-start', minHeight: 34, justifyContent: 'center', marginBottom: 15 }, backText: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 29 }, brand: { color: C.ink, fontSize: 18, fontWeight: '700', letterSpacing: -.4 }, tagline: { color: C.soft, fontSize: 9, letterSpacing: 1.4, marginTop: 2 }, privacy: { color: C.soft, fontSize: 9, fontWeight: '700', letterSpacing: 1 }, eyebrow: { color: '#D7C6E2', fontSize: 10, fontWeight: '700', letterSpacing: 1.7 }, title: { color: C.ink, fontSize: 33, lineHeight: 39, fontWeight: '300', letterSpacing: -1, marginTop: 10 }, intro: { color: C.muted, fontSize: 14, lineHeight: 21, marginTop: 9, marginBottom: 20 },
   snapshot: { backgroundColor: 'rgba(255,255,255,.08)', borderWidth: 1, borderColor: C.line, borderRadius: 20, padding: 15 }, snapshotTitle: { color: '#E8D9EF', fontSize: 10, fontWeight: '700', letterSpacing: 1.4 }, countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 11 }, count: { alignItems: 'center', flex: 1 }, countValue: { color: C.ink, fontSize: 20, fontWeight: '400' }, countLabel: { color: C.soft, fontSize: 8, letterSpacing: .9, marginTop: 3 }, topicList: { borderTopWidth: 1, borderTopColor: C.line, paddingTop: 9, gap: 8 }, topic: { flexDirection: 'row', alignItems: 'center', gap: 8 }, topicDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.blue }, topicText: { color: C.ink, flex: 1, fontSize: 10 }, topicType: { color: C.soft, fontSize: 8, letterSpacing: .6 }, emptyText: { color: C.muted, fontSize: 10, lineHeight: 15, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10 }, scopeNote: { color: C.soft, fontSize: 10, lineHeight: 13, marginTop: 12 },

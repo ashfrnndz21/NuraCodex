@@ -4,10 +4,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { useNura } from '../src/state/NuraContext';
 import type { HealthFact, HealthVisit, IntakeAsset, TreatmentRecord, VisitFollowUpAction, VisitInput } from '../src/state/NuraContext';
-import { motion } from '../src/theme';
+import { colors, motion } from '../src/theme';
 
 type Scene = 'overview' | 'create' | 'detail' | 'builder' | 'preview' | 'outcome';
-const C = { canvas: '#F6F4F7', white: '#FFFFFF', ink: '#292731', muted: '#777480', quiet: '#A29DA9', line: '#E5E1E9', blue: '#1264F5', bluePale: '#EAF1FF', plum: '#483250', lilac: '#E9DDF0', lilacInk: '#735A83', peach: '#F2DDD6', mint: '#E3F3EC', green: '#38795F', amber: '#A66D22' };
+const C = { canvas: colors.bg, white: colors.surface, ink: colors.ink, muted: colors.muted, quiet: colors.quiet, line: colors.border, blue: colors.cobalt, bluePale: colors.bluePale, plum: colors.plum, lilac: colors.lilac, lilacInk: colors.violet, peach: colors.peach, mint: colors.mint, green: colors.success, amber: colors.warning };
 
 function fmtDate(value: string) {
   if (!value) return 'Date not set';

@@ -1,41 +1,41 @@
 import { Platform } from 'react-native';
 
 export const colors = {
-  // Nura has two deliberate color worlds: atmospheric plum for Nura-led
-  // moments, and quiet paper for reading records and trusted health content.
-  bg: '#F6F4F6', bg2: '#EEE9F0', surface: '#FFFCF8', surfaceStrong: '#F2ECF4',
-  border: '#E1D7E4', text: '#302733', muted: '#716875', quiet: '#9A909F',
-  violet: '#705179', plum: '#493452', mauve: '#946F89', lilac: '#EFE5F0', cobalt: '#1767D8', aqua: '#1767D8', mint: '#E4F0E6', peach: '#F0D9CD',
-  accent: '#EDE2EF', ink: '#302733', warning: '#A96518', success: '#287954', cream: '#FFF8F0', rose: '#B98191',
+  // Two connected color modes: immersive plum–rose for Nura-led moments,
+  // and warm paper with clear, category-specific color for health records.
+  bg: '#F3EEF4', bg2: '#EAE2ED', surface: '#FFFAF4', surfaceStrong: '#F0E7F2',
+  border: '#DED2E3', text: '#33283A', muted: '#746979', quiet: '#988D9D',
+  violet: '#745487', plum: '#4A3458', mauve: '#A2768E', lilac: '#EDE1F0', cobalt: '#276FE0', aqua: '#276FE0', bluePale: '#E8EFFD', mint: '#E4F0E7', peach: '#F2DDD0',
+  accent: '#EADDED', ink: '#33283A', warning: '#A76217', success: '#2E7955', cream: '#FFF8F0', rose: '#BC8193',
 } as const;
 
 // Shared scene recipes keep the reference's plum–mauve atmosphere and
 // blue–peach–lilac editorial artwork consistent across routes.
 export const brandScenes = {
   atmosphere: {
-    base: '#24182F',
-    colors: ['#49365F', '#765777', '#87647F', '#765777', '#24182F'],
-    locations: [0, 0.28, 0.5, 0.72, 1],
-    peachGlow: 'rgba(237,180,145,0.28)',
-    lilacGlow: 'rgba(162,135,205,0.23)',
+    base: '#30213C',
+    colors: ['#49345D', '#63466F', '#85637E', '#A7798D', '#493451'],
+    locations: [0, 0.25, 0.52, 0.76, 1],
+    peachGlow: 'rgba(243,183,155,0.30)',
+    lilacGlow: 'rgba(184,157,222,0.27)',
   },
   home: {
-    colors: ['#49365F', '#765777', '#9A7187'],
+    colors: ['#49345D', '#765778', '#A7798D'],
     locations: [0, 0.56, 1],
   },
   feed: {
-    colors: ['#BFD8EF', '#E8C1B5', '#796D98'],
+    colors: ['#C2DDF1', '#E9C2B7', '#796C99'],
   },
 } as const;
 
-// A restrained, category-led palette keeps health history colorful and legible.
+// Node, halo, connecting line, and label use the same category hue.
 export const timelineColors = {
-  record: { node: '#4D70C7', pale: '#E9EFFA', line: '#A8B9E3', accent: '#405FA8' },
-  care: { node: '#9A718F', pale: '#F3E9F1', line: '#CFB6C9', accent: '#78566F' },
-  treatment: { node: '#C58250', pale: '#FAEEE4', line: '#E3BE9D', accent: '#98623D' },
-  vitals: { node: '#398A83', pale: '#E4F2EF', line: '#A2CDC6', accent: '#286C67' },
-  life: { node: '#778F6B', pale: '#EAF1E6', line: '#B7C8AC', accent: '#556D4C' },
-  topic: { node: '#85628D', pale: '#F1E8F2', line: '#CEB9D1', accent: '#704F78' },
+  record: { node: '#3472D2', pale: '#EAF0FB', line: '#AEC3E8', accent: '#385E9D' },
+  care: { node: '#8B68A2', pale: '#F1EAF4', line: '#C7B1D1', accent: '#6C4F7D' },
+  treatment: { node: '#BD745C', pale: '#F9ECE6', line: '#E2BCAC', accent: '#96533E' },
+  vitals: { node: '#34847D', pale: '#E5F2EF', line: '#A5CDC6', accent: '#286A65' },
+  life: { node: '#718B68', pale: '#EBF1E8', line: '#B8C9B2', accent: '#536B4D' },
+  topic: { node: '#87688E', pale: '#F0E9F1', line: '#CBB6CE', accent: '#6C4D74' },
 } as const;
 export const spacing = { xs: 6, sm: 10, md: 16, lg: 22, xl: 30, xxl: 42 } as const;
 export const radius = { sm: 14, md: 20, lg: 28, pill: 999 } as const;

@@ -6,8 +6,10 @@
 
 ## Visual system
 
-- **Atmosphere:** full-bleed plum and violet gradient with soft, drifting warm peach and lavender light. The environment can shift for meaningful states (such as a safety alert), but normal screens share one recognizable ambient world.
-- **Color:** warm cream text and action surfaces, deep plum/lavender translucent cards, lavender and warm peach highlights, muted green for genuinely positive/complete states, amber for attention, and restrained blue for media. Avoid defaulting to a black dashboard with bright aqua as the primary accent.
+- **Atmosphere:** onboarding, profile synthesis, and Ask share one full-bleed plum-to-dusty-rose gradient (`#49345D → #A7798D → #493451`) with soft peach and lilac light. The orb uses the same cream, cyan, lilac, violet, and peach blend in every state.
+- **Reading surfaces:** history, registries, care, and the feed use a pale lilac paper canvas (`#F3EEF4`), warm cream cards (`#FFFAF4`), and lilac secondary surfaces (`#F0E7F2`). This keeps long records easy to read while tying them to the immersive screens.
+- **Color roles:** plum carries brand structure and primary controls on light surfaces; cobalt (`#276FE0`) marks deliberate actions, source links, and record nodes where appropriate; peach, orchid, teal, and sage distinguish treatment, care, vitals, and lifestyle. Keep status colors semantic: green only for genuinely complete/positive states and amber for attention. Avoid turning every node or link blue, and avoid using blue as a decorative wash.
+- **Editorial feed:** public-source artwork blends soft blue, peach, and muted violet. Cards keep readable ink on paper; use the gradient for a featured visual, not as a background behind every article.
 - **The orb:** a luminous layered gradient, subtle breathing at rest, and a soft halo. It remains the same component in onboarding, the composer, processing and response surfaces.
 - **Type:** friendly rounded sans-serif for most content, with light editorial display type and selective italic/serif emphasis. Compact labels and metadata support high information density without making body copy tiny.
 - **Cards:** one reusable surface language with meaningful variants for insight, reminder, metric, record/document, media, recommendation, action, and alert. A few primary cards lead; secondary and tertiary cards can be information-dense but quieter.

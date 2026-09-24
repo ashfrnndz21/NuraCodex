@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AccessibilityInfo, LayoutAnimation, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import * as Crypto from 'expo-crypto';
-import { motion } from '../theme';
+import { colors, motion, timelineColors } from '../theme';
 import { parseHealthDate } from '../utils/healthDate';
 import { registryBriefDisplayText, registryBriefIsCurrent, registryCitationTargetId, registryEvidenceSnapshot } from '../services/registryBrief.mjs';
 import type { HealthFact, HealthLink, HealthLinkRelation, HealthTopic, HealthVisit, IntakeAsset, RegistryBrief, TreatmentRecord } from '../state/NuraContext';
@@ -34,10 +34,10 @@ type Props = {
 };
 
 const C = {
-  canvas: '#F6F4F7', white: '#FFFFFF', ink: '#282630', muted: '#74717D', faint: '#9D98A5',
-  border: '#E5E1E9', cobalt: '#1264F5', bluePale: '#EAF1FF', blueLine: '#BDD2FB',
-  plum: '#483250', lilac: '#EEE6F3', lilacInk: '#735A83', mint: '#DFF2EA', mintInk: '#357B62',
-  amber: '#FFF0D6', amberInk: '#8B5F1B', peach: '#F4E1D7',
+  canvas: colors.bg, white: colors.surface, ink: colors.ink, muted: colors.muted, faint: colors.quiet,
+  border: colors.border, cobalt: colors.cobalt, bluePale: colors.bluePale, blueLine: timelineColors.record.line,
+  plum: colors.plum, lilac: colors.lilac, lilacInk: colors.violet, mint: colors.mint, mintInk: colors.success,
+  amber: '#FFF0D6', amberInk: colors.warning, peach: colors.peach,
 };
 const relations: RelationOption[] = [
   { value: 'related_by_me', label: 'Related in my words', linkLabel: 'Linked by you as related' },
@@ -50,10 +50,10 @@ function readableDate(value: string) {
   return parsed ? parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : value;
 }
 function relationTint(kind: RegistryItem['kind']) {
-  if (kind === 'treatment') return { node: '#C48837', pale: '#FBF1E1', ink: '#885F22' };
-  if (kind === 'visit') return { node: '#7186C9', pale: '#EEF0FA', ink: '#58699D' };
+  if (kind === 'treatment') return { node: timelineColors.treatment.node, pale: timelineColors.treatment.pale, ink: timelineColors.treatment.accent };
+  if (kind === 'visit') return { node: timelineColors.care.node, pale: timelineColors.care.pale, ink: timelineColors.care.accent };
   if (kind === 'asset') return { node: C.cobalt, pale: C.bluePale, ink: C.cobalt };
-  return { node: '#358C79', pale: '#E5F3EE', ink: '#327C6B' };
+  return { node: timelineColors.vitals.node, pale: timelineColors.vitals.pale, ink: timelineColors.vitals.accent };
 }
 
 export function MedicalRegistry({ ready, topics, facts, assets, treatments, visits, links, registryBriefs, initialTopicId, addLink }: Props) {

@@ -4,10 +4,11 @@ import { StatusBar } from 'expo-status-bar';
 import { AccessibilityInfo, Animated, Platform, StyleSheet, View } from 'react-native';
 import { NuraProvider } from '../src/state/NuraContext';
 import { AIStateProvider } from '../src/state/AIStateContext';
+import { colors } from '../src/theme';
 
 const NuraNavigationTheme = {
   ...DefaultTheme,
-  colors: { ...DefaultTheme.colors, background: '#F7F6F8', card: '#FBFAFC', text: '#292731', border: '#E4E1E8', primary: '#1767D8' },
+  colors: { ...DefaultTheme.colors, background: colors.bg, card: colors.surface, text: colors.text, border: colors.border, primary: colors.cobalt },
 };
 export default function RootLayout() {
   const pathname = usePathname();
@@ -31,12 +32,12 @@ export default function RootLayout() {
   }, [offset, opacity, pathname, reducedMotion]);
   const stageStyle = Platform.OS === 'web' ? styles.webStage : styles.nativeStage;
   const frameStyle = Platform.OS === 'web' ? styles.webPhone : styles.nativePhone;
-  return <View style={stageStyle}><View style={frameStyle}><NuraProvider><AIStateProvider><ThemeProvider value={NuraNavigationTheme}><StatusBar style="dark" /><Animated.View style={[styles.navigator, { opacity, transform: [{ translateY: offset }] }]}><Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#F7F6F8' }, animation: reducedMotion ? 'none' : 'fade' }}><Stack.Screen name="index" /><Stack.Screen name="profile-summary" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="intake" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="review" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="insurance" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="treatment" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="visits" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="symptoms" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="privacy" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="ask" options={{ presentation: 'modal', animation: reducedMotion ? 'none' : 'slide_from_bottom' }} /><Stack.Screen name="(tabs)" /></Stack></Animated.View></ThemeProvider></AIStateProvider></NuraProvider></View></View>;
+  return <View style={stageStyle}><View style={frameStyle}><NuraProvider><AIStateProvider><ThemeProvider value={NuraNavigationTheme}><StatusBar style="dark" /><Animated.View style={[styles.navigator, { opacity, transform: [{ translateY: offset }] }]}><Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: reducedMotion ? 'none' : 'fade' }}><Stack.Screen name="index" /><Stack.Screen name="profile-summary" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="intake" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="review" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="insurance" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="treatment" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="visits" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="symptoms" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="privacy" options={{ presentation: 'card', animation: reducedMotion ? 'none' : 'slide_from_right' }} /><Stack.Screen name="ask" options={{ presentation: 'modal', animation: reducedMotion ? 'none' : 'slide_from_bottom' }} /><Stack.Screen name="(tabs)" /></Stack></Animated.View></ThemeProvider></AIStateProvider></NuraProvider></View></View>;
 }
 const styles = StyleSheet.create({
-  nativeStage: { flex: 1, backgroundColor: '#F7F6F8' },
-  nativePhone: { flex: 1, backgroundColor: '#F7F6F8', overflow: 'hidden' },
+  nativeStage: { flex: 1, backgroundColor: colors.bg },
+  nativePhone: { flex: 1, backgroundColor: colors.bg, overflow: 'hidden' },
   webStage: { flex: 1, backgroundColor: '#ECEAF0', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8 },
-  webPhone: { flex: 1, width: '100%', maxWidth: 390, maxHeight: 844, borderRadius: 34, overflow: 'hidden', backgroundColor: '#F7F6F8', borderWidth: 1, borderColor: '#DDD9E2', shadowColor: '#353142', shadowOpacity: 0.12, shadowRadius: 24, shadowOffset: { width: 0, height: 14 } },
+  webPhone: { flex: 1, width: '100%', maxWidth: 390, maxHeight: 844, borderRadius: 34, overflow: 'hidden', backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, shadowColor: '#49345D', shadowOpacity: 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 14 } },
   navigator: { flex: 1 },
 });
