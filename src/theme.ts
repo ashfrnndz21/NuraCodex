@@ -1,12 +1,22 @@
 import { Platform } from 'react-native';
 
 export const colors = {
-  // Light editorial canvas for records and the health feed. The welcome and
-  // Ask experiences provide their own plum-to-mauve atmosphere.
-  bg: '#F7F5F7', bg2: '#F0EDF2', surface: '#FFFFFF', surfaceStrong: '#F4F0F5',
-  border: '#E3DEE7', text: '#292731', muted: '#6E6B76', quiet: '#96929D',
-  violet: '#755981', lilac: '#F1EAF4', aqua: '#1767D8', mint: '#DDF2E8', peach: '#F4E1D7',
-  accent: '#F0E9F3', ink: '#292731', warning: '#A96518', success: '#287954', cream: '#FBF6F0', rose: '#B97880',
+  // Nura's light records/feed world: lavender-tinted canvas, warm paper cards,
+  // plum navigation, and blue reserved for focused actions and source links.
+  bg: '#F4EFF5', bg2: '#ECE5EF', surface: '#FFFCF8', surfaceStrong: '#F3ECF4',
+  border: '#E1D7E4', text: '#302733', muted: '#716875', quiet: '#9A909F',
+  violet: '#705179', plum: '#493452', mauve: '#946F89', lilac: '#EFE5F0', aqua: '#1767D8', mint: '#E4F0E6', peach: '#F0D9CD',
+  accent: '#EDE2EF', ink: '#302733', warning: '#A96518', success: '#287954', cream: '#FFF8F0', rose: '#B98191',
+} as const;
+
+// A restrained, category-led palette keeps health history colorful and legible.
+export const timelineColors = {
+  record: { node: '#4D70C7', pale: '#E9EFFA', line: '#A8B9E3', accent: '#405FA8' },
+  care: { node: '#9A718F', pale: '#F3E9F1', line: '#CFB6C9', accent: '#78566F' },
+  treatment: { node: '#C58250', pale: '#FAEEE4', line: '#E3BE9D', accent: '#98623D' },
+  vitals: { node: '#398A83', pale: '#E4F2EF', line: '#A2CDC6', accent: '#286C67' },
+  life: { node: '#778F6B', pale: '#EAF1E6', line: '#B7C8AC', accent: '#556D4C' },
+  topic: { node: '#85628D', pale: '#F1E8F2', line: '#CEB9D1', accent: '#704F78' },
 } as const;
 export const spacing = { xs: 6, sm: 10, md: 16, lg: 22, xl: 30, xxl: 42 } as const;
 export const radius = { sm: 14, md: 20, lg: 28, pill: 999 } as const;
