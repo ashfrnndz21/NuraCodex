@@ -136,7 +136,7 @@ This is a snapshot, not a claim that the app is nearly finished.
 |---|---|---|---|
 | 1 | In progress | Dynamic profile topics/map and first cited synthesis | Complete shot-by-shot onboarding, persistence/recovery and full edit/recontextualize journey |
 | 2 | In progress | Local facts/files, PDF/image review path, source details, user fact versioning, prior-source navigation, topic registry page, explicit record-to-topic linking, topic-scoped Ask, append-only extracted-claim correction versions, and a consented source-linked brief with validated citations/unknowns, stale-on-evidence-change behavior and retained prior summary versions | Complete intake-to-wiki acceptance, broader cross-registry provenance, browser refresh persistence, native-device persistence/motion acceptance, and remaining M2 edge/error states |
-| 3 | In progress | Policy extraction/review and cited typed coverage result | Policy history, source navigation and complete comparison journey |
+| 3 | In progress | Policy extraction/review, cited typed coverage result, and per-source display of corrected prior term versions and user-removed entries | Cross-document policy replacement/version chains, conflict comparison and complete comparison/navigation journey |
 | 4 | In progress | Consent-scoped search, save/hide, source-linked article detail | Video discovery/detail, publication dates and complete persistence/editorial path |
 | 5 | In progress | Connected demo Ask run, real events, citations, unknowns, approved proposals | Full registry tools, broader orchestration/evaluation, consent history and failure/cancel coverage |
 | 6 | In progress | Local treatment registry, dated edits, Ask opt-in | Full source/version links and complete end-to-end test |

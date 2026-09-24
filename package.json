@@ -10,7 +10,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "test:repo": "node --test server/adapters/localDemoRepository.test.mjs server/adapters/documentExtraction.test.mjs server/adapters/videoProcessor.test.mjs server/contracts.test.mjs server/agent/context.test.mjs server/agent/feedResults.test.mjs src/state/browserDemoPersistence.test.mjs src/state/browserAssetStore.test.mjs src/state/profilePersistence.test.mjs src/state/registryBriefPersistence.test.mjs src/services/agentContextScope.test.mjs src/services/feedDedupe.test.mjs src/services/registryBrief.test.mjs src/services/agentCitationNavigation.test.mjs src/services/sourceIdentity.test.mjs src/services/sourceClaimReconciliation.test.mjs",
+    "test:repo": "node --test server/adapters/localDemoRepository.test.mjs server/adapters/documentExtraction.test.mjs server/adapters/videoProcessor.test.mjs server/contracts.test.mjs server/agent/context.test.mjs server/agent/feedResults.test.mjs src/state/browserDemoPersistence.test.mjs src/state/browserAssetStore.test.mjs src/state/profilePersistence.test.mjs src/state/registryBriefPersistence.test.mjs src/services/agentContextScope.test.mjs src/services/feedDedupe.test.mjs src/services/registryBrief.test.mjs src/services/agentCitationNavigation.test.mjs src/services/sourceIdentity.test.mjs src/services/sourceClaimReconciliation.test.mjs src/services/insurancePolicyHistory.test.mjs",
     "agent:dev": "node --watch --env-file=.env server/index.mjs"
   },
   "dependencies": {
