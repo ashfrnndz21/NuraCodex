@@ -348,3 +348,11 @@ The user should review a stable story slice, not act as the team's error detecto
 - Checked the phone preview at `/` and `/health`: the onboarding gradient now has a visible plum-to-rose blend, while History uses the light surface, category colors, and persistent navigation. Explore remains light and its gradient featured artwork appears when search results exist.
 - Verification passed: `npm run typecheck`, `npm run lint -- --no-cache`, `npm run test:repo` (**66/66**) and `git diff --check`.
 - This closes the palette and navigation presentation defect only. It does not accept Story 8 or the Care, family, or production gates. Overall acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. Native and reduced-motion checks remain open.
+
+### Blueprint color-mix refinement — 25 September 2026
+
+- Compared the compiled phone preview on History (`/health`), Home (`/home`), Explore (`/services`) and Ask (`/ask`) with the three supplied mobile references. The light record/feed scenes already use a lavender-tinted near-white canvas, warm paper cards, cobalt actions and the blue–peach–mauve editorial artwork. Kept that separation instead of spreading the dark gradient across record screens.
+- Ask had drifted toward a mostly dark-purple field. Its background now shares the onboarding plum–mauve–rose–plum gradient stops, with slightly clearer peach and lilac blooms. The composer is warm cream with plum text/action treatment; the disabled arrow uses a darker muted-plum glyph for legibility.
+- Visually checked the updated Ask screen in the browser phone preview. History, Home and Explore were also reviewed; no search, model request, upload or profile-data change was made.
+- `npm run typecheck`, `npm run lint -- --no-cache` and `git diff --check` passed. No repository test suite was run for this visual-only change.
+- This closes one palette mismatch, not a user story or release gate. Acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. The full reduced-motion/native/viewport visual audit and end-to-end story checks remain open; no user acceptance milestone is ready from this slice.
