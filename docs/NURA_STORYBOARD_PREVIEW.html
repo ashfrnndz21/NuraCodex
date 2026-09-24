@@ -1,0 +1,360 @@
+<div id="nura-storyboard-preview" aria-label="Nura mobile storyboard">
+  <style>
+    #nura-storyboard-preview{--ns-ink:#292536;--ns-muted:#696675;--ns-line:#e4e0e9;--ns-paper:#fbfaf8;--ns-white:#fff;--ns-plum:#453253;--ns-lilac:#eee7f5;--ns-cobalt:#1769dc;--ns-cobalt-deep:#164eac;--ns-blue-soft:#eaf2ff;--ns-peach:#f2c3a3;--ns-mint:#c4e8d2;--ns-amber:#f3c266;--ns-font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ns-ink);font:400 14px/1.45 var(--ns-font);max-width:760px;margin:0 auto}
+    #nura-storyboard-preview *{box-sizing:border-box}#nura-storyboard-preview [hidden]{display:none!important}
+    #nura-storyboard-preview .deck{display:grid;grid-template-columns:minmax(170px,220px) minmax(280px,390px);gap:22px;align-items:start;justify-content:center;padding:4px 0 16px}
+    #nura-storyboard-preview .journey{position:sticky;top:14px;padding:6px 0}
+    #nura-storyboard-preview .brand{display:flex;align-items:center;gap:9px;margin:0 0 5px;font-size:15px;font-weight:650;letter-spacing:.06em}
+    #nura-storyboard-preview .brand small{display:block;color:#7a7483;font-weight:500;font-size:10px;letter-spacing:.12em;text-transform:uppercase}
+    #nura-storyboard-preview .mini-orb{width:24px;height:24px;border-radius:50%;background:conic-gradient(#f2c3a3,#baa0e7,#8b6ac3,#9dd3eb,#f2c3a3);box-shadow:0 0 15px #c7afd988;animation:ns-breathe 6s ease-in-out infinite;flex:0 0 auto}
+    #nura-storyboard-preview .journey h2{margin:21px 0 8px;font-size:12px;font-weight:650;letter-spacing:.02em}
+    #nura-storyboard-preview .journey p{margin:0 0 12px;color:#777381;font-size:11px;line-height:1.5}
+    #nura-storyboard-preview .story-list{display:grid;gap:3px;max-height:515px;overflow:auto;padding-right:4px}
+    #nura-storyboard-preview .story-pick{display:flex;gap:9px;align-items:center;width:100%;min-height:37px;padding:6px 9px;border:0;border-radius:10px;background:transparent;color:#55515f;text-align:left;font:inherit;font-size:11px;cursor:pointer;transition:background .18s ease,color .18s ease,transform .18s ease}
+    #nura-storyboard-preview .story-pick:hover{background:#f2eff5}
+    #nura-storyboard-preview .story-pick[aria-pressed="true"]{background:#e8f0ff;color:#174eac;font-weight:650}
+    #nura-storyboard-preview .story-n{width:23px;height:23px;border-radius:8px;background:#fff;border:1px solid #e5e2e8;display:grid;place-items:center;color:#777381;font-variant-numeric:tabular-nums;font-size:9px;flex:0 0 auto}
+    #nura-storyboard-preview .story-pick[aria-pressed="true"] .story-n{background:var(--ns-cobalt);border-color:var(--ns-cobalt);color:white}
+    #nura-storyboard-preview .storyline{font-size:10px;color:#777381;margin:11px 0 0;padding:10px 11px;border-left:2px solid #c9b7d9;background:#faf8fb;border-radius:0 10px 10px 0}
+    #nura-storyboard-preview .phone{position:relative;width:100%;height:min(844px,calc(100dvh - 20px));min-height:560px;overflow:hidden;border:1px solid #d9d4de;border-radius:34px;background:var(--ns-paper);box-shadow:0 18px 42px #33224120;display:flex;flex-direction:column;isolation:isolate}
+    #nura-storyboard-preview .phone.atmospheric{color:#fff9f5;border-color:#594961;background:linear-gradient(145deg,#46345c 0%,#705779 38%,#a77e91 68%,#342742 100%)}
+    #nura-storyboard-preview .phone.atmospheric:before,#nura-storyboard-preview .phone.atmospheric:after{content:"";position:absolute;z-index:-1;pointer-events:none;border-radius:50%;filter:blur(38px)}
+    #nura-storyboard-preview .phone.atmospheric:before{width:250px;height:260px;right:-135px;top:-95px;background:#dfaba9;opacity:.68}
+    #nura-storyboard-preview .phone.atmospheric:after{width:290px;height:260px;left:-160px;bottom:-135px;background:#967ad0;opacity:.55}
+    #nura-storyboard-preview .phone.record-surface{background:linear-gradient(180deg,#fff 0%,#faf9f7 100%)}
+    #nura-storyboard-preview .status{display:flex;justify-content:space-between;align-items:center;padding:12px 18px 5px;font-size:10px;color:#6c6875;flex:0 0 auto}
+    #nura-storyboard-preview .atmospheric .status{color:#f1eaf5}
+    #nura-storyboard-preview .status .signal{letter-spacing:.14em}
+    #nura-storyboard-preview .app-head{display:flex;align-items:center;justify-content:space-between;padding:7px 18px 12px;flex:0 0 auto}
+    #nura-storyboard-preview .wordmark{font-size:15px;letter-spacing:.13em;font-weight:700}
+    #nura-storyboard-preview .head-right{display:flex;gap:8px;align-items:center;color:#746f7a;font-size:9px}
+    #nura-storyboard-preview .atmospheric .head-right{color:#f2eaf4}
+    #nura-storyboard-preview .head-tag{letter-spacing:.1em;text-transform:uppercase}
+    #nura-storyboard-preview .orb{width:30px;height:30px;border-radius:50%;background:conic-gradient(#f7ddc7,#dfb8de,#9976d0,#a4d4e5,#f7ddc7);box-shadow:0 0 22px #ddb8e78c,inset 0 0 8px #fff9;position:relative;animation:ns-breathe 6s ease-in-out infinite;flex:0 0 auto}
+    #nura-storyboard-preview .orb:after{content:"";position:absolute;inset:4px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#fff 0 4%,#fff8 12%,transparent 49%)}
+    #nura-storyboard-preview .screen{flex:1;overflow:auto;overscroll-behavior:contain;padding:5px 18px 18px;scrollbar-width:none;display:flex;flex-direction:column;gap:12px}
+    #nura-storyboard-preview .screen::-webkit-scrollbar{display:none}
+    #nura-storyboard-preview .story-view{animation:ns-arrive .27s cubic-bezier(.2,.7,.2,1) both}
+    #nura-storyboard-preview .eyebrow{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:#755c89;font-weight:700;margin:2px 0 6px}
+    #nura-storyboard-preview .atmospheric .eyebrow{color:#f4d7c5}
+    #nura-storyboard-preview h1{font-weight:400;font-size:29px;line-height:1.06;letter-spacing:-.035em;margin:0 0 8px}
+    #nura-storyboard-preview h1 em{font-family:Georgia,serif;font-style:italic}
+    #nura-storyboard-preview .lead{font-size:12px;line-height:1.48;color:#6e6a76;margin:0 0 8px}
+    #nura-storyboard-preview .atmospheric .lead{color:#e8deeb}
+    #nura-storyboard-preview .label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#7f7888;font-weight:700}
+    #nura-storyboard-preview .atmospheric .label{color:#e9dfea}
+    #nura-storyboard-preview .card{border:1px solid #e3dfe7;background:#fff;border-radius:18px;padding:12px 13px;box-shadow:0 5px 16px #31213c0a}
+    #nura-storyboard-preview .glass{background:#ffffff18;border-color:#ffffff47;color:#fff8f3;backdrop-filter:blur(10px)}
+    #nura-storyboard-preview .card-title{font-size:12px;font-weight:650;margin:0}
+    #nura-storyboard-preview .small{font-size:10px;color:#787483;line-height:1.4}
+    #nura-storyboard-preview .atmospheric .small{color:#e2d6e6}
+    #nura-storyboard-preview .row{display:flex;align-items:center;gap:9px}
+    #nura-storyboard-preview .grow{flex:1;min-width:0}
+    #nura-storyboard-preview .badge{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:4px 8px;font-size:8px;letter-spacing:.06em;text-transform:uppercase;background:#eaf2ff;color:#2059b5;font-weight:700}
+    #nura-storyboard-preview .badge.mint{background:#e4f5ea;color:#2e6847}
+    #nura-storyboard-preview .badge.amber{background:#fff2d9;color:#805517}
+    #nura-storyboard-preview .badge.plum{background:#f0e9f5;color:#694b7e}
+    #nura-storyboard-preview .action{display:block;width:100%;min-height:46px;border:0;border-radius:13px;background:var(--ns-cobalt);color:#fff;font:inherit;font-weight:650;font-size:11px;padding:11px 13px;cursor:pointer;transition:transform .16s ease,filter .18s ease,background .18s ease}
+    #nura-storyboard-preview .action:active{transform:scale(.975);filter:brightness(.94)}
+    #nura-storyboard-preview .action.secondary{background:#fff;color:#42394b;border:1px solid #e4dfea}
+    #nura-storyboard-preview .action.cream{background:#fff7ef;color:#382a42}
+    #nura-storyboard-preview .atmospheric .action.cream{background:#fff7ef;color:#382a42}
+    #nura-storyboard-preview .actionrow{display:flex;gap:8px}
+    #nura-storyboard-preview .actionrow .action{flex:1}
+    #nura-storyboard-preview .profile-glass{position:relative;overflow:hidden;background:linear-gradient(135deg,#3f3157,#624c7e 53%,#473755);border-radius:20px;padding:12px;color:#fff9f3}
+    #nura-storyboard-preview .profile-glass:after{content:"";position:absolute;width:130px;height:130px;border-radius:50%;right:-50px;top:-55px;background:#e7bca9;filter:blur(30px);opacity:.52;pointer-events:none}
+    #nura-storyboard-preview .map{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 54px minmax(0,1fr);grid-template-rows:42px 50px 42px;gap:5px;padding:10px 0 7px}
+    #nura-storyboard-preview .map-links{position:absolute;inset:0;pointer-events:none}
+    #nura-storyboard-preview .map-links i{position:absolute;left:50%;top:50%;height:1px;background:linear-gradient(90deg,#9cc9ff,#e8c6b2);transform-origin:left center;opacity:.12;transition:opacity .28s ease,filter .28s ease}
+    #nura-storyboard-preview .map-links i.active{opacity:.9;filter:drop-shadow(0 0 3px #dfc6ef);animation:ns-link-glow 2.8s ease-in-out infinite alternate}
+    #nura-storyboard-preview .map-links i:nth-child(1){width:97px;transform:rotate(214deg)}
+    #nura-storyboard-preview .map-links i:nth-child(2){width:97px;transform:rotate(-34deg)}
+    #nura-storyboard-preview .map-links i:nth-child(3){width:65px;transform:rotate(180deg)}
+    #nura-storyboard-preview .map-links i:nth-child(4){width:65px;transform:rotate(0)}
+    #nura-storyboard-preview .map-links i:nth-child(5){width:97px;transform:rotate(146deg)}
+    #nura-storyboard-preview .map-links i:nth-child(6){width:97px;transform:rotate(34deg)}
+    #nura-storyboard-preview .domain{position:relative;z-index:1;min-width:0;min-height:44px;text-align:left;border:1px solid #ffffff75;border-radius:11px;padding:6px 7px;background:#ffffff18;color:#fff8f3;font:inherit;cursor:pointer;transition:transform .2s ease,background .22s ease,border-color .22s ease;grid-area:var(--map-position)}
+    #nura-storyboard-preview .domain b{display:block;font-size:9px;font-weight:650;line-height:1.15}
+    #nura-storyboard-preview .domain small{display:block;color:#e6dced;font-size:7px;margin-top:2px;line-height:1.15}
+    #nura-storyboard-preview .domain.has{background:#ffffffef;color:#31405a;border-color:#fff;animation:ns-pop .3s ease both}
+    #nura-storyboard-preview .domain.has small{color:#3159a7}
+    #nura-storyboard-preview .map-center{grid-area:2/2;z-index:2;width:48px;height:48px;align-self:center;justify-self:center;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#f5c3a2,#bc9bdf,#7063bb,#95cce2,#f5c3a2);color:#fff;font-size:8px;font-weight:700;letter-spacing:.1em;box-shadow:0 0 0 5px #49365d88,0 0 21px #edc5d899}
+    #nura-storyboard-preview .fields{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+    #nura-storyboard-preview .field{display:flex;flex-direction:column;gap:4px;min-width:0}
+    #nura-storyboard-preview .field.wide{grid-column:1/-1}
+    #nura-storyboard-preview .field label{font-size:9px;color:#666271;font-weight:600}
+    #nura-storyboard-preview .input{width:100%;min-width:0;border:1px solid #ded9e3;background:#fff;border-radius:11px;padding:9px 10px;color:#2f2a38;font:inherit;font-size:11px;outline:none}
+    #nura-storyboard-preview .input:focus{border-color:#1769dc;box-shadow:0 0 0 3px #1769dc22}
+    #nura-storyboard-preview .focus-cloud{min-height:118px;position:relative;border-radius:17px;padding:10px;background:linear-gradient(135deg,#e7efff,#f5eaf3);overflow:hidden}
+    #nura-storyboard-preview .bubble{position:relative;min-height:44px;border:1px solid #cfd8e9;border-radius:999px;background:#fff;color:#3d4555;padding:9px 12px;font:inherit;font-size:10px;cursor:pointer;transition:transform .2s ease,background .2s ease,color .2s ease,box-shadow .2s ease}
+    #nura-storyboard-preview .bubble:active{transform:scale(.94)}
+    #nura-storyboard-preview .bubble[aria-pressed="true"]{background:#1769dc;color:white;border-color:#1769dc;box-shadow:0 5px 15px #1769dc38;animation:ns-pop .25s ease both}
+    #nura-storyboard-preview .bubbles{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+    #nura-storyboard-preview .related{margin-top:9px;padding-top:8px;border-top:1px solid #ffffffc9;animation:ns-arrive .28s ease both}
+    #nura-storyboard-preview .synthesis{border-left:3px solid #1769dc;background:#eef4ff;border-radius:0 13px 13px 0;padding:10px 11px;animation:ns-arrive .3s ease both}
+    #nura-storyboard-preview .timeline{position:relative;padding:4px 0 0}
+    #nura-storyboard-preview .timeline:before{content:"";position:absolute;left:53px;top:15px;bottom:12px;width:2px;background:linear-gradient(#1685ea,#7867bd,#e0d7eb)}
+    #nura-storyboard-preview .event{display:grid;grid-template-columns:38px 22px minmax(0,1fr);gap:8px;position:relative;margin:0 0 10px;align-items:start}
+    #nura-storyboard-preview .event-date{text-align:right;padding-top:3px;color:#716e79;font-size:10px;line-height:1.1;font-variant-numeric:tabular-nums}.event-date b{display:block;font-size:12px;font-weight:650}#nura-storyboard-preview .event-date small{display:block;margin-top:3px;font-size:8px;letter-spacing:.08em}
+    #nura-storyboard-preview .node{z-index:1;width:22px;height:22px;border-radius:50%;border:3px solid #fff;background:#1769dc;color:#fff;box-shadow:0 0 0 2px #8ab9fa;transition:transform .18s ease,box-shadow .2s ease;display:grid;place-items:center;font-size:8px;font-weight:700}
+    #nura-storyboard-preview .event button{width:100%;text-align:left;border:1px solid #dce5f3;background:#fff;border-radius:14px;padding:9px 10px;color:var(--ns-ink);font:inherit;cursor:pointer;transition:border .18s ease,transform .18s ease,box-shadow .2s ease}
+    #nura-storyboard-preview .event button[aria-pressed="true"]{border-color:#1769dc;box-shadow:0 0 0 2px #1769dc18;transform:translateX(2px)}
+    #nura-storyboard-preview .node.selected{transform:scale(1.15);box-shadow:0 0 0 3px #8ab9fa,0 0 0 7px #dae9ff}
+    #nura-storyboard-preview .event b{font-size:11px}
+    #nura-storyboard-preview .event small{display:block;margin-top:3px;font-size:9px;color:#697487}
+    #nura-storyboard-preview .link-path{display:grid;grid-template-columns:1fr 18px 1fr;align-items:center;gap:4px;margin:8px 0}
+    #nura-storyboard-preview .endpoint{border:1px solid #c6d6f4;background:#f3f7ff;border-radius:10px;padding:7px 8px;font-size:9px;color:#31568b;text-align:center}
+    #nura-storyboard-preview .connector{height:2px;background:linear-gradient(90deg,#1769dc,#9a84cd);position:relative;transform:scaleX(0);transform-origin:left;animation:ns-line .3s ease forwards}
+    #nura-storyboard-preview .connector:after{content:"";position:absolute;right:-1px;top:-3px;width:7px;height:7px;border-right:2px solid #8069bd;border-top:2px solid #8069bd;transform:rotate(45deg)}
+    #nura-storyboard-preview .path-user .endpoint{background:#f7f1fb;border-color:#dac9e8;color:#684e7e}
+    #nura-storyboard-preview .path-user .connector{background:linear-gradient(90deg,#a483c0,#d1b9df)}
+    #nura-storyboard-preview .path-user .connector:after{border-color:#aa89c2}
+    #nura-storyboard-preview .divider{height:1px;background:#ebe8ef;margin:10px 0}
+    #nura-storyboard-preview .mediaTile{height:112px;margin:8px 0;border-radius:13px;background:linear-gradient(135deg,#d7e6fb,#c5b2dd 58%,#f1c5a7);display:grid;place-items:center}
+    #nura-storyboard-preview .play{width:44px;height:44px;border:0;border-radius:50%;background:#fff8f0;color:#453253;font-size:17px;cursor:pointer;box-shadow:0 4px 16px #36274422}
+    #nura-storyboard-preview .trace{display:grid;gap:7px}
+    #nura-storyboard-preview .trace-step{display:flex;align-items:center;gap:8px;border-bottom:1px solid #ebe8ef;padding:6px 0;font-size:10px}
+    #nura-storyboard-preview .trace-step:last-child{border:0}
+    #nura-storyboard-preview .step-mark{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:#e9f2ff;color:#1769dc;font-size:9px;flex:0 0 auto}
+    #nura-storyboard-preview .form-row{display:flex;gap:7px;align-items:center}
+    #nura-storyboard-preview .form-row .input{flex:1}
+    #nura-storyboard-preview .pill-row{display:flex;gap:6px;flex-wrap:wrap}
+    #nura-storyboard-preview .pill{border:1px solid #e1dce6;background:#fff;border-radius:999px;min-height:44px;padding:8px 12px;font:inherit;font-size:9px;color:#544d60;cursor:pointer}
+    #nura-storyboard-preview .pill[aria-pressed="true"]{background:#1769dc;color:#fff;border-color:#1769dc}
+    #nura-storyboard-preview .switch-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid #ebe8ef;font-size:10px}
+    #nura-storyboard-preview .switch{width:44px;height:28px;border:0;border-radius:99px;background:#d8d4dd;position:relative;cursor:pointer;transition:background .2s ease;flex:0 0 auto}
+    #nura-storyboard-preview .switch:after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:white;transition:transform .2s ease}
+    #nura-storyboard-preview .switch[aria-checked="true"]{background:#1769dc}
+    #nura-storyboard-preview .switch[aria-checked="true"]:after{transform:translateX(16px)}
+    #nura-storyboard-preview .nav{display:flex;justify-content:space-around;gap:4px;flex:0 0 auto;border-top:1px solid #e7e3eb;background:#ffffffed;padding:9px 7px 12px}
+    #nura-storyboard-preview .atmospheric .nav{border-color:#ffffff28;background:#251d30ed}
+    #nura-storyboard-preview .nav button{min-width:50px;min-height:44px;border:0;border-radius:10px;background:transparent;color:#8b8591;font:inherit;font-size:8px;cursor:pointer;transition:color .2s ease,background .2s ease}
+    #nura-storyboard-preview .nav button[aria-pressed="true"]{color:#1769dc;background:#eaf2ff;font-weight:650}
+    #nura-storyboard-preview .atmospheric .nav button[aria-pressed="true"]{color:#f1d8ca;background:#ffffff17}
+    #nura-storyboard-preview .toast{position:absolute;left:50%;bottom:68px;z-index:4;transform:translate(-50%,8px);opacity:0;pointer-events:none;border-radius:999px;background:#2e2934;color:white;padding:8px 12px;font-size:9px;white-space:nowrap;transition:opacity .2s ease,transform .2s ease}
+    #nura-storyboard-preview .toast.show{opacity:1;transform:translate(-50%,0)}
+    #nura-storyboard-preview .status-foot{font-size:9px;color:#8a8490;text-align:center;padding:7px 10px 3px}
+    #nura-storyboard-preview .preview-overlay{position:absolute;inset:0;z-index:5;display:flex;align-items:flex-end;background:#20172c66;padding:12px}
+    #nura-storyboard-preview .preview-sheet{width:100%;max-height:76%;overflow:auto;border:1px solid #ded8e7;border-radius:20px;background:#fff;color:var(--ns-ink);padding:16px;box-shadow:0 18px 50px #19122140;animation:ns-arrive .22s ease both}
+    #nura-storyboard-preview .preview-sheet h2{font-size:17px;line-height:1.2;font-weight:600;margin:6px 0 8px}
+    #nura-storyboard-preview .preview-sheet .small{font-size:11px}
+    #nura-storyboard-preview .preview-actions{display:flex;gap:8px;margin-top:12px}
+    #nura-storyboard-preview .preview-actions .action{flex:1}
+    #nura-storyboard-preview .preview-disclaimer{border-left:3px solid var(--ns-amber);background:#fff8e9;padding:9px 10px;border-radius:0 10px 10px 0;margin-top:10px;color:#6d5430;font-size:10px}
+    @keyframes ns-arrive{from{opacity:.65;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes ns-pop{0%{transform:scale(.94)}65%{transform:scale(1.035)}100%{transform:scale(1)}}
+    @keyframes ns-breathe{50%{transform:scale(1.055);filter:saturate(1.07)}}
+    @keyframes ns-line{to{transform:scaleX(1)}}
+    @keyframes ns-link-glow{to{opacity:.55;filter:drop-shadow(0 0 1px #dfc6ef)}}
+    @media(max-width:620px){#nura-storyboard-preview .deck{grid-template-columns:1fr;gap:8px}#nura-storyboard-preview .journey{position:static;padding:0 0 4px}#nura-storyboard-preview .story-list{display:flex;overflow:auto;max-height:none;padding:2px 0 8px;gap:5px}#nura-storyboard-preview .story-pick{width:auto;min-width:max-content;min-height:44px;border:1px solid #e5e2e8;background:#fff;padding:7px 10px}#nura-storyboard-preview .storyline{display:none}#nura-storyboard-preview .journey h2{margin-top:8px}#nura-storyboard-preview .phone{height:min(844px,calc(100dvh - 18px));min-height:420px;border-radius:26px}#nura-storyboard-preview .status{padding-top:calc(12px + env(safe-area-inset-top))}#nura-storyboard-preview .nav{padding-bottom:calc(12px + env(safe-area-inset-bottom))}}
+    @media(max-width:360px){#nura-storyboard-preview .screen{padding-left:14px;padding-right:14px}#nura-storyboard-preview h1{font-size:26px}}
+    @media(prefers-reduced-motion:reduce){#nura-storyboard-preview *,#nura-storyboard-preview *:before,#nura-storyboard-preview *:after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+  </style>
+  <div class="deck">
+    <section class="journey" aria-label="Nura user story selector">
+      <div class="brand"><span class="mini-orb" aria-hidden="true"></span><span>nura<small>your health, understood</small></span></div>
+      <h2>Explore the 11 user journeys</h2>
+      <p>Each story shows the app surface and the user action it unlocks. Sample records are labeled; this is the design pass.</p>
+      <div class="story-list" id="nura-story-list"></div>
+      <div class="storyline" id="nura-story-caption" aria-live="polite">A profile assembles as the person shares details, with each selected signal joining a visible health domain.</div>
+    </section>
+    <section class="phone atmospheric" id="nura-phone" aria-label="Nura mobile application preview">
+      <div class="status"><span>9:41</span><span class="signal">●●●  Wi-Fi  ▰</span></div>
+      <header class="app-head"><div class="wordmark">nura</div><div class="head-right"><span class="head-tag" id="nura-head-tag">PROFILE BUILDING</span><span class="orb" id="nura-orb" aria-hidden="true"></span></div></header>
+      <main class="screen" id="nura-screen" aria-live="polite"></main>
+      <div class="toast" id="nura-toast" aria-live="polite"></div>
+      <nav class="nav" aria-label="Nura app navigation" id="nura-app-nav"></nav>
+      <div id="nura-panel-slot"></div>
+    </section>
+  </div>
+  <div class="status-foot">Interaction storyboard · illustrative records only · motion follows reduced-motion settings</div>
+  <script>
+    (() => {
+      const root = document.getElementById('nura-storyboard-preview');
+      if (!root) return;
+      const journeys = [
+        ['720 profile creation', 'Profile', 'atmospheric', 'A profile assembles as the person shares details, with each signal joining a visible health domain.'],
+        ['Medical registry + health wiki', 'Medical registry', 'record-surface', 'Facts, source papers, dates and confidence stay connected so a question can open into its evidence.'],
+        ['Insurance registry + gaps', 'Insurance', 'record-surface', 'Coverage is organized by benefit and linked evidence; uncertainty stays visible.'],
+        ['Personalized health feed', 'Health feed', 'record-surface', 'Articles and clips follow selected interests and remain distinct from clinical records.'],
+        ['Ask Nura with visible activity', 'Ask Nura', 'record-surface', 'Consented questions show real retrieval and source-check milestones, then cited answers.'],
+        ['Medicines + treatment history', 'Medicines', 'record-surface', 'Medicine, purpose, prescriber, status and source are shown together with a correction path.'],
+        ['Prepare for a visit', 'Visit prep', 'record-surface', 'Selected records and questions become a concise, source-linked visit brief.'],
+        ['Health history + connections', 'Timeline', 'record-surface', 'A cobalt record rail shows chronology; a separate typed path shows explicit record-to-fact links.'],
+        ['Symptom support', 'Symptoms', 'record-surface', 'Safety and clarifying questions come before context-based guidance.'],
+        ['Family + caregiver access', 'Family', 'record-surface', 'Sharing scopes are explicit, reviewable and revocable by the profile owner.'],
+        ['Privacy + data controls', 'Privacy', 'record-surface', 'The user can inspect, export, correct, disconnect or delete information with clear consequences.']
+      ];
+      const state = { story: 0, topic: '', branches: new Set(), picked: new Set(), record: 0, filter: 'Everything', registrySection: 'Overview', consent: false, revealAnswer: false, askScope: null, familyPermissions: {records:true, ask:false, edit:false}, visitSelection: {labs:true, medicine:false, questions:true}, safetySelections: new Set(), symptomText: '', panel: null, savedArticle: false, profileConfirmed: false, feedTopic: 'Cholesterol', name: '', profileFor: 'Me', country: '', birthday: '', height: '', weight: '', contact: '', contactMode: 'Email', toast: '' };
+      const initial = globalThis.openai && globalThis.openai.widgetState && globalThis.openai.widgetState.modelContent;
+      if (initial && Number.isFinite(Number(initial.story))) {
+        state.story = Math.max(0, Math.min(10, Number(initial.story)));
+        state.record = Number(initial.record) || 0;
+      }
+      const q = (s) => root.querySelector(s);
+      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const persist = () => {
+        if (globalThis.openai && globalThis.openai.setWidgetState) {
+          globalThis.openai.setWidgetState({modelContent:{story:state.story,record:state.record},privateContent:null}).catch(()=>{});
+        }
+      };
+      const toast = (message) => {
+        const t = q('#nura-toast');
+        t.textContent = message; t.classList.add('show');
+        clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 1450);
+      };
+      const card = (body, extra = '') => `<section class="card ${extra}">${body}</section>`;
+      const action = (label, id, extra = '') => `<button class="action ${extra}" type="button" data-action="${id}">${label}</button>`;
+      const badge = (label, kind = 'cobalt') => `<span class="badge ${kind}">${label}</span>`;
+      const openPanel = (title, body, nextStory = null, nextLabel = '') => { state.panel={title,body,nextStory,nextLabel}; render(true); };
+      const panelMarkup = () => state.panel ? `<div class="preview-overlay"><section class="preview-sheet" role="dialog" aria-modal="true" aria-label="${esc(state.panel.title)}"><div class="row"><span class="badge amber">PREVIEW ONLY</span><span class="grow"></span><button type="button" class="pill" data-action="close-panel">Close</button></div><h2>${esc(state.panel.title)}</h2><div class="small">${state.panel.body}</div><div class="preview-disclaimer">This storyboard does not connect to a service or change stored health information. Nothing was uploaded, shared, or sent.</div>${state.panel.nextStory!==null?`<div class="preview-actions"><button type="button" class="action" data-action="panel-go">${esc(state.panel.nextLabel||'Continue')}</button></div>`:''}</section></div>` : '';
+      const pillGroup = (items, selected, attr) => `<div class="pill-row">${items.map(x=>`<button class="pill" type="button" data-${attr}="${x}" aria-pressed="${selected===x}">${x}</button>`).join('')}</div>`;
+      const domainNames = [
+        {label:'Biometrics',empty:'Identity · height · weight',area:'1/1/2/2',active:()=>!!(state.height||state.weight||state.birthday||state.country),status:()=>state.height||state.weight?'Measurements entered':state.birthday||state.country?'Identity entered':'Add when ready'},
+        {label:'Medical history',empty:'Focus areas',area:'1/3/2/4',active:()=>!!state.topic,status:()=>state.topic?'Focus selected':'Choose a focus'},
+        {label:'Health records',empty:'Papers · results',area:'2/1/3/2',active:()=>[...state.branches].some(x=>['Blood test','Home readings','Clinic visits','Recent records'].includes(x)),status:()=>[...state.branches].some(x=>['Blood test','Home readings','Clinic visits','Recent records'].includes(x))?'Record selected':'Add a source'},
+        {label:'Treatment',empty:'Medicines · care',area:'2/3/3/4',active:()=>state.branches.has('Medication')||state.branches.has('Prescription'),status:()=>state.branches.has('Medication')||state.branches.has('Prescription')?'Treatment selected':'Add when ready'},
+        {label:'Lifestyle',empty:'Routines · habits',area:'3/1/4/2',active:()=>state.topic==='Sleep',status:()=>state.topic==='Sleep'?'Focus selected':'Add when ready'},
+        {label:'Insurance',empty:'Policy · benefits',area:'3/3/4/4',active:()=>state.picked.has('Insurance'),status:()=>state.picked.has('Insurance')?'Policy selected':'Add when ready'}
+      ];
+      const recordAskContexts = [
+        {label:'Blood test results · Sep 12, 2026',sources:'Lab report · page 2 · 5 values',related:'Cholesterol trend',linkType:'Evidence-backed link'},
+        {label:'Cardiology visit note · Sep 02, 2026',sources:'Follow-up note · care team',related:'Care plan',linkType:'User-linked'},
+        {label:'Medicine list update · Aug 18, 2026',sources:'Added by you · status reviewed',related:'Lipid treatment',linkType:'User-linked'},
+        {label:'Blood pressure reading · Mar 07, 2026',sources:'Home measurement · added by you',related:'Blood pressure history',linkType:'User-linked'},
+        {label:'Earlier blood test · Jan 20, 2026',sources:'Source report · same test family',related:'Cholesterol trend',linkType:'Evidence-backed link'}
+      ];
+      const ageFromDate = (value) => { if(!value)return ''; const birth=new Date(value+'T00:00:00'); if(Number.isNaN(birth.getTime()))return ''; const now=new Date(); let age=now.getFullYear()-birth.getFullYear(); if(now.getMonth()<birth.getMonth()||now.getMonth()===birth.getMonth()&&now.getDate()<birth.getDate())age--; return age>=0&&age<125?String(age):''; };
+      const profileMap = () => `<div class="profile-glass"><div class="row"><div class="grow"><div class="label">Your 720 profile · map preview</div><div class="small">Links show profile areas, not medical causation.</div></div>${badge('As you add','mint')}</div><div class="map"><div class="map-links" aria-hidden="true">${domainNames.map(d=>`<i class="${d.active()?'active':''}"></i>`).join('')}</div>${domainNames.map((d,i)=>`<button type="button" class="domain ${d.active()?'has':''}" data-domain="${i}" style="--map-position:${d.area}"><b>${d.label}</b><small>${d.status()}</small></button>`).join('')}<div class="map-center" aria-label="Your profile">YOU</div></div><div class="row small"><span>${ageFromDate(state.birthday)?ageFromDate(state.birthday)+' years · birthday entered':'Identity details are private'}</span><span class="grow"></span><span>${state.picked.size} details selected</span></div></div>`;
+      const pages = [
+        () => {
+          if(state.profileFor!=='Me') return `<div class="story-view"><div class="eyebrow">SEPARATE PROFILE REQUIRED</div><h1>Keep their health story separate.</h1><p class="lead">This preview can only create your own profile. A care partner needs a separate profile, their own identity details, and permission from that person before any health information is added.</p>${card(`<div class="label">Profile boundary</div><p class="small">Nothing entered on your profile is copied to another person. This preview does not collect or store a care partner’s health details.</p>`) }${action('Return to my profile','profile-for-me')}<p class="small">Caregiver setup is not enabled in this design preview.</p></div>`;
+          const has = state.name.trim() || state.topic || state.picked.size;
+          const related = state.topic ? (state.topic==='Cholesterol'?['Blood test','Medication','Family history']:state.topic==='Blood pressure'?['Home readings','Prescription','Clinic visits']:state.topic==='Sleep'?['Sleep routine','Stress','Daily energy']:['Recent records','Current treatment','Family history']) : [];
+          return `<div class="story-view"><div class="eyebrow">THE 720 HEALTH PROFILE · 01</div><h1>Your whole health.<br><em>One living picture.</em></h1><p class="lead">Choose what matters first. Each detail finds its place, and every choice can be changed later.</p>${profileMap()}${card(`<div class="label">Who is this profile for?</div><div class="pill-row" style="margin-top:7px">${['Me','Someone I support'].map(x=>`<button type="button" class="pill" data-profile-for="${x}" aria-pressed="${state.profileFor===x}">${x}</button>`).join('')}</div><div class="fields" style="margin-top:9px"><div class="field"><label for="nura-country">Country</label><select class="input" id="nura-country"><option value="">Choose country</option>${['United States','Singapore','Malaysia','United Kingdom','Australia','Canada','India','New Zealand'].map(x=>`<option ${state.country===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label for="nura-birthday">Birthday</label><input class="input" id="nura-birthday" type="date" value="${esc(state.birthday)}"></div><div class="field wide"><label for="nura-name">Name</label><input class="input" id="nura-name" placeholder="Name you go by" value="${esc(state.name)}"></div><div class="field wide"><label>Sign up with</label><div class="pill-row">${['Email','Phone'].map(x=>`<button type="button" class="pill" data-contact-mode="${x}" aria-pressed="${state.contactMode===x}">${x}</button>`).join('')}</div></div><div class="field wide"><label for="nura-contact">${state.contactMode}</label><input class="input" id="nura-contact" type="${state.contactMode==='Email'?'email':'tel'}" placeholder="${state.contactMode==='Email'?'you@example.com':'Phone number'}" value="${esc(state.contact)}"></div><div class="field"><label for="nura-height">Height · optional</label><input class="input" id="nura-height" placeholder="Add when ready" value="${esc(state.height)}"></div><div class="field"><label for="nura-weight">Weight · optional</label><input class="input" id="nura-weight" placeholder="Add when ready" value="${esc(state.weight)}"></div></div><p class="small">You choose what to share. Nura does not infer missing health values.</p>`)}${card(`<div class="row"><div class="grow"><div class="card-title">What is on your mind?</div><div class="small">Tap a signal; related questions unfold below it.</div></div>${badge('Your words','plum')}</div><div class="focus-cloud" id="profile-focus-cloud" style="margin-top:8px"><div class="bubbles">${['Blood pressure','Cholesterol','Sleep','Heart health','Blood sugar','Medicines','Family history','Joints'].map(x=>`<button class="bubble" type="button" data-topic="${x}" aria-pressed="${state.topic===x}">${x}</button>`).join('')}</div>${state.topic?`<div class="related"><div class="label">Connected details for ${esc(state.topic)}</div><div class="bubbles" style="margin-top:7px">${related.map(x=>`<button class="bubble" type="button" data-branch="${x}" aria-pressed="${state.branches.has(x)}">${x}</button>`).join('')}</div></div>`:''}</div>`)}<div class="synthesis" id="profile-synthesis" ${has?'':'hidden'}><div class="label">First profile synthesis · review before saving</div><p class="small" id="profile-synthesis-text">${state.name?esc(state.name)+'. ':''}${state.topic?`Focus selected: ${esc(state.topic)}.`:'Your profile is taking shape.'} ${ageFromDate(state.birthday)?'Age '+ageFromDate(state.birthday)+'. ':''}${state.picked.size?`${state.picked.size} details selected by you.`:'No medical history has been added yet.'} Sources and dates stay visible.</p>${action('Review and confirm profile','confirm-profile')}</div><p class="small">Motion: the map highlights only chosen or entered areas; related bubbles appear in place; saving waits for your review.</p></div>`;
+        },
+        () => {
+          const views = {
+            Overview: `<div class="row">${badge('Profile fact')}<span class="grow"></span><span class="small">Sample record</span></div><h2 class="card-title" style="margin-top:8px">Cholesterol trend</h2><p class="small">Two dated lab reports are linked. The later value is outside the range printed on that report.</p><div class="link-path path-evidence"><div class="endpoint">January lab<br><b>Source · p. 2</b></div><span class="connector"></span><div class="endpoint">September lab<br><b>Same test family</b></div></div><div class="row">${badge('2 source records','mint')}${badge('Review date','amber')}</div>`,
+            Conditions: `<div class="label">Health topics in your record</div><div class="trace"><div class="trace-step"><span class="step-mark">1</span>Cholesterol trend <span class="badge cobalt">2 reports</span></div><div class="trace-step"><span class="step-mark">2</span>Blood pressure history <span class="badge plum">User-linked</span></div></div><p class="small">Each page separates your chosen topics from evidence in source papers.</p>`,
+            Records: `<div class="label">Source papers in the registry</div><div class="trace"><div class="trace-step"><span class="step-mark">PDF</span>September lab report · page 2 <span class="badge mint">Reviewed</span></div><div class="trace-step"><span class="step-mark">PDF</span>January lab report · page 2 <span class="badge mint">Reviewed</span></div></div><p class="small">Open a source to see the quoted region and original file.</p>`,
+            Questions: `<div class="label">Questions grounded in these records</div><div class="trace"><div class="trace-step"><span class="step-mark">?</span>What changed between the two test dates?</div><div class="trace-step"><span class="step-mark">?</span>Which source supports this health summary?</div></div>${action('Ask about this registry','ask-registry','secondary')}`
+          };
+          return `<div class="story-view"><div class="eyebrow">YOUR MEDICAL REGISTRY</div><h1>Ask across your health record.</h1><p class="lead">A cited wiki for health facts and source papers you have added.</p><div class="pill-row">${['Overview','Conditions','Records','Questions'].map(x=>`<button class="pill" type="button" data-registry-section="${x}" aria-pressed="${state.registrySection===x}">${x}</button>`).join('')}</div>${card(views[state.registrySection])}<p class="small">A generated summary is a view. The source-backed facts remain the record.</p>${action('Ask about your health record','ask-registry','secondary')}</div>`;
+        },
+        () => `<div class="story-view"><div class="eyebrow">INSURANCE REGISTRY</div><h1>See how cover meets care.</h1><p class="lead">Compare policy passages with selected parts of your health profile.</p>${card(`<div class="row"><div class="grow"><div class="card-title">Core hospital benefits</div><div class="small">Sample schedule · page 8 · added by you</div></div>${badge('Evidence found','mint')}</div><div class="link-path"><div class="endpoint">Policy clause<br><b>Hospital care</b></div><span class="connector"></span><div class="endpoint">Care profile<br><b>Visit category</b></div></div><div class="row">${badge('Needs your review','amber')}<span class="small">Limits and exclusions not compared</span></div>`)}${card(`<div class="label">Coverage map</div><div class="trace"><div class="trace-step"><span class="step-mark">✓</span>Inpatient benefits ${badge('Evidence present','mint')}</div><div class="trace-step"><span class="step-mark">?</span>Outpatient labs ${badge('Not clear','amber')}</div><div class="trace-step"><span class="step-mark">?</span>Medication coverage ${badge('Need schedule','amber')}</div></div><p class="small">Document comparison only. This does not predict claim eligibility.</p>${action('Add policy evidence','policy-add')}</div>`)}<p class="small">Unverified benefits stay visibly unknown; Nura points to the passage or missing page.</p></div>`,
+        () => `<div class="story-view"><div class="eyebrow">FOR YOUR HEALTH INTERESTS</div><h1>Useful context, chosen for you.</h1><p class="lead">A personal reading shelf. Educational items stay separate from your clinical record.</p>${pillGroup(['Cholesterol','Sleep','Heart health'],state.feedTopic,'feed-topic')}${card(`<div class="label">ARTICLE · GENERAL EDUCATION</div><h2 class="card-title" style="margin-top:6px">Understanding a lipid panel</h2><p class="small">What each measure describes, why ranges differ, and questions to bring to a clinician.</p><div class="row">${badge('Health source')}<span class="grow"></span><button class="pill" type="button" data-action="save-article" aria-pressed="${state.savedArticle}">${state.savedArticle?'Saved in preview':'Save'}</button></div>`)}${card(`<div class="label">VIDEO · 04:12</div><div class="mediaTile"><button class="play" data-action="play-video" aria-label="Open video detail">▶</button></div><h2 class="card-title">What a cholesterol result can and cannot tell you</h2><p class="small">Explainer clip · source and transcript available</p>${badge('Not a personal diagnosis','plum')}</div>`)}<p class="small">Each item explains why it is relevant and who published it.</p></div>`,
+        () => `<div class="story-view"><div class="eyebrow">ASK NURA · PROFILE AWARE</div><h1>Ask a question.<br><em>See the evidence.</em></h1><p class="lead">Nura searches only the health areas you allow for this question and shows the work it actually completes.</p>${card(`<div class="row"><span class="orb"></span><div class="grow"><div class="card-title">Question scope</div><div class="small">${state.askScope?`Selected item · ${esc(state.askScope.label)}`:'Saved health facts you explicitly allow'}</div>${state.askScope?`<div class="small" style="margin-top:4px"><b>Included sources:</b> ${esc(state.askScope.sources)}<br><b>Related profile item:</b> ${esc(state.askScope.related)} · ${esc(state.askScope.linkType)}</div>`:`<div class="small" style="margin-top:4px">Scope will be reviewed for this question before any live retrieval.</div>`}</div>${badge('Consent needed','amber')}</div><label class="switch-row"><span>Allow this answer to use my saved health information</span><button type="button" class="switch" role="switch" aria-checked="${state.consent}" data-action="consent"></button></label><div class="form-row"><input class="input" id="nura-question" placeholder="What changed in my latest test?"><button class="action" style="width:auto" data-action="run-ask">Ask</button></div>`)}${card(`<div class="row"><div class="card-title">Activity layout · idle</div>${badge('No run yet','amber')}</div><div class="trace"><div class="trace-step"><span class="step-mark">1</span>Check consent and scope</div><div class="trace-step"><span class="step-mark">2</span>Retrieve matching facts and sources</div><div class="trace-step"><span class="step-mark">3</span>Check dates and conflicting evidence</div><div class="trace-step"><span class="step-mark">4</span>Answer with citations or name what is missing</div></div><p class="small">This design preview sends no AI request. In the app, these milestones appear only when confirmed by the live run stream.</p>${state.revealAnswer?`<div class="synthesis"><div class="label">ILLUSTRATIVE ANSWER · SAMPLE DATA</div><p class="small">The later report is higher than the earlier report. Both dates and the printed reference range stay attached.</p>${badge('January report · p. 2')}${badge('September report · p. 2')}</div>`:''}`)}${action(state.revealAnswer?'Hide sample answer':'Preview cited answer card · sample data','answer','secondary')}<p class="small">Proposed memory changes wait for your approval and show the source and validity period.</p></div>`,
+        () => `<div class="story-view"><div class="eyebrow">MEDICINE REGISTRY</div><h1>Know what you take, and why.</h1><p class="lead">Current and past medicines connect to the prescriber, purpose, and source.</p>${card(`<div class="row">${badge('Current')}<span class="grow"></span><span class="small">Sample source</span></div><h2 class="card-title" style="margin-top:7px">Cholesterol medicine</h2><p class="small">Dose from prescription · purpose: lipid management</p><div class="link-path"><div class="endpoint">Prescription<br><b>Source record</b></div><span class="connector"></span><div class="endpoint">Care team<br><b>Prescriber</b></div></div><div class="row">${badge('Source linked','mint')}${badge('You confirmed','plum')}</div>${action('Review medicine details','medicine-detail','secondary')}`)}${card(`<div class="row"><div class="card-title">Treatment history</div>${badge('3 entries')}</div><div class="trace"><div class="trace-step"><span class="step-mark">•</span>Started · date from source</div><div class="trace-step"><span class="step-mark">•</span>Reviewed · clinician visit note</div><div class="trace-step"><span class="step-mark">•</span>Current status · confirm with you</div></div>${action('Add a medicine','medicine-add')}</div>`)}<p class="small">Nura does not change a dose or recommend stopping a medicine.</p></div>`,
+        () => `<div class="story-view"><div class="eyebrow">VISIT PREPARATION</div><h1>Bring the right story with you.</h1><p class="lead">Choose the records and questions for a short, source-linked visit brief.</p>${card(`<div class="row"><div class="grow"><div class="card-title">Cardiology follow-up</div><div class="small">Sep 25 · sample appointment</div></div>${badge('Your visit','plum')}</div>`)}${card(`<div class="label">Choose what to bring</div>${[['Recent lab trend · two source reports','labs'],['Medicine list · confirm current status','medicine'],['Questions you wrote','questions']].map(([x,key])=>`<label class="switch-row"><span>${x}</span><button class="switch" type="button" role="switch" aria-label="Include ${x}" aria-checked="${state.visitSelection[key]}" data-visit-item="${key}"></button></label>`).join('')}<div class="divider"></div><div class="label">Questions for your clinician</div><p class="small">What changed between these test dates?<br>Is my current plan still right for me?</p>`)}${action('Preview my visit brief','visit-brief')}<p class="small">Review the brief before sharing. It is never sent automatically.</p></div>`,
+        () => {
+          const events = [['SEP 12 · 2026','Blood test results','5 values · lab report · page 2','Evidence-backed link','Cholesterol trend','Lab','▤'],['SEP 02 · 2026','Cardiology visit note','Follow-up note · care team','User-linked','Care plan','Care','✚'],['AUG 18 · 2026','Medicine list updated','Added by you · status reviewed','User-linked','Lipid treatment','Treatment','Rx'],['MAR 07 · 2026','Blood pressure reading','Home measurement · added by you','User-linked','Blood pressure history','Vitals','⌁'],['JAN 20 · 2026','Earlier blood test','Source report · same test family','Evidence-backed link','Cholesterol trend','Lab','▤']];
+          const visible = events.map((e,i)=>[e,i]).filter(([e,i])=>state.filter==='Everything'||(state.filter==='Documents'&&(i===0||i===4))||(state.filter==='Care'&&i===1)||(state.filter==='Treatment'&&i===2)||(state.filter==='Vitals'&&i===3));
+          const selected = events[state.record] || events[0];
+          return `<div class="story-view"><div class="eyebrow">YOUR HEALTH JOURNEY</div><h1>History, with connections.</h1><p class="lead">Follow the dates. Open a record to see what it contains and how it is linked.</p><div class="row"><span class="label">RECORD HISTORY · SAMPLE DATA</span><span class="grow"></span><span class="small">5 example events</span></div>${pillGroup(['Everything','Documents','Care','Treatment','Vitals'],state.filter,'filter')}<div class="timeline">${visible.map(([e,i])=>{const parts=e[0].split(' · ')[0].split(' ');return `<div class="event"><span class="event-date" aria-hidden="true"><b>${parts[1]}</b><small>${parts[0]}</small></span><span class="node ${state.record===i?'selected':''}" aria-hidden="true">${e[6]}</span><button type="button" data-record="${i}" aria-label="${e[1]}, ${e[0]}" aria-pressed="${state.record===i}"><div class="row"><b>${e[1]}</b><span class="grow"></span><span class="badge ${e[5]==='Care'?'plum':e[5]==='Treatment'?'mint':e[5]==='Vitals'?'amber':'cobalt'}">${e[5]}</span></div><small>${e[2]} · sample only</small></button></div>`;}).join('')}</div>${card(`<div id="nura-record-detail"><div class="row"><div class="grow"><div class="label">SELECTED RECORD · SOURCE ATTACHED</div><h2 class="card-title" style="margin-top:4px">${selected[1]}</h2><div class="small">${selected[2]}</div></div>${badge('Open source')}</div><div class="divider"></div><div class="label">RELATED IN YOUR RECORD · ${selected[3].toUpperCase()}</div><div class="link-path ${selected[3]==='User-linked'?'path-user':'path-evidence'}"><div class="endpoint">${selected[1]}<br><b>Record</b></div><span class="connector"></span><div class="endpoint">${selected[4]}<br><b>Profile item</b></div></div><p class="small">This link records shared evidence or your own association. It does not claim medical causation.</p>${action('Ask Nura about this link','ask-link','secondary')}</div>`)}<p class="small">Selecting a node updates the source details and its linked profile item together.</p></div>`;
+        },
+        () => `<div class="story-view"><div class="eyebrow">SYMPTOM SUPPORT</div><h1>Start with what is happening now.</h1><p class="lead">Safety and clarification come before health context.</p>${card(`<div class="row"><div class="grow"><div class="card-title">What feels different?</div><div class="small">Describe it in your own words</div></div>${badge('Safety first','amber')}</div><textarea class="input" rows="3" placeholder="Tell Nura what you are feeling"></textarea><div class="label" style="margin-top:8px">If any are happening now</div><div class="pill-row">${['Severe trouble breathing','New chest pressure','Fainting'].map(x=>`<button type="button" class="pill" data-safety="${x}" aria-pressed="${state.safetySelections.has(x)}">${x}</button>`).join('')}</div><p class="small">For severe or rapidly worsening symptoms, seek urgent local care now.</p>${action('Continue with a safety check','symptom-check')}<div class="label" style="margin-top:10px">What Nura may clarify</div><div class="trace"><div class="trace-step"><span class="step-mark">1</span>When did it start and how is it changing?</div><div class="trace-step"><span class="step-mark">2</span>Which related medicines or history may matter?</div><div class="trace-step"><span class="step-mark">3</span>What would help you prepare for care?</div></div>`)}<p class="small">Nura cannot diagnose or rule out an emergency.</p></div>`,
+        () => `<div class="story-view"><div class="eyebrow">PEOPLE YOU TRUST</div><h1>Share a useful view, on your terms.</h1><p class="lead">Each person gets only the areas and actions you choose.</p>${card(`<div class="row"><div class="grow"><div class="card-title">Care partner</div><div class="small">Illustrative invitation · not sent</div></div>${badge('Not connected','amber')}</div><div class="divider"></div><div class="label">Permission scope</div><label class="switch-row"><span>View selected records</span><button type="button" class="switch" role="switch" aria-label="View selected records" aria-checked="${state.familyPermissions.records}" data-family-scope="records"></button></label><label class="switch-row"><span>Ask Nura about shared records</span><button type="button" class="switch" role="switch" aria-label="Ask Nura about shared records" aria-checked="${state.familyPermissions.ask}" data-family-scope="ask"></button></label><label class="switch-row"><span>Edit my profile</span><button type="button" class="switch" role="switch" aria-label="Edit my profile" aria-checked="${state.familyPermissions.edit}" data-family-scope="edit"></button></label>${action('Review invitation before sending','family-invite')}<div class="label" style="margin-top:10px">Owner controls</div><p class="small">Inspect access, change a scope, or revoke it later. No invitation is sent by this preview.</p>${action('Access history','access-history','secondary')}`)}<p class="small">A family profile is created only after its owner accepts.</p></div>`,
+        () => `<div class="story-view"><div class="eyebrow">YOUR DATA, YOUR CHOICE</div><h1>See what Nura remembers.</h1><p class="lead">Review an item, where it came from, and how to change or remove it.</p>${card(`<div class="row"><div class="grow"><div class="card-title">Cholesterol trend</div><div class="small">Two sample lab reports · profile fact</div></div>${badge('2 sources')}</div><div class="divider"></div><div class="label">What Nura uses it for</div><p class="small">Registry answers · timeline links · feed preferences</p><div class="label">Review status</div><p class="small">Correct a link or remove this fact while keeping the original source file.</p><div class="actionrow"><button class="action secondary" data-action="privacy-correct">Edit link</button><button class="action secondary" data-action="privacy-remove">Remove fact</button></div>`)}${card(`<div class="label">Account controls</div><div class="trace"><div class="trace-step"><span class="step-mark">↗</span>Export your profile and source records</div><div class="trace-step"><span class="step-mark">⏸</span>Pause or revoke access</div><div class="trace-step"><span class="step-mark">×</span>Delete account and saved data</div></div>${action('Review privacy choices','privacy-review')}</div>`)}<p class="small">Export and deletion show what will happen before you confirm.</p></div>`
+      ];
+      const tabs = ['Home','History','Explore','Care','Profile'];
+      function render(preserveScroll = false) {
+        const screen = q('#nura-screen');
+        const oldScroll = screen.scrollTop;
+        const journey = journeys[state.story];
+        q('#nura-phone').className = 'phone ' + journey[2];
+        q('#nura-head-tag').textContent = journey[1].toUpperCase();
+        q('#nura-screen').innerHTML = pages[state.story]();
+        q('#nura-screen').scrollTop = preserveScroll ? oldScroll : 0;
+        q('#nura-story-caption').textContent = journey[3];
+        q('#nura-story-list').innerHTML = journeys.map((x,i)=>`<button class="story-pick" type="button" data-story="${i}" aria-pressed="${i===state.story}"><span class="story-n">${String(i+1).padStart(2,'0')}</span>${x[1]}</button>`).join('');
+        const activeTab = state.story===1||state.story===7||state.story===4 ? 'History' : state.story===3 ? 'Explore' : state.story===2||state.story===5||state.story===6||state.story===8 ? 'Care' : state.story===9||state.story===10 ? 'Profile' : 'Home';
+        q('#nura-app-nav').innerHTML = tabs.map(t=>`<button type="button" data-tab="${t}" aria-pressed="${t===activeTab}">${t}</button>`).join('');
+        q('#nura-panel-slot').innerHTML = panelMarkup();
+      }
+      root.addEventListener('click', (event) => {
+        const target = event.target.closest('button'); if (!target) return;
+        if (target.dataset.story !== undefined) { state.story=Number(target.dataset.story); state.revealAnswer=false; state.panel=null; if(state.story===4)state.askScope=null; render(); persist(); return; }
+        if (target.dataset.tab) { const route={Home:0,History:7,Explore:3,Care:6,Profile:10}; state.story=route[target.dataset.tab] ?? 0; state.panel=null; if(state.story===4)state.askScope=null; render(); persist(); return; }
+        if (target.dataset.profileFor) { state.profileFor=target.dataset.profileFor; render(); return; }
+        if (target.dataset.familyScope) { const key=target.dataset.familyScope; state.familyPermissions[key]=!state.familyPermissions[key]; render(true); persist(); toast('Permission preview updated'); return; }
+        if (target.dataset.visitItem) { const key=target.dataset.visitItem; state.visitSelection[key]=!state.visitSelection[key]; render(true); persist(); return; }
+        if (target.dataset.contactMode) { state.contactMode=target.dataset.contactMode; render(true); return; }
+        if (target.dataset.topic) { const next=state.topic===target.dataset.topic?'':target.dataset.topic; for(const old of state.branches)state.picked.delete(old); state.branches.clear(); state.topic=next; if(next)state.picked.add('Medical history'); else state.picked.delete('Medical history'); render(true); persist(); return; }
+        if (target.dataset.branch) { const item=target.dataset.branch; state.branches.has(item)?state.branches.delete(item):state.branches.add(item); if(state.branches.has(item))state.picked.add(item); else state.picked.delete(item); render(true); persist(); toast(state.branches.has(item)?'Added to your profile map':'Removed from your profile map'); return; }
+        if (target.dataset.filter) { state.filter=target.dataset.filter; if(state.story===7){const allowed={Everything:[0,1,2,3,4],Documents:[0,4],Care:[1],Treatment:[2],Vitals:[3]}[state.filter]||[0];if(!allowed.includes(state.record))state.record=allowed[0];render(true);} persist(); return; }
+        if (target.dataset.registrySection) { state.registrySection=target.dataset.registrySection; render(true); return; }
+        if (target.dataset.record !== undefined) { state.record=Number(target.dataset.record); render(true); const detail=q('#nura-record-detail');if(detail)detail.scrollIntoView({block:'nearest',behavior:globalThis.matchMedia&&globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}); persist(); toast('Record and linked profile item updated'); return; }
+        if (target.dataset.feedTopic) { state.feedTopic=target.dataset.feedTopic; render(true); persist(); toast('Feed topic updated'); return; }
+        if (target.dataset.domain !== undefined) { const i=Number(target.dataset.domain); const jumps=[['#nura-height','Biometrics details'],['#profile-focus-cloud','Health focus choices'],['','Add a source record'],['','Open the medicine registry'],['','Add a lifestyle detail'],['','Review insurance evidence']]; if(i===2)toast(jumps[i][1]);else if(i===3){state.story=5;render();}else if(i===5){state.story=2;render();}else {if(jumps[i][0])q(jumps[i][0])?.scrollIntoView({block:'center',behavior:globalThis.matchMedia&&globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});toast(jumps[i][1]);}return; }
+        if (target.dataset.safety) { const item=target.dataset.safety; state.safetySelections.has(item)?state.safetySelections.delete(item):state.safetySelections.add(item); target.setAttribute('aria-pressed',String(state.safetySelections.has(item))); toast(state.safetySelections.has(item)?'Added to the safety check':'Removed from the safety check'); return; }
+        if (target.dataset.action) {
+          const a=target.dataset.action;
+          if(a==='close-panel'){state.panel=null;render(true);}
+          else if(a==='panel-go'){const destination=state.panel?.nextStory;state.panel=null;if(Number.isInteger(destination)){state.story=destination;render();persist();}else render(true);}
+          else if(a==='profile-for-me'){state.profileFor='Me';render();}
+          else if(a==='consent'){state.consent=!state.consent;target.setAttribute('aria-checked',String(state.consent));persist();toast(state.consent?'Permission preview enabled for this question':'Permission preview turned off');}
+          else if(a==='answer'){state.revealAnswer=!state.revealAnswer;render(true);persist();}
+          else if(a==='ask-registry'||a==='ask-link'){
+            state.askScope=a==='ask-registry'?{label:'Cholesterol trend',sources:'January lab report · page 2; September lab report · page 2',related:'Cholesterol trend',linkType:'Evidence-backed link'}:recordAskContexts[state.record]||recordAskContexts[0];
+            state.story=4;state.consent=false;state.panel=null;render();persist();
+          }
+          else if(a==='run-ask'){
+            const question=q('#nura-question')?.value||'';
+            if(!state.consent)toast('Choose whether to allow this question to use your health information');
+            else if(!question.trim())toast('Add a question first');
+            else openPanel('Ask is unavailable in this design preview',`Your question is ready to review: <b>${esc(question.trim())}</b><br><br>Scope: <b>${esc(state.askScope?.label||'Saved health facts you explicitly allow')}</b>. No AI service is connected, so Nura did not retrieve records or generate an answer.`);
+          }
+          else if(a==='confirm-profile'){
+            state.profileConfirmed=true;
+            const summary=[state.name.trim(),state.country,state.birthday?`Birthday ${state.birthday}`:'',state.height?`Height ${state.height}`:'',state.weight?`Weight ${state.weight}`:'',state.topic?`Focus ${state.topic}`:''].filter(Boolean).join(' · ')||'No identity or health details entered yet';
+            openPanel('Review your profile draft',`<b>${esc(summary)}</b><br><br>This preview marks the profile for review only. No account or profile has been saved.`,1,'Open medical registry');
+          }
+          else if(a==='save-article'){state.savedArticle=!state.savedArticle;render(true);toast(state.savedArticle?'Marked saved in this preview':'Removed from this preview shelf');}
+          else if(a==='play-video')openPanel('Video detail · preview only','The clip, publisher, transcript, and source links would appear here. Video playback and source verification are not connected in this storyboard.');
+          else if(a==='policy-add')openPanel('Policy evidence is unavailable here','The policy reader and comparison service are not connected. This preview did not open a file picker, read a policy, or infer coverage.');
+          else if(a==='medicine-detail')openPanel('Medicine source detail','This sample medicine is illustrative. A live registry would show the source page, dose, purpose, dates, and your confirmation status; none of those details were verified here.');
+          else if(a==='medicine-add')openPanel('Add medicine · unavailable in this preview','A live app would ask for the medicine name, dose, reason, source, and dates, then ask you to review it. No medicine was added or saved.');
+          else if(a==='visit-brief'){
+            const included=Object.entries(state.visitSelection).filter(([,on])=>on).map(([key])=>({labs:'Lab trend · two source reports',medicine:'Medicine list · confirm current status',questions:'Questions you wrote'}[key]));
+            openPanel('Visit brief · local preview',`${included.length?`Included in this preview: <b>${included.map(esc).join(', ')}</b>.`:'No sections selected.'}<br><br>The brief is not sent or saved. Review and sharing are not connected.`);
+          }
+          else if(a==='family-invite'){
+            const scopes=Object.entries(state.familyPermissions).filter(([,on])=>on).map(([key])=>({records:'View selected records',ask:'Ask Nura about shared records',edit:'Edit profile'}[key]));
+            openPanel('Review care-partner permissions',`${scopes.length?`Selected permissions: <b>${scopes.map(esc).join(', ')}</b>.`:'No permissions selected.'}<br><br>Invitations are unavailable in this preview. Nothing will be sent.`);
+          }
+          else if(a==='access-history')openPanel('Access history · illustrative','A live service would list who accessed which profile areas, when access began, and when it ended. No access event occurred in this preview.');
+          else if(a==='privacy-correct')openPanel('Correct a profile link · preview only','A live edit would show the current relationship and validity dates for your review. This preview has not changed the fact or its source.');
+          else if(a==='privacy-remove')openPanel('Remove a fact · preview only','A live removal flow would show which linked views change and whether the original source file stays. Nothing was removed.');
+          else if(a==='privacy-review')openPanel('Privacy choices · unavailable here','Export, access revocation, and account deletion require connected account services. This preview did not export or delete data.');
+          else if(a==='symptom-check'){
+            const symptom=q('textarea')?.value?.trim()||'';
+            state.symptomText=symptom;
+            openPanel('Safety check · no assessment run',`${state.safetySelections.size?`Selected urgent signals: <b>${[...state.safetySelections].map(esc).join(', ')}</b>.`:'No urgent signal selected.'} ${symptom?`Your description is present in this preview: <b>${esc(symptom)}</b>.`:''}<br><br>No symptom service or medical assessment is connected. If symptoms are severe or rapidly worsening, seek urgent local care now.`);
+          }
+        }
+      });
+      root.addEventListener('input', (event) => {
+        const el=event.target;
+        if(el.id==='nura-name'){
+          state.name=el.value;
+          const synthesis=q('#profile-synthesis');
+          if(synthesis){synthesis.hidden=!(state.name.trim()||state.topic||state.picked.size);q('#profile-synthesis-text').textContent=(state.name.trim()?state.name.trim()+'. ':'')+(state.topic?'Focus selected: '+state.topic+'.':'Your profile is taking shape.')+' '+(ageFromDate(state.birthday)?'Age '+ageFromDate(state.birthday)+'. ':'')+(state.picked.size?state.picked.size+' details selected by you.':'No medical history has been added yet.')+' Sources and dates stay visible.';}
+        }
+        if(el.id==='nura-height')state.height=el.value;
+        if(el.id==='nura-weight')state.weight=el.value;
+        if(el.id==='nura-contact')state.contact=el.value;
+        if(el.tagName==='TEXTAREA')state.symptomText=el.value;
+      });
+      root.addEventListener('change', (event) => {
+        const el=event.target;
+        if(el.id==='nura-country'&&el.value){state.country=el.value;state.picked.add('Country');render(true);persist();toast('Identity area updated');}
+        if(el.id==='nura-birthday'&&el.value){state.birthday=el.value;state.picked.add('Birthday');render(true);persist();toast('Identity area updated');}
+        if(el.id==='nura-height'&&el.value){state.height=el.value;state.picked.add('Height');render(true);persist();toast('Biometrics area updated');}
+        if(el.id==='nura-weight'&&el.value){state.weight=el.value;state.picked.add('Weight');render(true);persist();toast('Biometrics area updated');}
+      });
+      render();
+      if(globalThis.addEventListener)globalThis.addEventListener('openai:set_globals',(e)=>{const v=e.detail&&e.detail.globals&&e.detail.globals.widgetState&&e.detail.globals.widgetState.modelContent;if(v&&Number.isFinite(Number(v.story))){state.story=Math.max(0,Math.min(10,Number(v.story)));state.record=Number(v.record)||0;render();}});
+    })();
+  </script>
+</div>

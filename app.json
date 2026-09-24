@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Nura",
+    "slug": "nura-codex-build",
+    "scheme": "nura-codex",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Nura uses selected photos to help organize your health information.",
+          "cameraPermission": "Nura uses your camera when you choose to photograph a health document."
+        }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}

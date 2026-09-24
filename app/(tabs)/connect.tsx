@@ -1,0 +1,6 @@
+import React from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Label, Surface } from '../../src/components/Surface';
+import { colors } from '../../src/theme';
+export default function Connect() { return <View style={styles.page}><ScrollView contentContainerStyle={styles.content}><Label>YOUR PEOPLE</Label><Text style={styles.title}>Care, together.</Text><Text style={styles.sub}>Sharing health information needs clear consent and control for every person.</Text><Surface style={styles.card}><Text style={styles.cardTitle}>Family profiles aren’t connected yet</Text><Text style={styles.cardBody}>No one else’s profile or health details are being shown here. Secure invitations, consent, separate records and access controls need a backend before sharing can be enabled.</Text></Surface></ScrollView></View>; }
+const styles = StyleSheet.create({ page: { flex: 1, backgroundColor: colors.bg }, content: { padding: 22, paddingTop: 43, maxWidth: 560, width: '100%', alignSelf: 'center' }, title: { color: colors.text, fontSize: 33, fontWeight: '300', marginTop: 10 }, sub: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 8, marginBottom: 23 }, card: { padding: 17 }, cardTitle: { color: colors.text, fontSize: 16 }, cardBody: { color: colors.muted, fontSize: 12, lineHeight: 19, marginTop: 8 } });
