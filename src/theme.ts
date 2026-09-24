@@ -1,10 +1,12 @@
 import { Platform } from 'react-native';
 
 export const colors = {
-  bg: '#F7F6F8', bg2: '#EFEDF2', surface: '#FFFFFF', surfaceStrong: '#F2F0F5',
-  border: '#E4E1E8', text: '#292731', muted: '#6E6B76', quiet: '#96929D',
-  violet: '#76629A', lilac: '#F0EAF5', aqua: '#1767D8', mint: '#DDF2E8', peach: '#F4E1D7',
-  accent: '#E9E1F0', ink: '#292731', warning: '#A96518', success: '#287954', cream: '#FBF9F7', rose: '#B97880',
+  // Light editorial canvas for records and the health feed. The welcome and
+  // Ask experiences provide their own plum-to-mauve atmosphere.
+  bg: '#F7F5F7', bg2: '#F0EDF2', surface: '#FFFFFF', surfaceStrong: '#F4F0F5',
+  border: '#E3DEE7', text: '#292731', muted: '#6E6B76', quiet: '#96929D',
+  violet: '#755981', lilac: '#F1EAF4', aqua: '#1767D8', mint: '#DDF2E8', peach: '#F4E1D7',
+  accent: '#F0E9F3', ink: '#292731', warning: '#A96518', success: '#287954', cream: '#FBF6F0', rose: '#B97880',
 } as const;
 export const spacing = { xs: 6, sm: 10, md: 16, lg: 22, xl: 30, xxl: 42 } as const;
 export const radius = { sm: 14, md: 20, lg: 28, pill: 999 } as const;

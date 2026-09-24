@@ -826,7 +826,7 @@ export default function ProfileSetup() {
 
   return (
     <View style={styles.page}>
-      <LinearGradient pointerEvents="none" colors={['#514269', '#392D50', '#21182F']} locations={[0, 0.48, 1]} start={{ x: 0.48, y: 0 }} end={{ x: 0.52, y: 1 }} style={styles.ambientFill} />
+      <LinearGradient pointerEvents="none" colors={['#49365F', '#765777', '#A77B8D', '#765777', '#24182F']} locations={[0, 0.28, 0.5, 0.72, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientFill} />
       <LinearGradient pointerEvents="none" colors={['rgba(237,180,145,.30)', 'rgba(237,180,145,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientWarm} />
       <LinearGradient pointerEvents="none" colors={['rgba(162,135,205,.23)', 'rgba(162,135,205,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientViolet} />
       <StatusBar style="light" />

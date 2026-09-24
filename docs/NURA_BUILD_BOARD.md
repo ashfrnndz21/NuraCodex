@@ -14,7 +14,7 @@
 - [NURA_COMPLETE_BUILD_SCOPE.md](NURA_COMPLETE_BUILD_SCOPE.md) defines what 100% completion means, the eleven app-based test milestones, reporting format, and current audited baseline.
 - [NURA_AGENTIC_FOUNDATION.md](NURA_AGENTIC_FOUNDATION.md) defines the memory, context, orchestration and event contracts.
 
-**Important runtime distinction:** the storyboard HTML files are design/review artifacts, not a compiled end-to-end application. The Expo app starts at profile setup; the header has **Open the app**, and the page offers first profile synthesis and record intake. The compiled app has Home, History, People, Explore, Profile, Ask, intake/review, Insurance, Treatment and Visit routes, but multiple stories remain partial or absent. Opening a route does not mean every storyboard shot has been implemented.
+**Important runtime distinction:** the storyboard HTML files are design/review artifacts, not a compiled end-to-end application. The Expo app starts at profile setup; the header has **Open the app**, and the page offers first profile synthesis and record intake. The compiled bottom navigation is Home, History, Care, Explore and Profile; People & sharing is reachable from Profile, but family permissions are not implemented. Ask, intake/review, Insurance, Treatment and Visit are dedicated routes, but multiple stories remain partial or absent. Opening a route does not mean every storyboard shot has been implemented.
 
 ## Parallel work tracks
 
@@ -339,3 +339,12 @@ The user should review a stable story slice, not act as the team's error detecto
 - Unified history timeline nodes, selection rings, spine and connection endpoints on the cobalt record palette. Event type remains visible on each card, so the blue timeline does not erase the source/category cue. Expanded map rows use the existing short motion and reduced-motion branch. The map clarifies that categories may overlap and links are organizational, not causal.
 - Verified in the synthetic 390-point phone preview: counts reflected 5 of 6 domains with saved information and 22 current items; expanding Biometrics showed linked sample facts and their source/date, and its add action targeted the profile screen. Typecheck, lint without cache and the repository suite passed (**66/66**); diff check passed.
 - This is a verified history/profile-map interaction slice, not Story 8 acceptance. All eleven story packages and all eight production packages remain unaccepted until their complete journeys/gates pass: **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. Native runtime, reduced-motion runtime, all viewport sizes, graph density and complete source/link journey remain open. No user test is due from this slice.
+
+
+### History palette and bottom navigation refinement — 24 September 2026
+
+- Applied the supplied color mix by screen role: the welcome and Ask flows keep their atmospheric plum-to-mauve gradients; record and Explore screens use a warm near-white canvas, white cards, and cobalt actions. Explore's featured source artwork now blends blue, peach, and mauve. The History summary is white with the shared blended orb, while record cards stay white and nodes retain distinct cobalt, teal, lilac, amber, and green category cues. Connection rails now transition from the first endpoint's color to the second; the cobalt timeline spine continues to mark chronology.
+- Replaced the incomplete People bottom tab with the agreed Care tab. People & sharing remains reachable from Profile, with clear copy that family access is not yet available.
+- Checked the phone preview at `/` and `/health`: the onboarding gradient now has a visible plum-to-rose blend, while History uses the light surface, category colors, and persistent navigation. Explore remains light and its gradient featured artwork appears when search results exist.
+- Verification passed: `npm run typecheck`, `npm run lint -- --no-cache`, `npm run test:repo` (**66/66**) and `git diff --check`.
+- This closes the palette and navigation presentation defect only. It does not accept Story 8 or the Care, family, or production gates. Overall acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. Native and reduced-motion checks remain open.
