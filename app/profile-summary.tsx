@@ -129,7 +129,7 @@ export default function ProfileSummary() {
       {trace.length > 0 && !busy && <View style={s.traceCard}><Text style={s.sectionLabel}>HOW THIS SUMMARY WAS PREPARED</Text>{trace.map((item) => <View key={item.id} style={s.traceRow}><Text style={[s.traceMark, item.status === 'complete' && s.traceDone]}>{item.status === 'complete' ? '✓' : '·'}</Text><Text style={s.traceLabel}>{item.label}</Text></View>)}</View>}
       {error ? <View style={s.errorCard}><Text style={s.errorTitle}>Nura couldn’t finish this pass.</Text><Text style={s.errorText}>{error}</Text><Pressable accessibilityRole="button" onPress={() => setConsentOpen(true)} style={s.retry}><Text style={s.retryText}>TRY AGAIN</Text></Pressable></View> : null}
       <Pressable accessibilityRole="button" onPress={() => router.push('/intake')} style={s.addRecord}><Text style={s.addRecordTitle}>ADD HEALTH RECORDS</Text><Text style={s.addRecordSub}>PDFs and images · review every suggestion</Text><Text style={s.addRecordArrow}>↗</Text></Pressable>
-      <Text style={s.footer}>The local browser demo uses synthetic examples and clears its session state on refresh. Do not enter real health or contact information.</Text>
+      <Text style={s.footer}>Preview mode uses fictional examples. Your changes stay in this browser until you clear Nura data. Please don’t enter real health or contact information.</Text>
     </ScrollView>
 
     <Modal transparent visible={consentOpen} animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setConsentOpen(false)}>

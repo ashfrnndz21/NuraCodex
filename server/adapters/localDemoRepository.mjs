@@ -133,6 +133,7 @@ export class LocalDemoRepository {
         const assertion = {
           id: randomUUID(), schemaVersion: 1, profileId: claim.profileId, sourceId: claim.sourceId,
           claimId: claim.id, kind: claim.kind, label: claim.label, value: claim.value, unit: claim.unit,
+          referenceRange: claim.referenceRange ?? null, method: claim.method ?? null,
           effectiveAt: claim.effectiveAt, recordedAt: new Date().toISOString(), origin: 'document_extraction',
           evidenceState: 'user_confirmed', confidence: claim.confidence, sourceLocation: claim.sourceLocation,
           validFrom: claim.effectiveAt || new Date().toISOString(), validUntil: null, version: 1, supersedes: null,
@@ -179,6 +180,38 @@ export class LocalDemoRepository {
       claim.label = label; claim.value = value; claim.unit = unit || null; claim.effectiveAt = effectiveAt || null;
       claim.acceptedAssertionId = next.id; claim.correctedAt = now;
       return { claim, previousAssertion: current, assertion: next, unchanged: false };
+    });
+  }
+
+  retractClaim(claimId, { expectedAssertionId, reason } = {}) {
+    return this.#mutate((state) => {
+      const claim = state.claims.find((item) => item.id === claimId);
+      if (!claim) return null;
+      if (reason !== 'not_personal') throw new Error('Choose the reason this detail does not belong in the active profile.');
+      if (claim.evidenceState === 'user_retracted' && claim.acceptedAssertionId === expectedAssertionId) {
+        const prior = state.assertions.find((item) => item.id === expectedAssertionId && item.profileId === claim.profileId) ?? null;
+        return { claim, previousAssertion: prior, unchanged: true };
+      }
+      if (claim.evidenceState !== 'user_confirmed' || !claim.acceptedAssertionId) throw new Error('Only a detail currently in your profile can be removed this way.');
+      if (!expectedAssertionId || claim.acceptedAssertionId !== expectedAssertionId) throw new Error('This detail changed since you opened it. Reload its latest version before removing it.');
+      const current = state.assertions.find((item) => item.id === expectedAssertionId && item.profileId === claim.profileId);
+      if (!current || current.validUntil || current.evidenceState !== 'user_confirmed') throw new Error('The current accepted version is unavailable.');
+      const now = new Date().toISOString();
+      current.validUntil = now;
+      current.evidenceState = 'user_retracted';
+      current.retractedAt = now;
+      current.retractionReason = reason;
+      claim.evidenceState = 'user_retracted';
+      claim.retractedAt = now;
+      claim.retractionReason = reason;
+      const source = state.sources.find((item) => item.id === claim.sourceId);
+      if (source) {
+        const sourceClaims = state.claims.filter((item) => item.sourceId === source.id);
+        source.state = sourceClaims.some((item) => item.evidenceState === 'needs_review' || item.evidenceState === 'candidate')
+          ? 'candidate_review'
+          : sourceClaims.some((item) => item.evidenceState === 'user_confirmed') ? 'accepted' : 'rejected';
+      }
+      return { claim, previousAssertion: current, unchanged: false };
     });
   }
 

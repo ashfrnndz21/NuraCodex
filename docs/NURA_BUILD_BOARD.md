@@ -71,6 +71,16 @@ The user should review a stable story slice, not act as the team's error detecto
 
 ## Latest integration update — 24 September 2026
 
+### Home health-area responsive verification — 24 September 2026
+
+- The earlier screenshot showed the six health areas collapsed into narrow vertical strips, with labels wrapping one character at a time. The current Home implementation uses a two-column card grid with a stacked icon/count row and readable title/detail rows.
+- Rechecked the current compiled preview at 360 × 780, 390 × 844 and 430 × 932. The cards keep their two-column width and labels remain readable. The lower cards and following sections remain in the scrollable page above the persistent tab bar.
+- Rechecked the Health History timeline and Connections at 360 × 780. Timeline nodes and their colored rail remain aligned; the filter row scrolls horizontally on narrow phones, and connection endpoints stay readable.
+- Current local checks pass: TypeScript typecheck, Expo lint, repository suite **52/52**, and `git diff --check`. These checks cover the existing local video frame sampler only; no provider video-analysis request was made.
+- The screenshot context was `/services` while the content shown was Home. The current `/services` route renders Explore; `/home` renders the health-area grid. This is a stale/mismatched preview signal, not the current route output.
+- This closes the narrow-card presentation defect only. Home’s visual/motion pass and all story/gate acceptance remain open: **0/11 stories, 0/8 production gates, 0/19 accepted packages (0%)**.
+- Video analysis remains blocked at the provider-transfer consent gate. A proposed code path would send sampled health-video frames to OpenAI; automatic approval review rejected it because the user has not specifically authorized that payload and destination. No bypass was attempted, and no video was sent.
+
 - The browser onboarding entry now presents a prominent route into the current app Home and its tabs. The root route remains the profile-creation start; it is not the full app by itself.
 - Story 9 has a first connected slice at `/symptoms`: immediate safety escalation is static and bypasses AI; non-urgent support uses the existing consent-scoped local agent stream; treatment/medicine context is filtered server-side; symptom text and answers are not persisted unless the user explicitly saves a note.
 - Story 9 is still partial. This demo flow is not clinically validated, does not determine whether a symptom is an emergency, and is not a substitute for local emergency services or clinician assessment.
@@ -250,3 +260,75 @@ The user should review a stable story slice, not act as the team's error detecto
 - Verification passed: `npm run typecheck`, `npm run lint`, and `npm run test:repo` (**28/28**). The cancellation path has code and static-check coverage but has not yet been exercised with a real local fixture end to end.
 - **Status:** M2 remains partial; no story or production gate is accepted. Totals remain **0/11 stories, 0/8 production gates, 0/19 accepted packages**. This is not a user-test milestone.
 - **Next:** exercise consented PDF/image intake with a synthetic fixture, then verify accept/edit/reject, source correction and earlier-version preservation, source navigation, and topic-scoped Ask before presenting a single end-to-end milestone.
+
+
+### Nura interface copy pass and synthetic document-read evidence — 24 September 2026
+
+- Rewrote user-visible implementation language across intake, file review, Ask consent, privacy, health-feed availability, family sharing, and visit preparation. The app now describes what the person can do and what information is shared, rather than naming local services, providers, server keys, or server events.
+- Added direct preview-mode wording: use fictional details and files; a selected file is sent to Nura’s AI service only after confirmation; suggestions remain outside the profile until approved; the service’s privacy practices apply. Video copy now explains that a video can be saved but its contents are not reviewed or sent for analysis.
+- Corrected browser-preview storage guidance: changes persist in the browser across refresh and remain until cleared. The previous “clears on refresh” and “until refresh” messages were inaccurate.
+- A consented, fictional one-page PDF was read after browser refresh. Nura returned four suggested lab details with page-one quotes; all remained pending for review and none was written to the profile. This confirms browser file persistence through the read flow, not acceptance of the full M2 story.
+- TypeScript and lint checks pass. The 34-test repository suite was not rerun during this copy change. Current strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 accepted packages**.
+- **Still open in M2:** verify accept, edit, dismiss, correction version history and source navigation, then finish a topic-scoped Ask run. Do not treat this copy pass or the document-read slice as a user-test milestone.
+
+
+### Built-in synthetic lab report — 24 September 2026
+
+- Added the user-supplied, explicitly synthetic PL0005 lipid-profile report to the Medical Registry intake as **Try a sample lab report**. The report is saved locally as a source file; selecting it does not run extraction, call an AI provider or create profile facts.
+- The separate review screen still presents the per-file transfer confirmation before extraction. Suggestions remain review-only until the user accepts them.
+- Verified the phone preview flow: add sample → report appears in the file list → browser refresh → report remains available → review screen opens with the sample selected. No provider request was made.
+- TypeScript typecheck passed; full ESLint passed with cache disabled; repository suite passed **34/34**. The lint pass exposed missing Node `Buffer` globals in the local video processor; the module now imports `Buffer` from `node:buffer` and no longer carries an unused `extname` import.
+- Diagnosed the earlier correction failure as a stale local API process: the process on port 4175 returned `not_found` for the current route. Restarted it from the current tree, changed `agent:dev` to Node watch mode, and confirmed the updated route. In the synthetic review screen, saving a correction produced version 2 and retained version 1 with its original source link. No file was sent to the provider during this check.
+- **Status:** M2 remains partial and no package is accepted. Continue with consented extraction and the accepted/edit/dismiss/correction/source-navigation/topic-Ask sequence before a user handoff.
+
+### Home health-area tiles — 24 September 2026
+
+- Fixed the collapsed Home tile geometry by giving each animated wrapper an explicit two-column width and the card a full wrapper width. Tile labels now remain readable instead of breaking one character per line. Increased the icon, title, supporting text, count, and card hit area.
+- Connected Today, History, Records, and Life to the matching Vitals, History, Documents, and Lifestyle timeline filters. The destination keeps the selected filter visible at the front of the horizontal filter row. Treatment and Cover continue to open their dedicated registries.
+- Verified the synthetic browser preview by opening the Vitals, History, Documents, and Lifestyle tiles. Each landed on the expected filter; Lifestyle showed an honest empty state with 0 matching records. Preview remained at /home between checks.
+- npm run typecheck, npm run lint -- --no-cache, npm run test:repo (52 passing), and git diff --check passed.
+- This closes a Home layout/navigation defect only. It does not pass the Home user story or change the accepted completion baseline: 0/11 stories, 0/8 production gates, 0/19 packages.
+
+
+### Live profile motion and sample-report review — 24 September 2026
+
+- Added staggered arrival and a restrained color wash/value settle to the live identity and Today signals during onboarding. Changes respond to completed/discrete input; continuous typing does not bounce the whole profile strip. The same values/colors remain visible when reduced motion is enabled.
+- The supplied screenshot’s browser context was `/services` while its content was Home. The current `/home` route renders the six health areas as readable two-column cards; the collapsed three-column image is not the current route rendering. The Home “Whole picture” section remains a navigable summary, not the connected historical node map in the approved timeline reference.
+- Reopened PL0005 through the app’s saved-file review. Exact duplicate detection opened its prior review without sending the same file again. The eight numerical lipid results match the report’s labels, values, units, reference ranges and 21 January 2025 date. Total cholesterol is still pending review. A general fasting instruction was mistakenly accepted as a personal profile detail; I added a server-side safeguard that moves matching general lab guidance into document context for future extraction and added regression tests. The old accepted detail remains visible in the existing sample profile pending a user correction; it was not silently removed.
+- Typecheck and lint pass; `npm run test:repo` passes **54/54**; `git diff --check` passes. No end-to-end story or production gate is accepted by this slice; totals remain **0/11 stories, 0/8 production gates, 0/19 packages**.
+- **Next:** correct the sample’s already-saved generic guidance through an explicit source-review decision, verify persisted PDF claims/quotes against every report row, then continue the Home and record-timeline interaction acceptance pass. Keep the node map, relationship colors/links, Ask traces, and production foundations visible as open work.
+
+
+### Accepted-fact retraction with preserved source history — 24 September 2026
+
+- Added a review action for a previously accepted source claim: the person must confirm before Nura removes it from the active profile. The claim remains visible as “Removed from profile” with its original source quote, file, assertion and review history.
+- The retraction is version-checked on the server. A stale review cannot retract a newer assertion. The local profile closes the active fact with a validity end date and records the retraction state; it does not delete the fact or source. If the server records the decision before device persistence succeeds, reopening the source review reconciles the still-active local fact.
+- Added regression checks for preserved source/assertion history, idempotent retraction, stale-version rejection and local-state recovery matching. Repository suite: 57/57 passed. Typecheck, lint and diff check passed.
+- The sample report’s already-accepted general fasting guidance remains in the current synthetic profile until someone confirms its removal in the app. I did not mutate that saved profile during this implementation check.
+- This repairs one source-review and profile-history capability; it does not complete M2 intake or change accepted story/gate/package counts.
+
+
+### Home route audit and Explore feed duplicate suppression — 24 September 2026
+
+- Audited the supplied collapsed-tile screenshot against the live preview and current route code. The screenshot context was `/services` while its content was Home. In the current app, `/services` is Explore and `/home` is the Home health-area view. The current Home implementation already uses a two-column card layout; the live accessibility tree exposes full labels and supporting text. The one-character-wrap image does not match the current route output.
+- Explore showed repeated same-publisher/same-title results for a selected topic. Added URL canonicalization for fragments/tracking parameters/trailing slashes and duplicate suppression by publisher, visible title, and selected topic. Distinct publishers, distinct article titles and separately sourced topics remain separate entries; source identities and citations still use the canonical HTTPS URL.
+- Verification passed: `npm run typecheck`, `npm run lint -- --no-cache`, `npm run test:repo` (**61/61**) and `git diff --check`. The feed contract tests use deterministic synthetic URLs. No health file or provider request was used.
+- Automatic approval review rejected the proposed video-to-OpenAI extraction path because it would enable transfer of sampled health-video frames and filename to the provider. No video extraction code was added and no video data was sent. The existing local sampler remains disconnected from app review; audio remains unanalyzed. This requires explicit approval for that provider payload and destination before the integration can be enabled.
+- Story, production-gate and package acceptance remain **0/11 stories, 0/8 production gates, 0/19 packages**. The screenshot route discrepancy and feed-card deduplication are defect fixes, not completed user stories.
+
+
+### Persisted Explore feed duplicate presentation — 24 September 2026
+
+- The live `/services` preview retained duplicate articles from an earlier search even after the server-side search deduper was added. Server deduplication only fixes new responses; it does not clean up cards already saved in the browser or native feed store.
+- Added non-destructive grouping at render time for canonical HTTPS URL aliases and matching publisher/title/topic cards. The UI shows one source card while retaining all member IDs; Save applies to the grouped copies, Hide affects visible copies only, and Undo restores only the items that were visible before dismissal. Topic labels are combined when one source matched multiple selected areas. Existing feed rows are not deleted.
+- Rechecked the live phone preview without starting another external health search. Explore went from 12 saved cards to 10 visible unique cards. The `/home` preview separately shows the six health areas in a readable two-column layout; the user-supplied one-letter-wrap image remains a route/preview mismatch, not the current Home rendering.
+- Verification passed: typecheck, lint, `npm run test:repo` (**66/66**), and `git diff --check`. The five focused grouping tests cover publisher/title matching, URL aliases, topic merging, save state, and reversible dismissal state.
+- This is an Explore presentation defect fix, not Story 4 acceptance. Overall remains **0/11 stories, 0/8 production gates, 0/19 packages**. Story 4 still lacks video results/detail, publication-date extraction, full personalization controls and full journey acceptance.
+
+### History filters fit the mobile viewport — 24 September 2026
+
+- Reproduced the phone-sized History screen in the live app. Seven category filters were placed in a sideways strip, leaving the fifth chip visibly cut off and giving each filter a small touch area.
+- Changed the filters to wrap across rows with a 44-point minimum height. All seven labels are now visible at once; the active filter remains highlighted and filtering still updates the timeline in place.
+- Live check at the phone preview: all seven filters rendered without clipping. Selecting **Vitals** changed the visible list from 21 to 12 captured entries; returning to **Everything** restored all 21.
+- `npm run typecheck` and `npm run lint -- --no-cache` pass. The ordinary cached lint invocation could not write under `.expo/cache` in this environment; the no-cache lint check passed. No user records were changed.
+- The attached skinny Home cards are from a stale/mismatched view: its browser context was `/services`, while its content is Home. The current `/home` render has six readable two-column areas. The Home summary still is not the requested connected history map. Overall remains **0/11 accepted stories, 0/8 production gates, 0/19 packages**.

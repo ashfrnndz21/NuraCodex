@@ -5,7 +5,8 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Crypto from 'expo-crypto';
 import { Orb } from '../src/components/Orb';
-import { AgentAnswer, AgentEvent, AgentSource, AgentTrace, CoverageAssessment, getAgentStatus, runNuraAgent } from '../src/services/agentClient';
+import { AgentAnswer, AgentEvent, AgentRunInput, AgentSource, AgentTrace, CoverageAssessment, getAgentStatus, runNuraAgent } from '../src/services/agentClient';
+import { getSourceClaims, sourceMatchesAsset } from '../src/services/intakeClient';
 import { useNura } from '../src/state/NuraContext';
 import { useAIState } from '../src/state/AIStateContext';
 import { motion } from '../src/theme';
@@ -36,8 +37,10 @@ const C = {
 };
 export default function Ask() {
   const params = useLocalSearchParams<{ context?: string; recordId?: string; question?: string; registryBriefTopicId?: string; registryBriefTopicLabel?: string; registrySourceSignature?: string }>();
-  const { facts, topics, links, treatments, visits, agentMessages, addAgentMessage, saveRegistryBrief, clearAgentMessages, addQuestion, addFact } = useNura();
+  const { facts, topics, links, treatments, visits, assets, agentMessages, addAgentMessage, saveRegistryBrief, clearAgentMessages, addQuestion, addFact } = useNura();
   const recordId = typeof params.recordId === 'string' ? params.recordId : null;
+  const fileContext = recordId?.startsWith('asset:') ?? false;
+  const selectedAsset = fileContext ? assets.find((asset) => `asset:${asset.id}` === recordId) ?? null : null;
   const registryBriefTopicId = typeof params.registryBriefTopicId === 'string' ? params.registryBriefTopicId : '';
   const registryBriefTopic = topics.find((topic) => topic.id === registryBriefTopicId);
   const registrySourceSignature = typeof params.registrySourceSignature === 'string' ? params.registrySourceSignature : '';
@@ -65,21 +68,35 @@ export default function Ask() {
   const [shareHistory, setShareHistory] = useState(!registryBriefMode);
   const [shareTreatments, setShareTreatments] = useState(false);
   const [shareVisits, setShareVisits] = useState(false);
+  const [shareSourceContext, setShareSourceContext] = useState<boolean | null>(null);
   const [shareExternalSearch, setShareExternalSearch] = useState(false);
+  const [sourceContextSnapshot, setSourceContextSnapshot] = useState<{ key: string; documents: NonNullable<AgentRunInput['context']['documentSources']> }>({ key: '', documents: [] });
   const initialQuestionSet = useRef(false);
   const context = typeof params.context === 'string' ? params.context : 'your saved health profile';
   const initialQuestion = typeof params.question === 'string' ? params.question : '';
   const coverageQuestion = /\b(insurance|policy|coverage|covered|copay|deductible|benefit|claim)\b/i.test(question);
-  const fileContext = recordId?.startsWith('asset:') ?? false;
   const personalContext = useMemo(() => ({
-    facts: facts.filter((fact) => !fact.validUntil).map(({ id, label, value, date, category, source, status }) => ({ id, label, value, date, category, source, status })),
+    facts: facts.filter((fact) => !fact.validUntil).map(({ id, label, value, date, category, source, status, sourceId }) => ({ id, label, value, date, category, source, status, sourceId })),
     topics: topics.map(({ id, label }) => ({ id, label })),
     links: links.map(({ id, from, to, relationType, label, createdAt }) => ({ id, from, to, relationType, label, createdAt })),
     treatments: treatments.map(({ id, name, dose, schedule, purpose, prescriber, careLocation, pharmacy, status, startedOn, endedOn, source }) => ({ id, name, dose, schedule, purpose, prescriber, careLocation, pharmacy, status, startedOn, endedOn: endedOn ?? '', source })),
     visits: visits.map(({ id, purpose, appointmentAt, clinician, location, status, source, questions, outcome, followUp, followUpActions }) => ({ id, purpose, appointmentAt, clinician, location, status, source, questions: [...questions], outcome, followUp, followUpActions: (followUpActions ?? []).map(({ id: actionId, title, dueOn, status: actionStatus, source: actionSource }) => ({ id: actionId, title, dueOn, status: actionStatus, source: actionSource })) })),
   }), [facts, topics, links, treatments, visits]);
   const historyForConsent = agentMessages.slice(-8);
-  const scopedContext = useMemo(() => scopeProfileContext(personalContext, recordId), [personalContext, recordId]);
+  const scopedContext = useMemo(() => {
+    const scoped = scopeProfileContext(personalContext, recordId);
+    if (!fileContext || !selectedAsset?.serverSourceId) return scoped;
+    return { ...scoped, facts: personalContext.facts.filter((fact) => fact.sourceId === selectedAsset.serverSourceId) };
+  }, [personalContext, recordId, fileContext, selectedAsset]);
+  const sourceAssets = useMemo(() => {
+    const sourceIds = new Set(scopedContext.facts.map((fact) => fact.sourceId).filter((id): id is string => Boolean(id)));
+    if (selectedAsset?.serverSourceId) sourceIds.add(selectedAsset.serverSourceId);
+    return assets.filter((asset) => Boolean(asset.serverSourceId && sourceIds.has(asset.serverSourceId))).slice(0, 5);
+  }, [assets, scopedContext.facts, selectedAsset]);
+  const sourceContextKey = sourceAssets.map((asset) => `${asset.id}:${asset.serverSourceId}`).join('|');
+  const linkedDocumentContexts = sourceContextSnapshot.key === sourceContextKey ? sourceContextSnapshot.documents : [];
+  const sourceContextLoading = sourceAssets.length > 0 && sourceContextSnapshot.key !== sourceContextKey;
+  const sourceContextSelected = shareSourceContext ?? fileContext;
   const selectedHistory = registryBriefMode ? [] : shareHistory ? historyForConsent.map((message) => ({ role: message.role, content: message.text })) : [];
   const selectedContext = { facts: shareFacts ? scopedContext.facts : [], topics: shareTopics ? scopedContext.topics : [], links: shareLinks ? scopedContext.links : [] };
 
@@ -90,6 +107,32 @@ export default function Ask() {
     const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReducedMotion);
     return () => { mounted = false; subscription.remove(); };
   }, []);
+  useEffect(() => {
+    let active = true;
+    if (!sourceAssets.length) return () => { active = false; };
+    void Promise.all(sourceAssets.map(async (asset) => {
+      if (!asset.serverSourceId) return null;
+      try {
+        const result = await getSourceClaims(asset.serverSourceId);
+        if (!await sourceMatchesAsset(asset, result.source) || !result.source.documentContext) return null;
+        const context = result.source.documentContext;
+        const normalizeEntries = (entries: typeof context.dates) => entries.map((entry) => ({ ...entry, quote: entry.quote ?? '' }));
+        return {
+          id: result.source.id,
+          title: result.source.displayName,
+          documentType: context.documentType ?? '',
+          dates: normalizeEntries(context.dates),
+          entities: normalizeEntries(context.entities),
+          notes: normalizeEntries(context.notes),
+        };
+      } catch {
+        return null;
+      }
+    })).then((documents) => {
+      if (active) setSourceContextSnapshot({ key: sourceContextKey, documents: documents.filter((document): document is NonNullable<typeof document> => Boolean(document)) });
+    });
+    return () => { active = false; };
+  }, [sourceAssets, sourceContextKey]);
   useEffect(() => {
     if (reducedMotion) {
       ambientShift.stopAnimation();
@@ -126,7 +169,7 @@ export default function Ask() {
     let finalAnswer: AgentAnswer | null = null;
     const previous = selectedHistory;
     try {
-      await runNuraAgent({ runId, question: cleanQuestion, consentConfirmed: true, history: previous, externalSearchConsent: shareExternalSearch && !coverageQuestion, treatmentContextConsent: shareTreatments, visitContextConsent: shareVisits, context: { ...selectedContext, treatments: shareTreatments ? scopedContext.treatments : [], visits: shareVisits ? scopedContext.visits : [] } }, (event: AgentEvent) => {
+      await runNuraAgent({ runId, question: cleanQuestion, consentConfirmed: true, history: previous, externalSearchConsent: shareExternalSearch && !coverageQuestion, treatmentContextConsent: shareTreatments, visitContextConsent: shareVisits, sourceContextConsent: sourceContextSelected && linkedDocumentContexts.length > 0, context: { ...selectedContext, treatments: shareTreatments ? scopedContext.treatments : [], visits: shareVisits ? scopedContext.visits : [], documentSources: sourceContextSelected ? linkedDocumentContexts : [] } }, (event: AgentEvent) => {
         if (event.type === 'trace') {
           const item = { id: event.id, label: event.label, status: event.status, detail: event.detail };
           runTrace = [...runTrace.filter((existing) => existing.id !== event.id), item];
@@ -195,8 +238,9 @@ export default function Ask() {
     <View style={s.header}><Pressable accessibilityLabel="Close Ask Nura" style={s.close} onPress={() => router.back()}><Text style={s.closeText}>⌄</Text></Pressable><View style={s.headerMain}><Orb size={45} /><View style={{ flex: 1 }}><Text style={s.brand}>Ask Nura</Text><Text style={s.tagline}>YOUR HEALTH, UNDERSTOOD</Text></View><Pressable onPress={() => { if (!busy && agentMessages.length) { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); clearAgentMessages(); setAnswer(null); setTrace([]); setError(''); } }} disabled={busy || !agentMessages.length} style={s.clear}><Text style={[s.clearText, (!agentMessages.length || busy) && s.disabledText]}>Clear</Text></Pressable></View></View>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <Text style={s.contextLine}>{registryBriefMode ? <>Preparing a source-linked Registry summary for <Text style={s.contextStrong}>{registryBriefTopic?.label}</Text> · chat history excluded</> : <>Looking at <Text style={s.contextStrong}>{context}</Text></>}</Text>
-      <View style={[s.serviceCard, service?.available ? s.serviceReady : s.serviceOffline]}><View style={[s.serviceDot, service?.available && s.serviceDotReady]} /><View style={{ flex: 1 }}><Text style={s.serviceTitle}>{service === null ? 'Checking Nura’s AI service…' : service.available ? `AI service connected · ${service.provider}` : 'AI service not connected'}</Text><Text style={s.serviceBody}>{service?.available ? 'Your local agent is ready. It will only use information you choose to share for this question.' : service?.reason ?? 'This check does not send your health information.'}</Text></View><Pressable onPress={() => void getAgentStatus().then(setService)}><Text style={s.refresh}>↻</Text></Pressable></View>
-      {fileContext && <View style={s.fileNotice}><Text style={s.fileNoticeTitle}>THIS SOURCE IS SAVED, NOT READ</Text><Text style={s.fileNoticeBody}>This file is saved on your device but has not been read in Ask Nura. Open the Medical Registry review screen to request extraction and review each candidate.</Text></View>}
+      <View style={[s.serviceCard, service?.available ? s.serviceReady : s.serviceOffline]}><View style={[s.serviceDot, service?.available && s.serviceDotReady]} /><View style={{ flex: 1 }}><Text style={s.serviceTitle}>{service === null ? 'Connecting to Nura…' : service.available ? 'Nura is ready' : 'Nura is unavailable'}</Text><Text style={s.serviceBody}>{service?.available ? 'Choose what to share for each question. Nothing is sent before you review the details.' : service?.reason ?? 'This check does not send your health information.'}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Check Nura availability" onPress={() => void getAgentStatus().then(setService)}><Text style={s.refresh}>↻</Text></Pressable></View>
+      {fileContext && !selectedAsset?.serverSourceId && <View style={s.fileNotice}><Text style={s.fileNoticeTitle}>THIS SOURCE HAS NOT BEEN REVIEWED</Text><Text style={s.fileNoticeBody}>Nura can’t answer from this file yet. Open its review, request extraction and decide which suggested details belong in your record.</Text></View>}
+      {fileContext && selectedAsset?.serverSourceId && <View style={s.fileNotice}><Text style={s.fileNoticeTitle}>ASKING ABOUT THIS SAVED SOURCE</Text><Text style={s.fileNoticeBody}>Only details already linked to this report are in scope. The original file stays on your device; you choose whether to share saved report notes for this answer.</Text></View>}
       {!fileContext && agentMessages.length === 0 && !busy && <View style={s.welcome}><Text style={s.welcomeEyebrow}>YOUR RECORDS, IN CONTEXT</Text><Text style={s.welcomeTitle}>Let’s look at the whole picture.</Text><Text style={s.welcomeBody}>Ask about information you’ve saved. Nura will show which records it used and where it could not find an answer.</Text><View style={s.promptRow}><Pressable style={s.prompt} onPress={() => setQuestion('What information is in my health profile?')}><Text style={s.promptText}>What’s in my profile?</Text><Text style={s.promptArrow}>↗</Text></Pressable><Pressable style={s.prompt} onPress={() => setQuestion('What information is missing from my records?')}><Text style={s.promptText}>What’s missing?</Text><Text style={s.promptArrow}>↗</Text></Pressable></View></View>}
       {agentMessages.map((message) => <View key={message.id} style={[s.message, message.role === 'user' ? s.userMessage : s.assistantMessage]}>
         <Text style={[s.messageLabel, message.role === 'user' && s.userMessageLabel]}>{message.role === 'user' ? 'YOU' : 'NURA'}</Text>
@@ -218,7 +262,7 @@ export default function Ask() {
       {error ? <View style={s.errorCard}><Text style={s.errorTitle}>This run didn’t complete</Text><Text style={s.errorText}>{error}</Text><Text style={s.errorNote}>Your saved health records were not changed.</Text></View> : null}
     </ScrollView>
     <View style={s.composerWrap}><View style={s.composer}><TextInput value={question} onChangeText={setQuestion} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} placeholder="Ask about your health history…" placeholderTextColor={C.faint} style={s.input} multiline maxLength={2000} editable={!busy} /><Animated.View style={{ transform: [{ scale: sendScale }] }}><Pressable accessibilityRole="button" accessibilityLabel="Ask Nura" disabled={!question.trim() || busy} onPress={startQuestion} onPressIn={() => animateSend(motion.pressScale)} onPressOut={() => animateSend(1)} style={[s.sendButton, (!question.trim() || busy) && s.sendDisabled]}><Text style={s.sendText}>↑</Text></Pressable></Animated.View></View><Text style={s.composerNote}>Conversation saves on this device. Selected context is sent for an answer only after you confirm.</Text></View>
-    <Modal visible={consentOpen} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setConsentOpen(false)}><View style={[s.modalShade, Platform.OS === 'web' && s.modalShadeWeb]}><ScrollView style={[s.modalCard, Platform.OS === 'web' && s.modalCardWeb]} contentContainerStyle={s.modalContent} keyboardShouldPersistTaps="handled"><View style={s.modalHandle} /><Text style={s.modalEyebrow}>BEFORE NURA LOOKS</Text><Text style={s.modalTitle}>{registryBriefMode ? 'Review this Registry summary scope.' : 'Choose what to include.'}</Text><Text style={s.modalBody}>Your question and the checked details go to Nura’s local agent. Matching records and checked chat history are then sent to the configured AI provider for this answer. {registryBriefMode ? 'The selected health area and its connected records are the only profile context. Recent chat history is excluded from a Medical Registry summary.' : ''} {coverageQuestion ? ' For a policy comparison, Nura uses only the reviewed policy terms and health details you select; it does not search the web.' : ''} Nothing is sent until you continue.</Text><View style={s.shareList}><ShareToggle label="Saved health facts" count={scopedContext.facts.length} selected={shareFacts} onPress={() => setShareFacts((value) => !value)} /><ShareToggle label="Health areas you selected" count={scopedContext.topics.length} selected={shareTopics} onPress={() => setShareTopics((value) => !value)} /><ShareToggle label="Links you created" count={scopedContext.links.length} selected={shareLinks} onPress={() => setShareLinks((value) => !value)} />{registryBriefMode ? <ShareRow label="Recent chat messages" count="Excluded from this Registry summary" excluded /> : <ShareToggle label="Recent chat messages" count={historyForConsent.length} selected={shareHistory} onPress={() => setShareHistory((value) => !value)} />}<ShareToggle label="All treatment and medicine records" count={scopedContext.treatments.length} selected={shareTreatments} onPress={() => setShareTreatments((value) => !value)} /><ShareToggle label="Visit and follow-up history" count={scopedContext.visits.length} selected={shareVisits} onPress={() => setShareVisits((value) => !value)} /><ShareToggle label="Trusted health web search · demo topics only" count={coverageQuestion ? 'Not used for policy review' : service?.capabilities?.trustedHealthSearch ? (shareExternalSearch ? 'On · demo only' : 'Off') : 'Unavailable'} selected={shareExternalSearch && !coverageQuestion} disabled={coverageQuestion || !service?.capabilities?.trustedHealthSearch} onPress={() => setShareExternalSearch((value) => !value)} /><ShareRow label="Name, contact details, files" count="Not shared" excluded /></View><Text style={s.privacyNote}>Treatment and visit records are off unless you check their rows. Nura can summarize what is recorded, but will not advise starting, stopping, or changing a medicine or treat user notes as clinician instructions. The local development backend does not save run payloads; the AI provider’s data handling applies. Files are not included. External search stays off unless you opt in. Cancel to send nothing.</Text><Pressable onPress={() => void confirmAndSend()} style={s.confirmShare}><Text style={s.confirmShareText}>SHARE FOR THIS ANSWER  ·  CONTINUE</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={s.cancelShare}><Text style={s.cancelShareText}>Cancel</Text></Pressable></ScrollView></View></Modal>
+      <Modal visible={consentOpen} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setConsentOpen(false)}><View style={[s.modalShade, Platform.OS === 'web' && s.modalShadeWeb]}><ScrollView style={[s.modalCard, Platform.OS === 'web' && s.modalCardWeb]} contentContainerStyle={s.modalContent} keyboardShouldPersistTaps="handled"><View style={s.modalHandle} /><Text style={s.modalEyebrow}>YOUR CHOICE · THIS ANSWER</Text><Text style={s.modalTitle}>{registryBriefMode ? 'Review what goes into this summary.' : 'Choose what Nura can use.'}</Text><Text style={s.modalBody}>When you continue, your question and selected details below are sent to Nura’s AI service to prepare an answer. Its privacy practices apply. Original files are never included. If you select report details below, only saved text from those sources is shared. {registryBriefMode ? 'This summary uses only the selected health area and its connected records. Recent chat messages are excluded.' : ''} {coverageQuestion ? 'For a policy review, Nura uses only the reviewed policy terms and health details you select. It does not search the web.' : ''} Nothing is sent until you continue.</Text><View style={s.shareList}><ShareToggle label="Saved health facts" count={scopedContext.facts.length} selected={shareFacts} onPress={() => setShareFacts((value) => !value)} /><ShareToggle label="Health areas you selected" count={scopedContext.topics.length} selected={shareTopics} onPress={() => setShareTopics((value) => !value)} /><ShareToggle label="Links you created" count={scopedContext.links.length} selected={shareLinks} onPress={() => setShareLinks((value) => !value)} />{registryBriefMode ? <ShareRow label="Recent chat messages" count="Not included in this summary" excluded /> : <ShareToggle label="Recent chat messages" count={historyForConsent.length} selected={shareHistory} onPress={() => setShareHistory((value) => !value)} />}<ShareToggle label="Treatment and medicine records" count={scopedContext.treatments.length} selected={shareTreatments} onPress={() => setShareTreatments((value) => !value)} /><ShareToggle label="Visits and follow-up history" count={scopedContext.visits.length} selected={shareVisits} onPress={() => setShareVisits((value) => !value)} /><ShareToggle label="Details from linked reports" count={sourceContextLoading ? 'Checking linked sources…' : linkedDocumentContexts.length ? `${linkedDocumentContexts.length} source${linkedDocumentContexts.length === 1 ? '' : 's'} · text only` : 'None available'} selected={sourceContextSelected && linkedDocumentContexts.length > 0} disabled={sourceContextLoading || !linkedDocumentContexts.length} onPress={() => setShareSourceContext((value) => !(value ?? fileContext))} /><ShareToggle label="Search trusted health sources · general topics" count={coverageQuestion ? 'Not used for policy review' : service?.capabilities?.trustedHealthSearch ? (shareExternalSearch ? 'On · selected topics only' : 'Off') : 'Not available'} selected={shareExternalSearch && !coverageQuestion} disabled={coverageQuestion || !service?.capabilities?.trustedHealthSearch} onPress={() => setShareExternalSearch((value) => !value)} /><ShareRow label="Name, contact details and original files" count="Not shared" excluded /></View><Text style={s.privacyNote}>Treatment, visit and report details stay out unless you select them above. Nura can organize your information, but does not advise starting, stopping or changing medicines, or treat personal notes as clinician instructions. Saved chat stays on this device unless you choose to include it. The AI service’s privacy practices apply to each request. Public health search stays off unless you opt in. Cancel to send nothing.</Text><Pressable onPress={() => void confirmAndSend()} style={s.confirmShare}><Text style={s.confirmShareText}>CONTINUE WITH SELECTED DETAILS</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={s.cancelShare}><Text style={s.cancelShareText}>Not now</Text></Pressable></ScrollView></View></Modal>
   </KeyboardAvoidingView>;
 }
 function ShareRow({ label, count, excluded }: { label: string; count: string; excluded?: boolean }) { return <View style={s.shareRow}><Text style={s.shareLabel}>{label}</Text><Text style={[s.shareCount, excluded && s.shareExcluded]}>{count}</Text></View>; }

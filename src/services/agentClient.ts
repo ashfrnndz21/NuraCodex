@@ -18,12 +18,14 @@ export type AgentRunInput = {
   externalSearchConsent: boolean;
   treatmentContextConsent: boolean;
   visitContextConsent: boolean;
+  sourceContextConsent?: boolean;
   context: {
     facts: { id: string; label: string; value: string; date: string; category: string; source: string; status: string }[];
     topics: { id: string; label: string }[];
     links: { id: string; from: string; to: string; label: string; createdAt: string }[];
     treatments: { id: string; name: string; dose: string; schedule: string; purpose: string; prescriber: string; careLocation: string; pharmacy: string; status: 'current' | 'past'; startedOn: string; endedOn: string; source: string }[];
     visits: { id: string; purpose: string; appointmentAt: string; clinician: string; location: string; status: 'upcoming' | 'completed'; source: string; questions: string[]; outcome: string; followUp: string; followUpActions: { id: string; title: string; dueOn: string; status: 'open' | 'done'; source: string }[] }[];
+    documentSources?: { id: string; title: string; documentType: string; dates: { kind: string; value: string; page: number | null; quote: string }[]; entities: { kind: string; value: string; page: number | null; quote: string }[]; notes: { kind: string; value: string; page: number | null; quote: string }[] }[];
   };
 };
 const baseUrl = (process.env.EXPO_PUBLIC_NURA_AGENT_URL || 'http://127.0.0.1:4175').replace(/\/$/, '');
@@ -31,13 +33,13 @@ const baseUrl = (process.env.EXPO_PUBLIC_NURA_AGENT_URL || 'http://127.0.0.1:417
 export async function getAgentStatus(): Promise<{ available: boolean; provider?: string; model?: string; reason?: string; capabilities?: { documentExtraction?: boolean; trustedHealthSearch?: boolean } }> {
   try {
     const response = await fetch(`${baseUrl}/healthz`, { method: 'GET' });
-    if (!response.ok) return { available: false, reason: 'Nura’s local agent service is not responding.' };
+    if (!response.ok) return { available: false, reason: 'Nura couldn’t connect just now. Please try again shortly.' };
     const body = await response.json() as { ok?: boolean; provider?: { provider?: string; configured?: boolean; model?: string }; capabilities?: { documentExtraction?: boolean; trustedHealthSearch?: boolean } };
     return body.ok && body.provider?.configured
       ? { available: true, provider: body.provider.provider, model: body.provider.model, capabilities: body.capabilities }
-      : { available: false, provider: body.provider?.provider, model: body.provider?.model, capabilities: body.capabilities, reason: 'The local agent service is running, but its model provider is not configured.' };
+      : { available: false, provider: body.provider?.provider, model: body.provider?.model, capabilities: body.capabilities, reason: 'Nura is temporarily unavailable. Please try again later.' };
   } catch {
-    return { available: false, reason: 'The local agent service could not be reached.' };
+    return { available: false, reason: 'Nura couldn’t connect just now. Please try again shortly.' };
   }
 }
 
@@ -46,11 +48,11 @@ export async function clearLocalDemoProcessingData(): Promise<{ sources: number;
   try {
     response = await fetch(`${baseUrl}/v1/demo/profile`, { method: 'DELETE', headers: { accept: 'application/json' } });
   } catch {
-    throw new Error('Nura could not reach the local processing service. Its saved extraction data was not cleared.');
+    throw new Error('Nura couldn’t clear saved document details. Your existing information has not changed. Please try again.');
   }
   let body: { cleared?: { sources?: number; claims?: number; assertions?: number; activityEvents?: number }; message?: string } = {};
   try { body = await response.json() as typeof body; } catch { /* Keep the safe fallback below. */ }
-  if (!response.ok || !body.cleared) throw new Error(body.message || 'The local processing service could not clear its saved demo data.');
+  if (!response.ok || !body.cleared) throw new Error('Nura couldn’t clear the saved document details. Your existing information has not changed. Please try again.');
   return {
     sources: Number(body.cleared.sources) || 0,
     claims: Number(body.cleared.claims) || 0,
@@ -74,12 +76,13 @@ export function runNuraAgent(input: AgentRunInput, onEvent: (event: AgentEvent) 
       try {
         const value = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
         const event = { ...value, type: eventName || String(value.type ?? '') } as AgentEvent;
+        if (event.type === 'run_error') event.message = 'Nura couldn’t complete this answer. Your saved information has not changed. Please try again.';
         onEvent(event);
         if (event.type === 'run_finished') sawFinish = true;
         if (event.type === 'run_error') fail(event.message);
       } catch (error) {
-        if (error instanceof SyntaxError) { fail('Nura received an unreadable update from its agent service.'); return; }
-        fail(error instanceof Error ? error.message : 'Nura could not complete this run.');
+        if (error instanceof SyntaxError) { fail('Nura couldn’t complete this answer. Please try again.'); return; }
+        fail('Nura couldn’t complete this answer. Your saved information has not changed. Please try again.');
       }
       eventName = '';
       dataLines = [];
@@ -105,18 +108,16 @@ export function runNuraAgent(input: AgentRunInput, onEvent: (event: AgentEvent) 
       consume();
       if (finished) return;
       if (xhr.status < 200 || xhr.status >= 300) {
-        let message = `Nura’s agent service returned ${xhr.status}.`;
-        try { message = (JSON.parse(xhr.responseText) as { message?: string }).message || message; } catch { /* Keep the safe status message. */ }
-        fail(message);
+        fail('Nura couldn’t complete this answer. Your saved information has not changed. Please try again.');
         return;
       }
-      if (!sawFinish) { fail('The agent service ended before it completed the answer.'); return; }
+      if (!sawFinish) { fail('Nura couldn’t finish this answer. Your saved information has not changed. Please try again.'); return; }
       finished = true;
       resolve();
     };
-    xhr.onerror = () => fail('Nura could not reach the agent service. Check that the local backend is running.');
-    xhr.ontimeout = () => fail('This request took too long. Your saved records have not been changed.');
-    xhr.onabort = () => fail('This request was stopped.');
+    xhr.onerror = () => fail('Nura couldn’t connect. Check your connection and try again.');
+    xhr.ontimeout = () => fail('Nura is taking longer than expected. Your saved information has not changed. Please try again.');
+    xhr.onabort = () => fail('This request was cancelled. Your saved health information has not changed.');
     xhr.send(JSON.stringify(input));
   });
 }

@@ -4,7 +4,27 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { LocalDemoRepository } from './localDemoRepository.mjs';
-import { createCandidateClaim, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from '../contracts.mjs';
+import { createCandidateClaim, createDocumentContext, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from '../contracts.mjs';
+
+test('report metadata remains attached to its source across repository reloads', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nura-source-context-'));
+  try {
+    const repository = new LocalDemoRepository(directory);
+    const source = createSourceRecord({ displayName: 'sample-lab.pdf', mediaType: 'application/pdf', sizeBytes: 17, sha256: 'c'.repeat(64) });
+    await repository.createSource(source);
+    const documentContext = createDocumentContext({
+      documentType: 'Lipid Profile Serum Sample',
+      dates: [{ kind: 'collected_at', value: '21-Jan-25 21:16', page: 1, quote: 'Collected On: 21-Jan-25 21:16' }],
+      entities: [{ kind: 'analyzer', value: 'VITROS 5600', page: 1, quote: 'Analyzer: VITROS 5600' }],
+      notes: [{ kind: 'fasting_guidance', value: 'Report-wide instruction.', page: 1, quote: 'Report-wide instruction.' }],
+    });
+    await repository.setSourceState(source.id, 'candidate_review', { documentContext });
+    const reloaded = new LocalDemoRepository(directory);
+    assert.deepEqual((await reloaded.getSource(source.id)).documentContext, documentContext);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('clearing the local synthetic profile removes its sources, claims, accepted assertions and activity', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nura-repository-clear-'));
@@ -50,10 +70,12 @@ test('correcting an accepted extracted claim appends a linked version and preser
     const repository = new LocalDemoRepository(directory);
     const source = createSourceRecord({ displayName: 'sample-lab.pdf', mediaType: 'application/pdf', sizeBytes: 17, sha256: 'b'.repeat(64) });
     await repository.createSource(source);
-    const claim = createCandidateClaim({ sourceId: source.id, kind: 'lab_result', label: 'Sample marker', value: '4.0', unit: 'mmol/L', effectiveAt: '2026-09-12', confidence: 0.9, sourceLocation: { page: 2, quote: 'Sample marker 4.0 mmol/L' } });
+    const claim = createCandidateClaim({ sourceId: source.id, kind: 'lab_result', label: 'Sample marker', value: '4.0', unit: 'mmol/L', referenceRange: '3.5–5.0', method: 'Enzymatic', effectiveAt: '2026-09-12', confidence: 0.9, sourceLocation: { page: 2, quote: 'Sample marker 4.0 mmol/L; reference interval 3.5–5.0; enzymatic method' } });
     assert.ok(claim);
     await repository.saveCandidateClaims([claim]);
     const accepted = await repository.decideClaim(claim.id, { decision: 'accept' });
+    assert.equal(accepted.assertion.referenceRange, '3.5–5.0');
+    assert.equal(accepted.assertion.method, 'Enzymatic');
     const corrected = await repository.correctClaim(claim.id, {
       expectedAssertionId: accepted.assertion.id,
       editedValue: { label: 'Sample marker', value: '4.2', unit: 'mmol/L', effectiveAt: '2026-09-12' },
@@ -86,6 +108,59 @@ test('editing an extraction candidate for acceptance retains the original model 
     const reviewed = await repository.decideClaim(claim.id, { decision: 'edit', editedValue: { label: 'Sample marker', value: '4.0', unit: 'mmol/L' } });
     assert.equal(reviewed.claim.value, '4.0');
     assert.deepEqual(reviewed.claim.originalExtraction, { label: 'Sample marker', value: '40', unit: 'mmol/L', effectiveAt: null });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('retracting an accepted claim closes but preserves its sourced assertion and history', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nura-repository-retraction-'));
+  try {
+    const repository = new LocalDemoRepository(directory);
+    const source = createSourceRecord({ displayName: 'sample-lab.pdf', mediaType: 'application/pdf', sizeBytes: 17, sha256: 'd'.repeat(64) });
+    await repository.createSource(source);
+    const claim = createCandidateClaim({ sourceId: source.id, kind: 'condition', label: 'Fasting guidance', value: '10 hours before testing', confidence: 0.9, sourceLocation: { page: 1, quote: 'Lipid profiles are best obtained after 10 hours fasting.' } });
+    assert.ok(claim);
+    await repository.saveCandidateClaims([claim]);
+    const accepted = await repository.decideClaim(claim.id, { decision: 'accept' });
+
+    const result = await repository.retractClaim(claim.id, { expectedAssertionId: accepted.assertion.id, reason: 'not_personal' });
+
+    assert.equal(result.unchanged, false);
+    assert.equal(result.claim.evidenceState, 'user_retracted');
+    assert.equal(result.claim.retractionReason, 'not_personal');
+    assert.ok(result.claim.retractedAt);
+    assert.equal(result.previousAssertion.evidenceState, 'user_retracted');
+    assert.equal(result.previousAssertion.validUntil, result.claim.retractedAt);
+    assert.equal(result.previousAssertion.sourceId, source.id);
+    assert.equal((await repository.listAssertions(DEMO_PROFILE_ID)).length, 1);
+    assert.equal((await repository.getSource(source.id)).displayName, 'sample-lab.pdf');
+    const repeated = await repository.retractClaim(claim.id, { expectedAssertionId: accepted.assertion.id, reason: 'not_personal' });
+    assert.equal(repeated.unchanged, true);
+    assert.equal((await repository.listAssertions(DEMO_PROFILE_ID)).length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a stale profile assertion cannot be retracted by an old review', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nura-repository-stale-retraction-'));
+  try {
+    const repository = new LocalDemoRepository(directory);
+    const source = createSourceRecord({ displayName: 'sample-lab.pdf', mediaType: 'application/pdf', sizeBytes: 17, sha256: 'e'.repeat(64) });
+    await repository.createSource(source);
+    const claim = createCandidateClaim({ sourceId: source.id, kind: 'condition', label: 'Fasting guidance', value: '10 hours before testing', confidence: 0.9, sourceLocation: { page: 1, quote: 'Lipid profiles are best obtained after 10 hours fasting.' } });
+    assert.ok(claim);
+    await repository.saveCandidateClaims([claim]);
+    const accepted = await repository.decideClaim(claim.id, { decision: 'accept' });
+
+    await assert.rejects(
+      repository.retractClaim(claim.id, { expectedAssertionId: 'older-assertion', reason: 'not_personal' }),
+      /changed since you opened/,
+    );
+    assert.equal((await repository.getClaim(claim.id)).evidenceState, 'user_confirmed');
+    assert.equal((await repository.listAssertions(DEMO_PROFILE_ID))[0].validUntil, null);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -4,8 +4,9 @@ import { createServer } from 'node:http';
 import { getLanguageModelStatus, extractDocumentClaims, searchHealthSources } from './adapters/index.mjs';
 import { runAgent } from './agent/orchestrator.mjs';
 import { sanitizeRunBody } from './agent/context.mjs';
+import { addHealthFeedCandidate, uniqueHealthFeedItems } from './agent/feedResults.mjs';
 import { localDemoRepository } from './adapters/localDemoRepository.mjs';
-import { createCandidateClaim, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from './contracts.mjs';
+import { createCandidateClaim, createDocumentContext, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from './contracts.mjs';
 
 const host = process.env.NURA_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.NURA_AGENT_PORT || 4175);
@@ -150,19 +151,21 @@ async function handleExtraction(request, response) {
     emit('source_received', { sourceId, sha256, sizeBytes: bytes.length, storage: 'device_original_only' });
     await localDemoRepository.setSourceState(sourceId, 'extracting');
     emit('extraction_started', { sourceId, provider: 'openai_responses', realProviderCall: true });
-    const rawClaims = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: purposeHeader, signal: abortController.signal });
+    const extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: purposeHeader, signal: abortController.signal });
     if (abortController.signal.aborted) {
       await localDemoRepository.setSourceState(sourceId, 'failed');
       emit('intake_cancelled', { sourceId, state: 'failed' });
       return;
     }
-    const claims = rawClaims.map((claim) => createCandidateClaim({
+    const claims = extraction.claims.map((claim) => createCandidateClaim({
       sourceId, kind: claim.kind, label: claim.label, value: claim.value, unit: claim.unit,
+      referenceRange: claim.referenceRange, method: claim.method,
       effectiveAt: claim.effectiveAt, confidence: claim.confidence,
       sourceLocation: { page: claim.page, quote: claim.quote, locationConfidence: 'model_suggested' },
     })).filter(Boolean);
+    const documentContext = createDocumentContext(extraction.documentContext);
     await localDemoRepository.saveCandidateClaims(claims);
-    await localDemoRepository.setSourceState(sourceId, claims.length ? 'candidate_review' : 'extracted_empty');
+    await localDemoRepository.setSourceState(sourceId, claims.length ? 'candidate_review' : 'extracted_empty', { documentContext });
     emit('extraction_completed', { sourceId, candidateCount: claims.length, state: claims.length ? 'candidate_review' : 'extracted_empty' });
     if (claims.length) emit('claims_ready_for_review', { sourceId, claimIds: claims.map((claim) => claim.id), count: claims.length });
     emit('intake_completed', { sourceId, state: claims.length ? 'candidate_review' : 'extracted_empty' });
@@ -228,6 +231,7 @@ async function handleHealthFeed(request, response) {
   emit('run_started', { runId });
   try {
     const byUrl = new Map();
+    const byTitle = new Map();
     const briefs = [];
     for (const [index, topic] of topics.entries()) {
       if (abortController.signal.aborted) throw new Error('Search stopped.');
@@ -239,28 +243,19 @@ async function handleHealthFeed(request, response) {
         let url;
         try { url = new URL(source.url); } catch { continue; }
         if (url.protocol !== 'https:') continue;
-        const id = createHash('sha256').update(url.href).digest('hex').slice(0, 20);
-        const existing = byUrl.get(url.href);
-        if (existing) {
-          if (!existing.topic.includes(topic.label)) existing.topic += ` · ${topic.label}`;
-          continue;
-        }
-        byUrl.set(url.href, {
-          id,
+        const resultItem = addHealthFeedCandidate({
+          byUrl, byTitle, source, topic: topic.label,
           title: healthSourceTitle(source.title, url.pathname, topic.label),
           detail: String(source.detail || '').replace(/\s+/g, ' ').slice(0, 520) || `Open the publisher’s page for its guidance on ${topic.label}.`,
-          url: url.href,
-          publisher: url.hostname.replace(/^www\./, ''),
-          topic: topic.label,
           retrievedAt: new Date().toISOString(),
         });
-        sourceCount += 1;
+        if (resultItem.added) sourceCount += 1;
       }
-      const topicSources = [...byUrl.values()].filter((item) => item.topic.includes(topic.label));
+      const topicSources = uniqueHealthFeedItems(byUrl).filter((item) => item.topic.split(' · ').includes(topic.label));
       briefs.push({ id: topic.id, topic: topic.label, summary: cleanHealthSummary(result.summary), sourceIds: topicSources.map((item) => item.id) });
       emit('trace', { id: activityId, label: 'Searching trusted health sources', status: 'complete', detail: `Found ${sourceCount} new source${sourceCount === 1 ? '' : 's'} for ${topic.label}` });
     }
-    const items = [...byUrl.values()].slice(0, 12);
+    const items = uniqueHealthFeedItems(byUrl).slice(0, 12);
     emit('feed_items', { items, briefs });
     emit('run_finished', { runId });
   } catch {
@@ -357,6 +352,33 @@ const server = createServer(async (request, response) => {
       const message = error instanceof Error ? error.message : 'The correction could not be saved.';
       const conflict = /changed since you opened|current accepted version is unavailable/i.test(message);
       json(response, conflict ? 409 : 400, { error: conflict ? 'stale_version' : 'invalid_correction', message });
+    }
+    return;
+  }
+
+  const retractionMatch = request.method === 'POST' && url.pathname.match(/^\/v1\/intake\/claims\/([a-zA-Z0-9-]+)\/retraction$/);
+  if (retractionMatch) {
+    if (!DEMO_INTAKE_ENABLED) { json(response, 404, { error: 'not_found' }); return; }
+    if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
+    let body;
+    try { body = await readBody(request); } catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
+    const existing = await localDemoRepository.getClaim(retractionMatch[1]);
+    if (!existing || existing.profileId !== DEMO_PROFILE_ID) { json(response, 404, { error: 'claim_not_found' }); return; }
+    try {
+      const result = await localDemoRepository.retractClaim(existing.id, body);
+      if (!result || !result.previousAssertion) { json(response, 409, { error: 'retraction_unavailable', message: 'The accepted source version could not be found.' }); return; }
+      if (!result.unchanged) {
+        await localDemoRepository.appendRunEvent(createRunEvent({
+          runId: `retraction-${existing.id}`, sequence: 1, type: 'claim.retracted',
+          stage: 'claim_review', status: 'complete', displayLabel: 'You removed a detail from the active profile',
+          refs: [{ kind: 'source', id: result.claim.sourceId }, { kind: 'assertion', id: result.previousAssertion.id }],
+        }));
+      }
+      json(response, 200, { mode: 'local_demo_synthetic_only', ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The detail could not be removed from the active profile.';
+      const conflict = /changed since you opened|current accepted version is unavailable/i.test(message);
+      json(response, conflict ? 409 : 400, { error: conflict ? 'stale_version' : 'invalid_retraction', message });
     }
     return;
   }

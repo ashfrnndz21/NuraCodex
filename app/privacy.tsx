@@ -52,7 +52,7 @@ export default function Privacy() {
     {
       id: 'files', title: 'Health records and policies', count: assets.length,
       summary: Platform.OS === 'web' ? 'Sample files and files selected in this tab.' : 'Original file copies saved inside the app on this device.',
-      details: assets.length ? assets.map((asset) => <RecordLine key={asset.id} title={asset.name} value={`${asset.kind.toUpperCase()} · ${asset.purpose ?? 'medical'}`} source={`${asset.serverSourceId ? 'Processed by the local development service' : 'Not sent for extraction'} · added ${new Date(asset.addedAt).toLocaleDateString()}`} />) : <Text style={styles.empty}>No files saved.</Text>,
+      details: assets.length ? assets.map((asset) => <RecordLine key={asset.id} title={asset.name} value={`${asset.kind.toUpperCase()} · ${asset.purpose ?? 'medical'}`} source={`${asset.serverSourceId ? 'Reviewed by Nura' : 'Not sent for review'} · added ${new Date(asset.addedAt).toLocaleDateString()}`} />) : <Text style={styles.empty}>No files saved.</Text>,
     },
     {
       id: 'treatments', title: 'Medicines and treatment', count: treatments.length,
@@ -97,10 +97,10 @@ export default function Privacy() {
     try {
       if (confirmAction === 'processor') {
         const removed = await clearLocalDemoProcessingData();
-        setNotice(`Removed ${removed.sources} source${removed.sources === 1 ? '' : 's'}, ${removed.claims} extracted claim${removed.claims === 1 ? '' : 's'}, and ${removed.assertions} accepted assertion${removed.assertions === 1 ? '' : 's'} from the local processing repository.`);
+        setNotice(`Cleared ${removed.sources} saved file detail${removed.sources === 1 ? '' : 's'}, ${removed.claims} suggested detail${removed.claims === 1 ? '' : 's'} and ${removed.assertions} approved profile entr${removed.assertions === 1 ? 'y' : 'ies'} from Nura’s preview service.`);
       } else {
         const result = await clearAllLocalData();
-        setNotice(result.fileCleanupFailed ? 'Nura cleared the saved profile and database records, but could not remove one or more local file copies. Try again to retry file cleanup.' : Platform.OS === 'web' ? 'Cleared the data in this browser tab. Refreshing starts a fresh synthetic sample session.' : 'Cleared Nura profile data, records, conversations and saved file copies from this device.');
+        setNotice(result.fileCleanupFailed ? 'Your profile and records were cleared, but Nura couldn’t remove every saved file. Try again to finish clearing your files.' : 'Your profile, records, conversations and saved file copies have been cleared from this device.');
       }
       setConfirmAction(null);
     } catch (error) {
@@ -108,7 +108,7 @@ export default function Privacy() {
     } finally { setBusy(false); }
   }
 
-  const confirmTitle = confirmAction === 'processor' ? 'Clear processing-service data?' : 'Clear Nura data from this device?';
+  const confirmTitle = confirmAction === 'processor' ? 'Clear document review data?' : 'Clear Nura data from this device?';
   return <View style={styles.page}>
     <ScrollView contentContainerStyle={styles.content}>
       <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.back}><Text style={styles.backText}>‹  Profile</Text></Pressable>
@@ -117,8 +117,8 @@ export default function Privacy() {
       <Text style={styles.intro}>See what Nura holds, where it lives, and what happens when you ask it to do something.</Text>
 
       <View style={styles.storageCard}>
-        <View style={styles.storageHead}><View style={styles.storageMark}><Text style={styles.storageMarkText}>i</Text></View><Text style={styles.storageTitle}>{Platform.OS === 'web' ? 'Browser demo · sample data' : 'Stored on this device'}</Text></View>
-        <Text style={styles.storageCopy}>{Platform.OS === 'web' ? 'This preview starts with synthetic records. Changes you make live in this tab and clear on refresh. Please do not enter real health or contact information.' : 'Nura saves profile and health records in an encrypted local database. Original file copies live inside the app on this device. This development build does not sync an account to cloud storage.'}</Text>
+        <View style={styles.storageHead}><View style={styles.storageMark}><Text style={styles.storageMarkText}>i</Text></View><Text style={styles.storageTitle}>{Platform.OS === 'web' ? 'Preview mode · fictional sample data' : 'Stored on this device'}</Text></View>
+        <Text style={styles.storageCopy}>{Platform.OS === 'web' ? 'This preview uses fictional sample records. Changes and files you add stay in this browser, even after refresh, until you clear Nura data. This is not a personal Nura account. Please use fictional details and documents only.' : 'Your profile and health records are stored on this device. Original file copies stay inside Nura. This preview does not sync to an online account.'}</Text>
       </View>
 
       <View style={styles.sectionHead}><View><Label>DATA INVENTORY</Label><Text style={styles.sectionTitle}>What Nura has right now</Text></View><Text style={styles.total}>{rows.reduce((sum, row) => sum + row.count, 0)}</Text></View>
@@ -133,35 +133,35 @@ export default function Privacy() {
       <View style={styles.sectionHead}><View><Label>HOW IT IS USED</Label><Text style={styles.sectionTitle}>Before Nura uses your context</Text></View></View>
       <Surface style={styles.explainer}>
         <Text style={styles.explainerTitle}>Ask Nura and health searches</Text>
-        <Text style={styles.explainerBody}>Each run shows the information scope before you consent. Ask uses the context you select. Health searches use the health areas you select. In this development build, an approved request can be sent from the local agent service to its configured AI provider. Provider retention is outside this app’s control.</Text>
-        <Text style={styles.explainerFoot}>There is no durable consent-history screen or cloud account control yet.</Text>
+        <Text style={styles.explainerBody}>Before each answer, you choose which details Nura can use. When you continue, your question and selected details are sent to Nura’s AI service to prepare a response. Its privacy practices apply to each request.</Text>
+        <Text style={styles.explainerFoot}>Your choice is made for each request. Online accounts and cloud sync aren’t available in this preview.</Text>
       </Surface>
 
       <View style={styles.sectionHead}><View><Label>YOUR CONTROL</Label><Text style={styles.sectionTitle}>Clear stored information</Text></View></View>
       {storageError ? <Text style={styles.warning}>{storageError}</Text> : null}
       {notice ? <View accessibilityLiveRegion="polite" style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View> : null}
       <Pressable accessibilityRole="button" disabled={!ready || busy} onPress={() => { setConfirmError(''); setConfirmAction('device'); }} style={({ pressed }) => [styles.deleteButton, (!ready || busy) && styles.disabled, pressed && styles.pressed]}>
-        <Text style={styles.deleteTitle}>{Platform.OS === 'web' ? 'Clear this browser session' : 'Clear Nura data on this device'}</Text>
+        <Text style={styles.deleteTitle}>{Platform.OS === 'web' ? 'Clear Nura data in this browser' : 'Clear Nura data on this device'}</Text>
         <Text style={styles.deleteSub}>Profile · records · conversations · saved file copies</Text>
       </Pressable>
-      <Text style={styles.scopeNote}>{Platform.OS === 'web' ? 'A refresh starts a new synthetic sample session.' : 'This does not remove files exported elsewhere or guarantee forensic secure erasure.'}</Text>
+      <Text style={styles.scopeNote}>Files you saved or shared outside Nura may need to be removed separately.</Text>
 
       <View style={styles.processorCard}>
-        <Label>SEPARATE LOCAL PROCESSING SERVICE</Label>
-        <Text style={styles.processorCopy}>Document extraction can save source metadata, candidate claims and accepted assertions in the local development repository. This is separate from the app database.</Text>
+        <Label>DOCUMENT REVIEW DATA</Label>
+        <Text style={styles.processorCopy}>Nura keeps document details, suggestions and your review decisions so you can return to them. This review history is stored separately from your profile.</Text>
         <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setConfirmError(''); setConfirmAction('processor'); }} style={({ pressed }) => [styles.processorButton, busy && styles.disabled, pressed && styles.pressed]}>
-          <Text style={styles.processorButtonText}>Clear local processing data</Text>
+          <Text style={styles.processorButtonText}>Clear document review data</Text>
         </Pressable>
-        <Text style={styles.scopeNote}>This clears the synthetic repository for this local development service. It does not delete data retained by an external AI provider.</Text>
+        <Text style={styles.scopeNote}>This also removes saved source details and review decisions. It can’t remove information the AI service may retain.</Text>
       </View>
-      <Text style={styles.footer}>Family profiles, account-level consent history, cloud sync and account deletion are not available in this build.</Text>
+      <Text style={styles.footer}>Family sharing, online accounts, consent history and account deletion aren’t available in this preview.</Text>
     </ScrollView>
 
     <Modal transparent visible={confirmAction !== null} animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => { if (!busy) setConfirmAction(null); }}>
       <View style={styles.modalBackdrop}><View style={styles.modalCard}>
         <Label>CONFIRM DELETION</Label>
         <Text style={styles.modalTitle}>{confirmTitle}</Text>
-        <Text style={styles.modalCopy}>{confirmAction === 'processor' ? 'This removes source metadata, extracted claims, accepted assertions and activity summaries from the local Nura development repository. It does not reach an external AI provider.' : 'This removes profile details, selected areas, health records, treatment and visit details, links, saved questions, Ask history and app-stored files from this device or browser tab.'}</Text>
+        <Text style={styles.modalCopy}>{confirmAction === 'processor' ? 'This removes saved document details, suggested information, your review decisions and activity from Nura’s preview service. It doesn’t remove information the AI service may retain.' : 'This removes profile details, selected areas, health records, treatment and visit details, links, saved questions, Ask history and file copies saved by Nura on this device.'}</Text>
         {confirmError ? <Text accessibilityLiveRegion="assertive" style={styles.warning}>{confirmError}</Text> : null}
         <View style={styles.modalActions}>
           <Pressable accessibilityRole="button" disabled={busy} onPress={() => setConfirmAction(null)} style={styles.cancelButton}><Text style={styles.cancelText}>Keep my data</Text></Pressable>

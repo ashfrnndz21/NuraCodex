@@ -1,11 +1,18 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
+import { browserAssetId, readBrowserAsset } from '../state/browserAssetStore.mjs';
+import { sourceSha256Matches } from './sourceIdentity.mjs';
 
-export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only' };
+export type DocumentContextEntry = { kind: string; value: string; page: number | null; quote: string | null };
+export type DocumentContext = { documentType: string | null; dates: DocumentContextEntry[]; entities: DocumentContextEntry[]; notes: DocumentContextEntry[] };
+export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only'; documentContext?: DocumentContext | null };
 export type CandidateClaim = {
   id: string; sourceId: string; kind: string; label: string; value: string; unit: string | null;
+  referenceRange?: string | null; method?: string | null;
   effectiveAt: string | null; confidence: number | null; sourceLocation: { page: number | null; quote: string | null };
-  evidenceState: string; acceptedAssertionId: string | null;
+  evidenceState: 'candidate' | 'needs_review' | 'user_confirmed' | 'rejected' | 'superseded' | 'user_retracted'; acceptedAssertionId: string | null;
+  retractedAt?: string | null; retractionReason?: 'not_personal' | null;
   originalExtraction?: { label: string; value: string; unit: string | null; effectiveAt: string | null };
   revisionHistory?: { assertionId: string; version: number; label: string; value: string; unit: string | null; effectiveAt: string | null; recordedAt: string }[];
 };
@@ -18,6 +25,35 @@ function decodeBase64(value: string): Uint8Array {
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
 }
+async function readAssetBytes(uri: string): Promise<Uint8Array> {
+  if (Platform.OS === 'web') {
+    const storedId = browserAssetId(uri);
+    const storedBlob = storedId ? await readBrowserAsset(storedId) : null;
+    if (storedId && !storedBlob) throw new Error('The saved copy of this file is missing from browser storage. Choose it again to continue.');
+    const localFile = storedId ? null : await fetch(uri);
+    if (localFile && !localFile.ok) throw new Error('The selected local file could not be opened.');
+    const blob = storedBlob ?? await localFile?.blob();
+    if (!blob) throw new Error('The selected local file could not be opened.');
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+  return decodeBase64(base64);
+}
+async function sha256Bytes(bytes: Uint8Array): Promise<string> {
+  const ownedBytes = new Uint8Array(bytes.byteLength);
+  ownedBytes.set(bytes);
+  const digest = new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, ownedBytes));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+export async function sourceMatchesAsset(asset: { uri: string }, source: LocalSource): Promise<boolean> {
+  try {
+    const bytes = await readAssetBytes(asset.uri);
+    if (bytes.byteLength !== source.sizeBytes) return false;
+    return sourceSha256Matches(source.sha256, await sha256Bytes(bytes));
+  } catch {
+    return false;
+  }
+}
 export type IntakeActivity = { id: string; label: string; status: 'started' | 'progress' | 'complete' | 'failed' | 'cancelled' };
 export class IntakeCancelledError extends Error {
   constructor() {
@@ -27,10 +63,10 @@ export class IntakeCancelledError extends Error {
 }
 function activityFromEvent(type: string, data: Record<string, unknown>, sequence: number): IntakeActivity | null {
   const labels: Record<string, string> = {
-    intake_started: 'Preparing the selected file', source_received: 'File received by the local demo',
-    duplicate_detected: 'Exact duplicate found', extraction_started: 'Reading the selected file with the configured provider',
-    extraction_completed: 'Extraction finished', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Extracted'} candidate details are ready for review`,
-    intake_completed: 'Source is ready', intake_cancelled: 'Processing stopped', run_error: 'Processing could not complete',
+    intake_started: 'Preparing your file', source_received: 'File ready for review',
+    duplicate_detected: 'This file is already in your records', extraction_started: 'Reading your document',
+    extraction_completed: 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} details are ready for your review`,
+    intake_completed: 'Your file is ready', intake_cancelled: 'Reading stopped at your request', run_error: 'Nura couldn’t read this file. Check it and try again.',
   };
   const label = labels[type];
   if (!label) return null;
@@ -51,16 +87,9 @@ export async function extractPickedFile(asset: { uri: string; name: string; mime
   const inferred = ext === 'pdf' ? 'application/pdf' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : '';
   const declared = (asset.mimeType || '').toLowerCase();
   const mimeType = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(declared) ? declared : inferred;
-  if (!['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) throw new Error('The local demo reads PDF, JPEG, PNG and WEBP files only. Video review is not connected yet.');
-  let bytes: Uint8Array;
-  if (Platform.OS === 'web') {
-    const localFile = await fetch(asset.uri);
-    if (!localFile.ok) throw new Error('The selected local file could not be opened.');
-    bytes = new Uint8Array(await (await localFile.blob()).arrayBuffer());
-  } else {
-    const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
-    bytes = decodeBase64(base64);
-  }
+  if (!['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) throw new Error('Nura can read PDF files and JPG, PNG or WebP photos. Video review isn’t available yet.');
+  const bytes = await readAssetBytes(asset.uri);
+  const selectedFileSha256 = await sha256Bytes(bytes);
   if (signal?.aborted) throw new IntakeCancelledError();
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -82,7 +111,7 @@ export async function extractPickedFile(asset: { uri: string; name: string; mime
         if (eventName === 'intake_completed' && typeof data.sourceId === 'string') { completedSource = data.sourceId; duplicate = data.state === 'duplicate_exact'; }
         if (eventName === 'run_error') failed = true;
         if (eventName === 'intake_cancelled') cancelled = true;
-        if (eventName === 'run_error' && typeof data.message === 'string') failureMessage = data.message;
+        if (eventName === 'run_error') failureMessage = 'Nura couldn’t read this file. Please check it and try again.';
       } catch { failed = true; }
       eventName = ''; dataLines = [];
     };
@@ -109,6 +138,10 @@ export async function extractPickedFile(asset: { uri: string; name: string; mime
       try {
         const result = await getSourceClaims(completedSource);
         if (settled) return;
+        if (result.source.sizeBytes !== bytes.byteLength || !sourceSha256Matches(result.source.sha256, selectedFileSha256)) {
+          fail(new Error('The source returned for this file did not match its contents. No extracted details were shown or added.'));
+          return;
+        }
         settled = true;
         resolve({ ...result, duplicate });
       } catch (error) { fail(error instanceof Error ? error : new Error('The extracted source could not be opened.')); }
@@ -153,4 +186,14 @@ export async function correctCandidate(claimId: string, expectedAssertionId: str
   const body = await response.json() as { message?: string; claim?: CandidateClaim; previousAssertion?: { id: string; version: number }; assertion?: { id: string; version: number; supersedes: string } };
   if (!response.ok || !body.claim || !body.previousAssertion || !body.assertion) throw new Error(body.message || 'Nura could not save a new version of this detail.');
   return { claim: body.claim, previousAssertion: body.previousAssertion, assertion: body.assertion };
+}
+
+export async function retractAcceptedCandidate(claimId: string, expectedAssertionId: string): Promise<{ claim: CandidateClaim; previousAssertion: { id: string; validUntil: string | null }; unchanged: boolean }> {
+  const response = await fetch(`${baseUrl}/v1/intake/claims/${encodeURIComponent(claimId)}/retraction`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ expectedAssertionId, reason: 'not_personal' }),
+  });
+  const body = await response.json() as { message?: string; claim?: CandidateClaim; previousAssertion?: { id: string; validUntil: string | null }; unchanged?: boolean };
+  if (!response.ok || !body.claim || !body.previousAssertion) throw new Error(body.message || 'Nura could not remove this detail from the active profile.');
+  return { claim: body.claim, previousAssertion: body.previousAssertion, unchanged: body.unchanged ?? false };
 }

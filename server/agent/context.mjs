@@ -1,8 +1,39 @@
 import { randomUUID } from 'node:crypto';
 const MAX_ITEMS = 100;
 const LINK_RELATIONS = new Set(['same_source', 'happened_around', 'measured_during', 'treatment_for', 'related_by_me', 'user_note']);
+const SOURCE_CONTEXT_KINDS = {
+  dates: new Set(['report_date', 'collected_at', 'received_at', 'approved_at', 'issued_at', 'effective_period']),
+  entities: new Set(['laboratory', 'provider', 'insurer', 'analyzer', 'technology']),
+  notes: new Set(['fasting_guidance', 'clinical_significance', 'clinical_decision_limits', 'remarks', 'sample_notice', 'other']),
+};
 const STOP_WORDS = new Set(['about', 'after', 'again', 'also', 'and', 'are', 'based', 'been', 'before', 'between', 'can', 'could', 'does', 'from', 'have', 'here', 'into', 'just', 'like', 'more', 'most', 'my', 'near', 'need', 'not', 'only', 'other', 'please', 'should', 'some', 'that', 'the', 'their', 'them', 'then', 'there', 'these', 'this', 'those', 'through', 'what', 'when', 'where', 'which', 'with', 'would', 'your']);
 const cleanText = (value, limit = 500) => typeof value === 'string' ? value.trim().slice(0, limit) : '';
+
+function sanitizeContextEntries(items, allowedKinds, maxItems, maxValueLength) {
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((item) => {
+    const kind = cleanText(item?.kind, 48).toLowerCase();
+    const value = cleanText(item?.value, maxValueLength);
+    if (!allowedKinds.has(kind) || !value) return [];
+    const page = Number.isInteger(item?.page) && item.page > 0 ? item.page : null;
+    return [{ kind, value, page, quote: cleanText(item?.quote, 600) }];
+  }).slice(0, maxItems);
+}
+
+function sanitizeDocumentSources(items) {
+  if (!Array.isArray(items)) return [];
+  return items.slice(0, 5).flatMap((item) => {
+    const id = cleanText(item?.id, 96);
+    const title = cleanText(item?.title, 180);
+    if (!/^[a-zA-Z0-9-]{1,96}$/.test(id) || !title) return [];
+    const documentType = cleanText(item?.documentType, 120);
+    const dates = sanitizeContextEntries(item?.dates, SOURCE_CONTEXT_KINDS.dates, 12, 120);
+    const entities = sanitizeContextEntries(item?.entities, SOURCE_CONTEXT_KINDS.entities, 12, 180);
+    const notes = sanitizeContextEntries(item?.notes, SOURCE_CONTEXT_KINDS.notes, 16, 1200);
+    if (!documentType && !dates.length && !entities.length && !notes.length) return [];
+    return [{ id, title, documentType, dates, entities, notes }];
+  });
+}
 
 export function sanitizeRunBody(input) {
   if (!input || input.consentConfirmed !== true) throw new Error('Please confirm before sharing your selected health details for this answer.');
@@ -32,9 +63,10 @@ export function sanitizeRunBody(input) {
       status: action?.status === 'done' ? 'done' : action?.status === 'open' ? 'open' : '', source: cleanText(action?.source, 120),
     })).filter((action) => action.id && action.title && action.status) : [],
   })).filter((visit) => visit.id && visit.status && (visit.purpose || visit.outcome || visit.followUp || visit.questions.length || visit.followUpActions.length)) : [];
+  const documentSources = mode === 'symptom_support' || input.sourceContextConsent !== true ? [] : sanitizeDocumentSources(context.documentSources);
   const history = mode === 'symptom_support' ? [] : Array.isArray(input.history) ? input.history.slice(-8).map((message) => ({ role: message?.role === 'assistant' ? 'assistant' : 'user', content: cleanText(message?.content, 2000) })).filter((message) => message.content) : [];
   const runId = typeof input.runId === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(input.runId) ? input.runId : randomUUID();
-  return { runId, mode, question, context: { facts, topics, links, treatments, visits }, history, externalSearchConsent: input.externalSearchConsent === true, treatmentContextConsent: input.treatmentContextConsent === true && mode !== 'symptom_support' && treatments.length > 0, visitContextConsent: input.visitContextConsent === true && mode !== 'symptom_support' && visits.length > 0 };
+  return { runId, mode, question, context: { facts, topics, links, treatments, visits, documentSources }, history, externalSearchConsent: input.externalSearchConsent === true, treatmentContextConsent: input.treatmentContextConsent === true && mode !== 'symptom_support' && treatments.length > 0, visitContextConsent: input.visitContextConsent === true && mode !== 'symptom_support' && visits.length > 0, sourceContextConsent: input.sourceContextConsent === true && mode !== 'symptom_support' && documentSources.length > 0 };
 }
 
 export function classifyIntent(question) {
@@ -50,7 +82,7 @@ export function classifyIntent(question) {
 }
 
 const tokens = (value) => cleanText(value, 2000).toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => word.length > 2 && !STOP_WORDS.has(word)) ?? [];
-const toolSearch = { type: 'function', name: 'search_profile', description: 'Search only the health facts, selected health areas, user-authored links, treatment records, and visit history explicitly supplied for this run. Do not infer diagnoses or medical relationships.', strict: true, parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: false } };
+const toolSearch = { type: 'function', name: 'search_profile', description: 'Search only the health facts, selected health areas, user-authored links, treatment records, visit history, and explicitly selected source-document details supplied for this run. Do not infer diagnoses or medical relationships.', strict: true, parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: false } };
 const toolGet = { type: 'function', name: 'get_saved_record', description: 'Open one exact record that was already returned by search_profile. Use it when its full value or source needs closer inspection.', strict: true, parameters: { type: 'object', properties: { recordId: { type: 'string' } }, required: ['recordId'], additionalProperties: false } };
 export const healthSearchTool = { type: 'function', name: 'search_health_sources', description: 'Search general health education from an allowlisted set of trusted public sources. Only available when the user explicitly opted into web search for this run. Search a generic topic, never a person’s identity or personal record.', strict: true, parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: false } };
 export const profileTools = [toolSearch, toolGet];
@@ -92,6 +124,19 @@ export function createEvidenceTools(context) {
       ].filter(Boolean).join('. '),
       date: visit.appointmentAt, source: visit.source || 'Added by you', status: visit.status, kind: 'care_visit', category: 'Care visit',
     })),
+    ...(context.documentSources ?? []).flatMap((document) => {
+      const entries = [
+        ...(document.documentType ? [{ kind: 'document type', value: document.documentType, page: null, quote: '' }] : []),
+        ...document.dates.map((entry) => ({ ...entry, kind: entry.kind.replaceAll('_', ' ') })),
+        ...document.entities.map((entry) => ({ ...entry, kind: entry.kind.replaceAll('_', ' ') })),
+        ...document.notes.map((entry) => ({ ...entry, kind: entry.kind.replaceAll('_', ' ') })),
+      ];
+      return entries.map((entry, index) => ({
+        id: `document:${document.id}:${index}`, title: `${entry.kind}: ${document.title}`,
+        detail: [entry.value, entry.quote && `Quoted from source: “${entry.quote}”`, entry.page && `Page ${entry.page}`].filter(Boolean).join('. '),
+        date: '', source: document.title, status: 'source_detail_extracted', kind: 'document_context', category: 'Source details',
+      }));
+    }),
   ];
   const byId = new Map(allRecords.map((record) => [record.id, record]));
   function searchProfile(query) {

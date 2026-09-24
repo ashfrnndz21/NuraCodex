@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -172,7 +172,7 @@ function MapNode({
   count: number;
   reducedMotion: boolean;
 }) {
-  const enter = useMemo(() => new Animated.Value(reducedMotion ? 1 : 0.72), [reducedMotion]);
+  const enter = useMemo(() => new Animated.Value(0.72), []);
   useEffect(() => {
     enter.setValue(reducedMotion ? 1 : 0.72);
     if (!reducedMotion) Animated.spring(enter, { toValue: 1, speed: 22, bounciness: 5, useNativeDriver: true }).start();
@@ -269,13 +269,7 @@ function LiveProfileMap({
       </View>
       {signals.length > 0 ? (
         <View style={styles.liveSignalRow}>
-          {signals.map((signal) => (
-            <View key={signal.label} style={[styles.liveSignal, signal.complete && { borderColor: signal.color + '99', backgroundColor: signal.color + '1A' }]}>
-              <View style={[styles.liveSignalDot, { backgroundColor: signal.complete ? signal.color : 'rgba(255,255,255,.24)' }]} />
-              <Text style={styles.liveSignalLabel}>{signal.label}</Text>
-              <Text numberOfLines={1} style={[styles.liveSignalValue, signal.complete && styles.liveSignalValueComplete]}>{signal.value}</Text>
-            </View>
-          ))}
+          {signals.map((signal, index) => <LiveMapSignalChip key={signal.label} signal={signal} index={index} reducedMotion={reducedMotion} />)}
         </View>
       ) : null}
       <View style={styles.mapStats}>
@@ -363,6 +357,81 @@ function FocusBubble({
   );
 }
 
+function useLiveSignalMotion(signal: LiveSignal, index: number, reducedMotion: boolean) {
+  const enterOpacity = useMemo(() => new Animated.Value(0), []);
+  const enterY = useMemo(() => new Animated.Value(5), []);
+  const scale = useMemo(() => new Animated.Value(1), []);
+  const glow = useMemo(() => new Animated.Value(0), []);
+  const valueOpacity = useMemo(() => new Animated.Value(1), []);
+  const valueY = useMemo(() => new Animated.Value(0), []);
+  const previous = useRef({ complete: signal.complete, value: signal.value });
+
+  useEffect(() => {
+    if (reducedMotion) {
+      enterOpacity.setValue(1);
+      enterY.setValue(0);
+      return;
+    }
+    enterOpacity.setValue(0);
+    enterY.setValue(5);
+    const entrance = Animated.parallel([
+      Animated.timing(enterOpacity, { toValue: 1, delay: index * motion.stagger.dense, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(enterY, { toValue: 0, delay: index * motion.stagger.dense, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+    ]);
+    entrance.start();
+    return () => entrance.stop();
+  }, [enterOpacity, enterY, index, reducedMotion]);
+
+  useEffect(() => {
+    const before = previous.current;
+    const valueChanged = before.value !== signal.value;
+    const meaningfulUpdate = signal.complete && (!before.complete || (valueChanged && signal.label !== 'YOU' && signal.label !== 'TODAY'));
+    previous.current = { complete: signal.complete, value: signal.value };
+    if (!meaningfulUpdate) return;
+    if (reducedMotion) {
+      scale.setValue(1);
+      glow.setValue(0);
+      valueOpacity.setValue(1);
+      valueY.setValue(0);
+      return;
+    }
+
+    glow.setValue(0.2);
+    scale.setValue(1);
+    valueOpacity.setValue(0.42);
+    valueY.setValue(3);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(scale, { toValue: 1.035, speed: 28, bounciness: 3, useNativeDriver: true }),
+        Animated.spring(scale, { toValue: 1, speed: 30, bounciness: 2, useNativeDriver: true }),
+      ]),
+      Animated.timing(glow, { toValue: 0, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.parallel([
+        Animated.timing(valueOpacity, { toValue: 1, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+        Animated.timing(valueY, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, [glow, reducedMotion, scale, signal.complete, signal.label, signal.value, valueOpacity, valueY]);
+
+  return {
+    container: { opacity: enterOpacity, transform: [{ translateY: enterY }, { scale }] },
+    glow: { opacity: glow },
+    value: { opacity: valueOpacity, transform: [{ translateY: valueY }] },
+  };
+}
+
+function LiveMapSignalChip({ signal, index, reducedMotion }: { signal: LiveSignal; index: number; reducedMotion: boolean }) {
+  const animated = useLiveSignalMotion(signal, index, reducedMotion);
+  return (
+    <Animated.View style={[styles.liveSignal, signal.complete && { borderColor: signal.color + '99', backgroundColor: signal.color + '1A' }, animated.container]}>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.liveSignalGlow, { backgroundColor: signal.color }, animated.glow]} />
+      <View style={[styles.liveSignalDot, { backgroundColor: signal.complete ? signal.color : 'rgba(255,255,255,.24)' }]} />
+      <Text style={styles.liveSignalLabel}>{signal.label}</Text>
+      <Animated.Text numberOfLines={1} style={[styles.liveSignalValue, signal.complete && styles.liveSignalValueComplete, animated.value]}>{signal.value}</Animated.Text>
+    </Animated.View>
+  );
+}
+
 function IdentityLiveStrip({ signals, reducedMotion }: { signals: LiveSignal[]; reducedMotion: boolean }) {
   return (
     <View style={styles.identityRibbon} accessibilityLabel="Your live profile preview">
@@ -372,29 +441,21 @@ function IdentityLiveStrip({ signals, reducedMotion }: { signals: LiveSignal[]; 
         <View style={styles.ribbonLive}><View style={styles.ribbonLiveDot} /><Text style={styles.ribbonLiveText}>LIVE</Text></View>
       </View>
       <View style={styles.ribbonSignals}>
-        {signals.map((signal) => <IdentitySignalChip key={signal.label} signal={signal} reducedMotion={reducedMotion} />)}
+        {signals.map((signal, index) => <IdentitySignalChip key={signal.label} signal={signal} index={index} reducedMotion={reducedMotion} />)}
       </View>
     </View>
   );
 }
 
-function IdentitySignalChip({ signal, reducedMotion }: { signal: LiveSignal; reducedMotion: boolean }) {
-  const pop = useMemo(() => new Animated.Value(1), []);
-  useEffect(() => {
-    if (reducedMotion) {
-      pop.setValue(1);
-      return;
-    }
-    pop.setValue(0.96);
-    Animated.spring(pop, { toValue: 1, speed: 30, bounciness: 4, useNativeDriver: true }).start();
-  }, [pop, reducedMotion, signal.complete, signal.value]);
-
+function IdentitySignalChip({ signal, index, reducedMotion }: { signal: LiveSignal; index: number; reducedMotion: boolean }) {
+  const animated = useLiveSignalMotion(signal, index, reducedMotion);
   return (
-    <Animated.View style={[styles.ribbonSignal, { borderColor: signal.color + (signal.complete ? '9A' : '44'), transform: [{ scale: pop }] }]}>
+    <Animated.View style={[styles.ribbonSignal, { borderColor: signal.color + (signal.complete ? '9A' : '44') }, animated.container]}>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.ribbonSignalGlow, { backgroundColor: signal.color }, animated.glow]} />
       <View style={[styles.ribbonSignalDot, { backgroundColor: signal.complete ? signal.color : 'rgba(255,255,255,.28)' }]} />
       <View style={styles.ribbonSignalCopy}>
         <Text style={styles.ribbonSignalLabel}>{signal.label}</Text>
-        <Text numberOfLines={1} style={[styles.ribbonSignalValue, signal.complete && styles.ribbonSignalValueComplete]}>{signal.complete ? signal.value : 'Add later'}</Text>
+        <Animated.Text numberOfLines={1} style={[styles.ribbonSignalValue, signal.complete && styles.ribbonSignalValueComplete, animated.value]}>{signal.complete ? signal.value : 'Add later'}</Animated.Text>
       </View>
     </Animated.View>
   );
@@ -785,7 +846,7 @@ export default function ProfileSetup() {
         {Platform.OS === 'web' ? (
           <View style={styles.browserPrivacy}>
             <View style={styles.browserPrivacyMark}><Text style={styles.browserPrivacyMarkText}>i</Text></View>
-            <Text style={styles.browserPrivacyText}>Browser preview uses synthetic examples. Anything you enter here stays in this browser tab; please don’t enter real health or contact information.</Text>
+            <Text style={styles.browserPrivacyText}>Preview mode keeps fictional sample information in this browser, even after refresh, until you clear it. This isn’t a personal Nura account. Please use fictional details and files only.</Text>
           </View>
         ) : null}
         {step !== 'welcome' ? (
@@ -936,7 +997,8 @@ const styles = StyleSheet.create({
   ribbonLiveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: palette.mint },
   ribbonLiveText: { color: '#D9EADB', fontSize: 9, fontWeight: '800', letterSpacing: .7 },
   ribbonSignals: { flexDirection: 'row', gap: 5 },
-  ribbonSignal: { flex: 1, minWidth: 0, minHeight: 34, borderRadius: 10, borderWidth: 1, backgroundColor: 'rgba(255,255,255,.035)', paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ribbonSignal: { flex: 1, minWidth: 0, minHeight: 34, borderRadius: 10, borderWidth: 1, backgroundColor: 'rgba(255,255,255,.035)', paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', gap: 4, overflow: 'hidden' },
+  ribbonSignalGlow: { borderRadius: 9 },
   ribbonSignalDot: { width: 6, height: 6, borderRadius: 4 },
   ribbonSignalCopy: { flex: 1, minWidth: 0 },
   ribbonSignalLabel: { color: 'rgba(255,249,244,.50)', fontSize: 8, fontWeight: '800', letterSpacing: .6 },
@@ -1004,7 +1066,8 @@ const styles = StyleSheet.create({
   mapEmpty: { position: 'absolute', left: 4, right: 4, bottom: 1, color: 'rgba(255,249,244,.45)', textAlign: 'center', fontSize: 8 },
   mapMore: { position: 'absolute', right: 1, bottom: 1, color: 'rgba(255,249,244,.55)', fontSize: 7 },
   liveSignalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 8 },
-  liveSignal: { minHeight: 27, borderWidth: 1, borderColor: 'rgba(255,255,255,.13)', borderRadius: 14, backgroundColor: 'rgba(255,255,255,.045)', paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  liveSignal: { minHeight: 27, borderWidth: 1, borderColor: 'rgba(255,255,255,.13)', borderRadius: 14, backgroundColor: 'rgba(255,255,255,.045)', paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', gap: 4, overflow: 'hidden' },
+  liveSignalGlow: { borderRadius: 13 },
   liveSignalDot: { width: 6, height: 6, borderRadius: 3 },
   liveSignalLabel: { color: 'rgba(255,249,244,.50)', fontSize: 9, fontWeight: '700', letterSpacing: .45 },
   liveSignalValue: { color: 'rgba(255,249,244,.43)', fontSize: 10, maxWidth: 94 },

@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
+import { Buffer } from 'node:buffer';
 import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { extname, join } from 'node:path';
+import { join } from 'node:path';
 
 export const VIDEO_LIMITS = Object.freeze({
   maxDurationSeconds: 180,

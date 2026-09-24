@@ -14,6 +14,12 @@ const sampleVisit = {
   questions: ['What changed since my last blood test?'], outcome: '', followUp: '',
   followUpActions: [{ id: 'action-1', title: 'Book the next visit', dueOn: '2026-10-12', status: 'open', source: 'Added by you' }],
 };
+const sampleDocument = {
+  id: 'source-1', title: 'Sample lipid report', documentType: 'Lipid profile',
+  dates: [{ kind: 'collected_at', value: '2025-01-21', page: 1, quote: 'Collected 21-Jan-25' }],
+  entities: [{ kind: 'laboratory', value: 'Sample laboratory', page: 1, quote: 'Sample laboratory' }],
+  notes: [{ kind: 'fasting_guidance', value: 'Lipid reports are best obtained after 10 hours fasting.', page: 1, quote: 'Reports of Lipid Profile are best obtained with 10 hours fasting.' }],
+};
 const run = (overrides = {}) => sanitizeRunBody({
   runId: 'sample-run', question: 'What medicine is recorded?', consentConfirmed: true,
   treatmentContextConsent: false, visitContextConsent: false, context: { facts: [], topics: [], links: [], treatments: [], visits: [] }, ...overrides,
@@ -100,4 +106,38 @@ test('symptom support always drops visit history and follow-up actions', () => {
   const request = run({ mode: 'symptom_support', visitContextConsent: true, context: { facts: [], topics: [], links: [], treatments: [], visits: [sampleVisit] } });
   assert.deepEqual(request.context.visits, []);
   assert.equal(request.visitContextConsent, false);
+});
+
+test('source report context is excluded unless the user selects it for this run', () => {
+  const context = { facts: [], topics: [], links: [], treatments: [], visits: [], documentSources: [sampleDocument] };
+  const absent = run({ context });
+  const unchecked = run({ sourceContextConsent: false, context });
+  assert.deepEqual(absent.context.documentSources, []);
+  assert.deepEqual(unchecked.context.documentSources, []);
+  assert.equal(absent.sourceContextConsent, false);
+});
+
+test('selected report details are searchable and cited as source context, not personal facts', () => {
+  const request = run({
+    sourceContextConsent: true,
+    context: { facts: [], topics: [], links: [], treatments: [], visits: [], documentSources: [sampleDocument] },
+  });
+  assert.equal(request.sourceContextConsent, true);
+  const evidence = createEvidenceTools(request.context);
+  const result = evidence.execute('search_profile', { query: 'fasting 10 hours' });
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].kind, 'document_context');
+  assert.equal(result.results[0].source, 'Sample lipid report');
+  assert.match(result.results[0].detail, /10 hours fasting/);
+  assert.match(result.results[0].detail, /Page 1/);
+  assert.doesNotMatch(result.results[0].detail, /You fasted/);
+});
+
+test('report context is always unavailable to symptom support', () => {
+  const request = run({
+    mode: 'symptom_support', sourceContextConsent: true,
+    context: { facts: [], topics: [], links: [], treatments: [], visits: [], documentSources: [sampleDocument] },
+  });
+  assert.deepEqual(request.context.documentSources, []);
+  assert.equal(request.sourceContextConsent, false);
 });
