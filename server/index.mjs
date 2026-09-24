@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { getLanguageModelStatus, extractDocumentClaims, searchHealthSources } from './adapters/index.mjs';
+import { getLanguageModelStatus, extractDocumentClaims, extractVideoClaims, searchHealthSources } from './adapters/index.mjs';
 import { runAgent } from './agent/orchestrator.mjs';
 import { sanitizeRunBody } from './agent/context.mjs';
 import { addHealthFeedCandidate, uniqueHealthFeedItems } from './agent/feedResults.mjs';
@@ -21,6 +21,7 @@ const MAX_INTAKE_BYTES = Number.isSafeInteger(configuredUploadCap) ? Math.min(Ma
 const MIME_EXTENSIONS = new Map([
   ['application/pdf', ['.pdf']], ['image/jpeg', ['.jpg', '.jpeg']],
   ['image/png', ['.png']], ['image/webp', ['.webp']],
+  ['video/mp4', ['.mp4']], ['video/quicktime', ['.mov']], ['video/webm', ['.webm']], ['video/x-m4v', ['.m4v']],
 ]);
 const DEMO_INTAKE_ENABLED = process.env.NURA_ENABLE_DEMO_INTAKE !== 'false';
 
@@ -74,7 +75,7 @@ function cleanFilename(raw, contentType) {
   const basename = decoded.split(/[\\/]/).pop()?.replace(/[\0-\x1f\x7f]/g, '').trim().slice(0, 160) || 'health-record';
   const allowed = MIME_EXTENSIONS.get(contentType);
   const extension = basename.slice(basename.lastIndexOf('.')).toLowerCase();
-  if (!allowed || !allowed.includes(extension)) throw new Error('Choose a PDF, JPEG, PNG or WEBP file with a matching file type.');
+  if (!allowed || !allowed.includes(extension)) throw new Error('Choose a PDF, JPEG, PNG, WEBP, MP4, MOV or WEBM file with a matching file type.');
   return basename;
 }
 
@@ -91,6 +92,7 @@ function displayForEvent(type, data) {
     run_started: 'Nura started this request', run_finished: 'Nura completed this request', run_error: 'Nura could not complete this request', feed_items: 'Trusted health sources are ready',
     intake_started: 'Preparing the selected source', source_received: 'Source received for this local demo', duplicate_detected: 'An exact duplicate was found',
     extraction_started: 'Reading the selected document', extraction_completed: 'Document extraction completed',
+    video_sampling_started: 'Selecting clear moments from the video', video_frames_ready: 'Video moments are ready for review', video_extraction_started: 'Reading visible details in the selected moments',
     claims_ready_for_review: 'Extracted items are ready for your review', intake_completed: 'The selected source is ready', intake_cancelled: 'File processing stopped', review_completed: 'Your review was saved', trace: 'Nura updated its activity', evidence: 'Nura checked selected evidence', answer: 'Nura prepared an answer',
   };
   return labels[type] || 'Nura updated this request';
@@ -121,9 +123,10 @@ async function handleExtraction(request, response) {
   if (!DEMO_INTAKE_ENABLED) { json(response, 404, { error: 'not_found' }); return; }
   if (request.headers['x-nura-consent-confirmed'] !== 'true') { json(response, 400, { error: 'consent_required', message: 'Confirm that this selected file may be sent to the configured AI provider for this one extraction.' }); return; }
   const contentType = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-  if (!MIME_EXTENSIONS.has(contentType)) { json(response, 415, { error: 'unsupported_media_type', message: 'Only PDF, JPEG, PNG and WEBP files are supported in this local demo.' }); return; }
+  if (!MIME_EXTENSIONS.has(contentType)) { json(response, 415, { error: 'unsupported_media_type', message: 'Choose a PDF, JPEG, PNG, WEBP, MP4, MOV or WEBM file.' }); return; }
   const purposeHeader = String(request.headers['x-nura-document-purpose'] || 'medical');
   if (purposeHeader !== 'medical' && purposeHeader !== 'insurance') { json(response, 400, { error: 'invalid_document_purpose', message: 'Choose a medical record or insurance policy review.' }); return; }
+  if (contentType.startsWith('video/') && purposeHeader !== 'medical') { json(response, 400, { error: 'invalid_document_purpose', message: 'Videos can only be reviewed as medical records.' }); return; }
   let filename;
   try { filename = cleanFilename(String(request.headers['x-nura-file-name'] || ''), contentType); }
   catch (error) { json(response, 400, { error: 'invalid_file_name', message: error.message }); return; }
@@ -150,8 +153,19 @@ async function handleExtraction(request, response) {
     if (!duplicate) await localDemoRepository.createSource(source);
     emit('source_received', { sourceId, sha256, sizeBytes: bytes.length, storage: 'device_original_only' });
     await localDemoRepository.setSourceState(sourceId, 'extracting');
-    emit('extraction_started', { sourceId, provider: 'openai_responses', realProviderCall: true });
-    const extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: purposeHeader, signal: abortController.signal });
+    const isVideo = contentType.startsWith('video/');
+    emit('extraction_started', { sourceId, mediaType: isVideo ? 'video' : 'document', provider: 'openai_responses', realProviderCall: true });
+    let extraction;
+    if (isVideo) {
+      emit('video_sampling_started', { sourceId, limitSeconds: 180, maxMoments: 6 });
+      extraction = await extractVideoClaims({
+        bytes, mediaType: contentType, purpose: purposeHeader, signal: abortController.signal,
+        onFramesReady: (details) => {
+          emit('video_frames_ready', { sourceId, frameCount: details.frameCount, durationSeconds: details.durationSeconds });
+          emit('video_extraction_started', { sourceId, frameCount: details.frameCount });
+        },
+      });
+    } else extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: purposeHeader, signal: abortController.signal });
     if (abortController.signal.aborted) {
       await localDemoRepository.setSourceState(sourceId, 'failed');
       emit('intake_cancelled', { sourceId, state: 'failed' });
@@ -161,7 +175,7 @@ async function handleExtraction(request, response) {
       sourceId, kind: claim.kind, label: claim.label, value: claim.value, unit: claim.unit,
       referenceRange: claim.referenceRange, method: claim.method,
       effectiveAt: claim.effectiveAt, confidence: claim.confidence,
-      sourceLocation: { page: claim.page, quote: claim.quote, locationConfidence: 'model_suggested' },
+      sourceLocation: { page: claim.page, timestampSeconds: claim.timestampSeconds, quote: claim.quote, locationConfidence: claim.timestampSeconds === null || claim.timestampSeconds === undefined ? 'model_suggested' : 'server_sampled' },
     })).filter(Boolean);
     const documentContext = createDocumentContext(extraction.documentContext);
     await localDemoRepository.saveCandidateClaims(claims);

@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { excludeDocumentContextDuplicates, separateGeneralMedicalNotes } from './openaiResponses.mjs';
+import { excludeDocumentContextDuplicates, mapVideoFrameClaims, separateGeneralMedicalNotes } from './openaiResponses.mjs';
+
+test('maps video evidence to trusted sampled frame timestamps and drops unsupported locations', () => {
+  const frames = [{ timestampSeconds: 12.375 }, { timestampSeconds: 38.5 }];
+  const claims = [
+    { frameIndex: 1, kind: 'measurement', label: 'Heart rate', value: '72', unit: 'bpm', quote: 'Heart rate 72 bpm' },
+    { frameIndex: 7, kind: 'measurement', label: 'Unsupported', value: '1', quote: 'Unsupported 1' },
+    { frameIndex: 0, kind: 'measurement', label: 'Unquoted', value: '2', quote: null },
+  ];
+  const mapped = mapVideoFrameClaims(claims, frames);
+  assert.equal(mapped.length, 1);
+  assert.equal(mapped[0].timestampSeconds, 38.5);
+  assert.equal(mapped[0].page, null);
+  assert.equal(mapped[0].frameIndex, undefined);
+});
 
 test('keeps source-wide guidance with the document instead of returning it as a profile claim', () => {
   const claims = [

@@ -8,7 +8,7 @@ export const MAX_VALUE_LENGTH = 1200;
 /** @typedef {'candidate'|'needs_review'|'user_confirmed'|'rejected'|'superseded'|'user_retracted'} EvidenceState */
 /** @typedef {'user_entered'|'document_extraction'|'external_source'|'agent_inference'} Origin */
 /** @typedef {'selected'|'duplicate_exact'|'extracting'|'candidate_review'|'extracted_empty'|'accepted'|'rejected'|'failed'} SourceState */
-/** @typedef {{page?:number|null, quote?:string|null, timestampSeconds?:number|null, locationConfidence?:'model_suggested'|'not_available'}} SourceLocation */
+/** @typedef {{page?:number|null, quote?:string|null, timestampSeconds?:number|null, locationConfidence?:'model_suggested'|'server_sampled'|'not_available'}} SourceLocation */
 /** @typedef {{documentType:string|null, dates:{kind:string,value:string,page:number|null,quote:string|null}[], entities:{kind:string,value:string,page:number|null,quote:string|null}[], notes:{kind:string,value:string,page:number|null,quote:string|null}[]}|null} DocumentContext */
 /**
  * @typedef {object} SourceRecord
@@ -111,7 +111,7 @@ export function createCandidateClaim({ profileId = DEMO_PROFILE_ID, sourceId, ki
       page,
       quote: nullableString(sourceLocation?.quote, 600),
       timestampSeconds: timestamp,
-      locationConfidence: page || timestamp !== null ? 'model_suggested' : 'not_available',
+      locationConfidence: timestamp !== null ? 'server_sampled' : page ? 'model_suggested' : 'not_available',
     },
     evidenceState: 'needs_review', createdAt: new Date().toISOString(), acceptedAssertionId: null,
     retractedAt: null, retractionReason: null,

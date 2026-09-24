@@ -10,7 +10,7 @@ export type LocalSource = { id: string; displayName: string; mediaType: string; 
 export type CandidateClaim = {
   id: string; sourceId: string; kind: string; label: string; value: string; unit: string | null;
   referenceRange?: string | null; method?: string | null;
-  effectiveAt: string | null; confidence: number | null; sourceLocation: { page: number | null; quote: string | null };
+  effectiveAt: string | null; confidence: number | null; sourceLocation: { page: number | null; quote: string | null; timestampSeconds?: number | null; locationConfidence?: 'model_suggested' | 'server_sampled' | 'not_available' };
   evidenceState: 'candidate' | 'needs_review' | 'user_confirmed' | 'rejected' | 'superseded' | 'user_retracted'; acceptedAssertionId: string | null;
   retractedAt?: string | null; retractionReason?: 'not_personal' | null;
   originalExtraction?: { label: string; value: string; unit: string | null; effectiveAt: string | null };
@@ -18,6 +18,28 @@ export type CandidateClaim = {
 };
 export type IntakeResult = { source: LocalSource; claims: CandidateClaim[]; duplicate: boolean };
 const baseUrl = (process.env.EXPO_PUBLIC_NURA_AGENT_URL || 'http://127.0.0.1:4175').replace(/\/$/, '');
+const MEDIA_TYPES_BY_EXTENSION: Record<string, string> = {
+  pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+  mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', m4v: 'video/x-m4v',
+};
+const INTAKE_MEDIA_TYPES = new Set(Object.values(MEDIA_TYPES_BY_EXTENSION));
+export function resolveIntakeMediaType(asset: { name: string; mimeType?: string }) {
+  const extension = asset.name.split('.').pop()?.toLowerCase() ?? '';
+  const inferred = MEDIA_TYPES_BY_EXTENSION[extension] ?? '';
+  const declared = (asset.mimeType || '').toLowerCase();
+  if (INTAKE_MEDIA_TYPES.has(declared)) {
+    if (declared.startsWith('video/') && inferred.startsWith('video/') && declared !== inferred) return inferred;
+    return declared;
+  }
+  return inferred;
+}
+export function formatVideoTimestamp(timestampSeconds: number) {
+  const total = Math.max(0, Math.floor(timestampSeconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+export function describeSourceLocation(location: CandidateClaim['sourceLocation']) {
+  return [location.quote, location.page ? `Page ${location.page}` : null, typeof location.timestampSeconds === 'number' ? `Video · ${formatVideoTimestamp(location.timestampSeconds)}` : null].filter(Boolean).join(' · ');
+}
 
 function decodeBase64(value: string): Uint8Array {
   const binary = atob(value);
@@ -65,6 +87,7 @@ function activityFromEvent(type: string, data: Record<string, unknown>, sequence
   const labels: Record<string, string> = {
     intake_started: 'Preparing your file', source_received: 'File ready for review',
     duplicate_detected: 'This file is already in your records', extraction_started: 'Reading your document',
+    video_sampling_started: 'Finding clear moments in the video', video_frames_ready: `${typeof data.frameCount === 'number' ? data.frameCount : 'Selected'} moments ready`, video_extraction_started: 'Reading visible details from those moments',
     extraction_completed: 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} details are ready for your review`,
     intake_completed: 'Your file is ready', intake_cancelled: 'Reading stopped at your request', run_error: 'Nura couldn’t read this file. Check it and try again.',
   };
@@ -72,8 +95,8 @@ function activityFromEvent(type: string, data: Record<string, unknown>, sequence
   if (!label) return null;
   const status = type === 'intake_cancelled' ? 'cancelled'
     : type === 'run_error' ? 'failed'
-    : type === 'intake_started' || type === 'extraction_started' ? 'started'
-      : type === 'source_received' ? 'progress' : 'complete';
+    : type === 'intake_started' || type === 'extraction_started' || type === 'video_sampling_started' || type === 'video_extraction_started' ? 'started'
+      : type === 'source_received' || type === 'video_frames_ready' ? 'progress' : 'complete';
   return { id: `${sequence}-${type}`, label, status };
 }
 export async function getSourceClaims(sourceId: string): Promise<{ source: LocalSource; claims: CandidateClaim[] }> {
@@ -83,11 +106,9 @@ export async function getSourceClaims(sourceId: string): Promise<{ source: Local
   return { source: body.source, claims: body.claims ?? [] };
 }
 export async function extractPickedFile(asset: { uri: string; name: string; mimeType?: string; size?: number }, onActivity?: (activity: IntakeActivity) => void, purpose: 'medical' | 'insurance' = 'medical', signal?: AbortSignal): Promise<IntakeResult> {
-  const ext = asset.name.split('.').pop()?.toLowerCase();
-  const inferred = ext === 'pdf' ? 'application/pdf' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : '';
-  const declared = (asset.mimeType || '').toLowerCase();
-  const mimeType = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(declared) ? declared : inferred;
-  if (!['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) throw new Error('Nura can read PDF files and JPG, PNG or WebP photos. Video review isn’t available yet.');
+  const mimeType = resolveIntakeMediaType(asset);
+  if (!INTAKE_MEDIA_TYPES.has(mimeType)) throw new Error('Choose a PDF, JPG, PNG, WebP, MP4, MOV or WebM file.');
+  if (purpose === 'insurance' && mimeType.startsWith('video/')) throw new Error('Choose a PDF or image for your Insurance Registry.');
   const bytes = await readAssetBytes(asset.uri);
   const selectedFileSha256 = await sha256Bytes(bytes);
   if (signal?.aborted) throw new IntakeCancelledError();

@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { parseHealthDate } from '../utils/healthDate';
 import { colors, motion, timelineColors } from '../theme';
 import type { HealthFact, HealthLink, HealthLinkRelation, HealthTopic, HealthVisit, IntakeAsset, TreatmentRecord } from '../state/NuraContext';
-import { getSourceClaims, sourceMatchesAsset, type CandidateClaim, type LocalSource } from '../services/intakeClient';
+import { formatVideoTimestamp, getSourceClaims, sourceMatchesAsset, type CandidateClaim, type LocalSource } from '../services/intakeClient';
 import { findMisdatedAcceptedClaims } from '../services/sourceClaimReconciliation.mjs';
 import { DocumentContextCard } from './DocumentContextCard';
 import { Orb } from './Orb';
@@ -448,7 +448,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
             return <View key={claim.id} style={[s.sourceClaim, sourceDetail.claimId === claim.id && s.sourceClaimSelected]}>
               {sourceDetail.claimId === claim.id && <Text style={s.sourceSelectedLabel}>THIS TIMELINE DETAIL</Text>}
               <View style={s.sourceClaimTop}><View style={{ flex: 1 }}><Text style={s.choiceTitle}>{claim.label}</Text><Text style={s.sourceClaimValue}>{claim.value}{claim.unit ? ` ${claim.unit}` : ''}{claim.effectiveAt ? ` · ${readableDate(claim.effectiveAt)}` : ''}</Text>{(claim.referenceRange || claim.method) && <Text style={s.sourceQuote}>{[claim.referenceRange ? `Reference range ${claim.referenceRange}` : null, claim.method ? `Method ${claim.method}` : null].filter(Boolean).join(' · ')}</Text>}</View><Text style={[s.claimState, stateStyle]}>{state}</Text></View>
-              {claim.sourceLocation.quote ? <Text style={s.sourceQuote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · page ${claim.sourceLocation.page}` : ''}</Text> : <Text style={s.sourceQuoteMissing}>No supporting quote was returned for this detail.</Text>}
+              {claim.sourceLocation.quote ? <Text style={s.sourceQuote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · page ${claim.sourceLocation.page}` : typeof claim.sourceLocation.timestampSeconds === 'number' ? ` · video ${formatVideoTimestamp(claim.sourceLocation.timestampSeconds)}` : ''}</Text> : <Text style={s.sourceQuoteMissing}>No supporting quote was returned for this detail.</Text>}
               {claim.originalExtraction && <View style={s.versionNote}><Text style={s.sourceLabel}>ORIGINAL EXTRACTION</Text><Text style={s.sourceText}>{claim.originalExtraction.label}: {claim.originalExtraction.value}{claim.originalExtraction.unit ? ` ${claim.originalExtraction.unit}` : ''}</Text></View>}
               {(claim.revisionHistory ?? []).map((version) => <View key={version.assertionId} style={s.versionNote}><Text style={s.sourceLabel}>EARLIER VERSION {version.version} · {readableDate(version.recordedAt)}</Text><Text style={s.sourceText}>{version.label}: {version.value}{version.unit ? ` ${version.unit}` : ''}</Text></View>)}
               {claim.evidenceState === 'user_confirmed' && sourceDetail.sourceId && <Pressable accessibilityRole="button" onPress={() => reviewSource(sourceDetail, claim.id)} style={s.sourceDetailAction}><Text style={s.viewDetails}>CORRECT THIS DETAIL · KEEP VERSION HISTORY ↗</Text></Pressable>}
@@ -460,7 +460,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
           <Text style={s.modalHelp}>{sourceDetail.asset ? 'This file has not been analyzed. Nura will ask for your permission before sending it for extraction.' : 'This detail was entered by you and has no extracted document claim attached.'}</Text>
           {sourceDetail.asset && <Pressable accessibilityRole="button" onPress={() => reviewLocalAsset(sourceDetail)} style={s.primaryButton}><Text style={s.primaryButtonText}>REVIEW THIS FILE WITH NURA</Text></Pressable>}
         </>}
-        <Text style={s.sourceFootnote}>Candidate details stay out of your profile until you accept or edit them. Source quotes and page references are shown when available.</Text>
+        <Text style={s.sourceFootnote}>Candidate details stay out of your profile until you accept or edit them. Quotes, page numbers and video timecodes are shown when available.</Text>
       </ScrollView>
     </View>}</SheetLayer>
   </View>;

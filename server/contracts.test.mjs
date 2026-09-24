@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDocumentContext, createSourceRecord } from './contracts.mjs';
+import { createCandidateClaim, createDocumentContext, createSourceRecord } from './contracts.mjs';
 
 test('document context preserves bounded report metadata and source-located notes', () => {
   const context = createDocumentContext({
@@ -21,6 +21,15 @@ test('empty document context remains absent on an unprocessed or legacy source',
   assert.equal(createDocumentContext({ dates: [], entities: [], notes: [] }), null);
   const source = createSourceRecord({ displayName: 'sample.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'a'.repeat(64) });
   assert.equal(source.documentContext, null);
+});
+
+test('video source timestamps are retained as server-sampled locations', () => {
+  const claim = createCandidateClaim({
+    sourceId: 'source-video', kind: 'measurement', label: 'Heart rate', value: '72', unit: 'bpm',
+    sourceLocation: { timestampSeconds: 12.375, quote: 'Heart rate 72 bpm' },
+  });
+  assert.equal(claim.sourceLocation.timestampSeconds, 12.375);
+  assert.equal(claim.sourceLocation.locationConfidence, 'server_sampled');
 });
 
 test('document context validates kind, bounds item counts, and limits content length', () => {
