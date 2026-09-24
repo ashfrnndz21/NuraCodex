@@ -12,6 +12,7 @@ import { useAIState } from '../src/state/AIStateContext';
 import { brandScenes, motion } from '../src/theme';
 import { scopeProfileContext } from '../src/services/agentContextScope.mjs';
 import { registryBriefCitations, registryBriefDisplayText } from '../src/services/registryBrief.mjs';
+import { agentCitationTarget } from '../src/services/agentCitationNavigation.mjs';
 
 const C = {
   bg: brandScenes.atmosphere.base,
@@ -203,6 +204,16 @@ export default function Ask() {
       setService(status);
     }
   }
+  function evidenceTarget(source: AgentSource): AgentCitationTarget {
+    return agentCitationTarget(source, { facts, topics, links, treatments, visits, assets }) as AgentCitationTarget;
+  }
+  function openEvidenceSource(source: AgentSource) {
+    const target = evidenceTarget(source);
+    if (!target) return;
+    if (target.kind === 'external') { void Linking.openURL(target.url); return; }
+    if (target.kind === 'registry') { router.push({ pathname: '/registry', params: { topicId: target.topicId } }); return; }
+    router.push({ pathname: '/(tabs)/health', params: { focusId: target.focusId } });
+  }
   function acceptMemoryProposal() {
     if (!answer?.memoryProposal || proposalSaved || !activeRunId) return;
     addFact(answer.memoryProposal.label, answer.memoryProposal.value, { category: 'User-approved memory', source: 'Nura suggestion · confirmed by you', note: answer.memoryProposal.reason || 'Suggested in an Ask Nura conversation and approved by you.', sourceRunId: activeRunId, reviewState: 'user_confirmed', validFrom: new Date().toISOString(), validUntil: null, confidence: null, permissionScope: 'profile_memory_write' });
@@ -245,14 +256,14 @@ export default function Ask() {
       {agentMessages.map((message) => <View key={message.id} style={[s.message, message.role === 'user' ? s.userMessage : s.assistantMessage]}>
         <Text style={[s.messageLabel, message.role === 'user' && s.userMessageLabel]}>{message.role === 'user' ? 'YOU' : 'NURA'}</Text>
         <Text style={[s.messageText, message.role === 'user' && s.userMessageText]}>{message.role === 'assistant' ? registryBriefDisplayText(message.text) : message.text}</Text>
-        {message.role === 'assistant' && message.coverageAssessments?.length ? <CoveragePanel assessments={message.coverageAssessments} sources={message.citations} /> : null}
+        {message.role === 'assistant' && message.coverageAssessments?.length ? <CoveragePanel assessments={message.coverageAssessments} sources={message.citations} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} /> : null}
         {message.role === 'assistant' && message.trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{message.trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
-        {message.role === 'assistant' && message.citations.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES USED</Text>{message.citations.map((citation) => <Pressable key={citation.id} disabled={!citation.url} onPress={() => { if (citation.url) void Linking.openURL(citation.url); }} style={s.citationCard}><Text style={s.citationRef}>{citation.reference}</Text><View style={{ flex: 1 }}><Text style={s.citationTitle}>{citation.title}</Text><Text style={s.citationDetail}>{citation.source}{citation.date ? ` · ${citation.date}` : ''}</Text></View></Pressable>)}</View>}
+        {message.role === 'assistant' && message.citations.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES USED</Text>{message.citations.map((citation) => <EvidenceSourceCard key={citation.id} source={citation} target={evidenceTarget(citation)} onPress={() => openEvidenceSource(citation)} />)}</View>}
       </View>)}
       {busy && <View style={s.liveCard}><View style={s.liveHeader}><Orb size={30} /><View style={{ flex: 1 }}><Text style={s.liveTitle}>{aiState === 'responding' ? 'Nura has an answer' : 'Nura is working with your records'}</Text><Text style={s.liveSub}>Live activity · only actions and evidence</Text></View></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><View style={[s.traceMark, item.status === 'complete' && s.traceMarkDone]}><Text style={[s.traceMarkText, item.status === 'complete' && s.traceMarkTextDone]}>{item.status === 'complete' ? '✓' : '·'}</Text></View><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail && <Text style={s.traceDetail}>{item.detail}</Text>}</View></View>)}</View>}
       {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><Text style={s.answerText}>{registryBriefDisplayText(answer.answer)}</Text>
-        {answer.coverageAssessments !== undefined && <CoveragePanel assessments={answer.coverageAssessments} sources={sources} />}
-        {sources.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>EVIDENCE NURA CHECKED</Text>{sources.map((source) => <Pressable key={source.id} disabled={!source.url} onPress={() => { if (source.url) void Linking.openURL(source.url); }} style={s.citationCard}><Text style={s.citationRef}>{source.reference}</Text><View style={{ flex: 1 }}><Text style={s.citationTitle}>{source.title}</Text><Text style={s.citationDetail}>{source.source}{source.date ? ` · ${source.date}` : ''}</Text></View></Pressable>)}</View>}
+        {answer.coverageAssessments !== undefined && <CoveragePanel assessments={answer.coverageAssessments} sources={sources} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} />}
+        {sources.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>EVIDENCE NURA CHECKED</Text>{sources.map((source) => <EvidenceSourceCard key={source.id} source={source} target={evidenceTarget(source)} onPress={() => openEvidenceSource(source)} />)}</View>}
         {answer.unknowns.length > 0 && <View style={s.unknownBox}><Text style={s.unknownTitle}>{answer.coverageAssessments !== undefined ? 'POLICY DETAIL NOT SHOWN HERE' : 'WHAT YOUR PROFILE DOESN’T SHOW'}</Text>{answer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}</View>}
         {answer.nextSteps.length > 0 && <View style={s.nextBox}><Text style={s.nextTitle}>{answer.coverageAssessments !== undefined ? 'QUESTIONS TO CONFIRM WITH YOUR INSURER' : 'POSSIBLE NEXT STEP'}</Text>{answer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.nextText}>•  {item}</Text>)}</View>}
         {registryBriefMode && !busy && <View style={s.registrySave}><Text style={s.registrySaveTitle}>SAVE TO MEDICAL REGISTRY</Text><Text style={s.registrySaveBody}>This saves the answer, its stated unknowns and only the sources it cited. The summary will be marked out of date if linked records change.</Text>{registryBriefSaveError ? <Text style={s.registrySaveError}>{registryBriefSaveError}</Text> : null}<Pressable accessibilityRole="button" disabled={registryBriefSaved || registryBriefSaving || answer.citations.length === 0} onPress={() => void saveRegistrySummary()} style={[s.registrySaveButton, (registryBriefSaved || registryBriefSaving || answer.citations.length === 0) && { opacity: .5 }]}><Text style={s.registrySaveButtonText}>{registryBriefSaved ? 'SAVED TO MEDICAL REGISTRY' : registryBriefSaving ? 'SAVING ON THIS DEVICE…' : 'SAVE CITED SUMMARY'}</Text></Pressable></View>}
@@ -267,7 +278,23 @@ export default function Ask() {
 }
 function ShareRow({ label, count, excluded }: { label: string; count: string; excluded?: boolean }) { return <View style={s.shareRow}><Text style={s.shareLabel}>{label}</Text><Text style={[s.shareCount, excluded && s.shareExcluded]}>{count}</Text></View>; }
 function ShareToggle({ label, count, selected, onPress, disabled = false }: { label: string; count: number | string; selected: boolean; onPress: () => void; disabled?: boolean }) { return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled }} disabled={disabled} onPress={onPress} style={s.shareRow}><View style={s.shareToggleLabel}><View style={[s.checkBox, selected && s.checkBoxOn]}><Text style={s.checkMark}>{selected ? '✓' : ''}</Text></View><Text style={s.shareLabel}>{label}</Text></View><Text style={[s.shareCount, (!count || disabled) && s.shareExcluded]}>{typeof count === 'number' ? `${count} ${count === 1 ? 'item' : 'items'}` : count}</Text></Pressable>; }
-function CoveragePanel({ assessments, sources }: { assessments: CoverageAssessment[]; sources: AgentSource[] }) {
+type AgentCitationTarget = { kind: 'health'; focusId: string } | { kind: 'registry'; topicId: string } | { kind: 'external'; url: string } | null;
+
+function EvidenceSourceCard({ source, target, onPress }: { source: AgentSource; target: AgentCitationTarget; onPress: () => void }) {
+  const available = Boolean(target);
+  const action = !target ? 'SOURCE UNAVAILABLE' : target.kind === 'external' ? 'OPEN SOURCE ↗' : target.kind === 'registry' ? 'OPEN HEALTH AREA ↗' : 'VIEW IN HISTORY ↗';
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled: !available }} accessibilityLabel={available ? 'Open cited source ' + source.title : 'Cited source unavailable: ' + source.title} disabled={!available} onPress={onPress} style={[s.citationCard, !available && s.citationCardUnavailable]}>
+    <Text style={s.citationRef}>{source.reference}</Text>
+    <View style={{ flex: 1 }}>
+      <Text style={s.citationTitle}>{source.title}</Text>
+      <Text style={s.citationDetail}>{source.source}{source.date ? ' · ' + source.date : ''}</Text>
+      {source.detail ? <Text numberOfLines={2} style={s.citationEvidence}>{source.detail}</Text> : null}
+      <Text style={available ? s.citationOpen : s.citationUnavailable}>{action}</Text>
+    </View>
+  </Pressable>;
+}
+
+function CoveragePanel({ assessments, sources, onOpenSource, targetFor }: { assessments: CoverageAssessment[]; sources: AgentSource[]; onOpenSource: (source: AgentSource) => void; targetFor: (source: AgentSource) => AgentCitationTarget }) {
   if (!assessments.length) return null;
   const byReference = new Map(sources.map((source) => [source.reference, source]));
   const labels: Record<CoverageAssessment['kind'], { title: string; tone: string; tint: string }> = {
@@ -281,11 +308,11 @@ function CoveragePanel({ assessments, sources }: { assessments: CoverageAssessme
       const appearance = labels[item.kind];
       const policy = byReference.get(item.policyReference);
       const related = item.relatedHealthReferences.map((reference) => byReference.get(reference)).filter((source): source is AgentSource => Boolean(source));
-      return <View key={`${item.policyReference}-${index}`} style={s.coverageItem}>
+      return <View key={item.policyReference + '-' + index} style={s.coverageItem}>
         <View style={s.coverageItemTop}><Text style={s.coverageKind}>{appearance.title}</Text><Text style={[s.coveragePill, { color: appearance.tone, backgroundColor: appearance.tint }]}>{item.policyReference}</Text></View>
         <Text style={s.coverageDetail}>{item.detail}</Text>
-        <Text style={s.coverageSource}>Policy · {policy?.title ?? `Source ${item.policyReference}`}</Text>
-        {related.length > 0 && <Text style={s.coverageRelated}>Compared with · {related.map((source) => source.title).join(' · ')}</Text>}
+        {policy ? <Pressable accessibilityRole="button" accessibilityLabel={'Open cited policy source ' + policy.title} disabled={!targetFor(policy)} onPress={() => onOpenSource(policy)} style={s.coverageSourceAction}><Text style={s.coverageSource}>Policy · {policy.title}  ↗</Text></Pressable> : <Text style={s.coverageSource}>Policy source unavailable</Text>}
+        {related.length > 0 && <View style={s.coverageRelatedRow}><Text style={s.coverageRelatedPrefix}>Compared with · </Text>{related.map((source) => <Pressable key={source.reference} accessibilityRole="button" accessibilityLabel={'Open cited health source ' + source.title} disabled={!targetFor(source)} onPress={() => onOpenSource(source)}><Text style={s.coverageRelated}>{source.title} ↗</Text></Pressable>)}</View>}
       </View>;
     })}
   </View>;
@@ -339,10 +366,14 @@ const s = StyleSheet.create({
   traceHeading: { color: C.plum, fontSize: 8, letterSpacing: 1, fontWeight: '700', marginBottom: 6 },
   savedTraceLine: { color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 2 },
   citationWrap: { marginTop: 12 },
-  citationCard: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, paddingHorizontal: 9, borderRadius: 10, backgroundColor: C.bluePale, borderWidth: 1, borderColor: 'rgba(183, 208, 255, 0.22)', marginTop: 5 },
+  citationCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 9, paddingHorizontal: 9, borderRadius: 10, backgroundColor: C.bluePale, borderWidth: 1, borderColor: 'rgba(183, 208, 255, 0.22)', marginTop: 5 },
+  citationCardUnavailable: { opacity: .65 },
   citationRef: { color: C.blue, fontSize: 9, fontWeight: '700', width: 22 },
   citationTitle: { color: C.ink, fontSize: 10, fontWeight: '600' },
   citationDetail: { color: C.muted, fontSize: 8, marginTop: 2 },
+  citationEvidence: { color: C.faint, fontSize: 8, lineHeight: 12, marginTop: 4 },
+  citationOpen: { color: C.blue, fontSize: 7, fontWeight: '700', letterSpacing: .55, marginTop: 4 },
+  citationUnavailable: { color: C.faint, fontSize: 7, fontWeight: '600', letterSpacing: .45, marginTop: 4 },
 
   liveCard: { backgroundColor: C.surfaceRaised, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(242, 191, 165, 0.34)', padding: 13, marginTop: 12 },
   liveHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 7 },
@@ -427,6 +458,9 @@ const s = StyleSheet.create({
   coverageKind: { color: C.ink, fontSize: 8, fontWeight: '700', letterSpacing: 0.5, flex: 1 },
   coveragePill: { overflow: 'hidden', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 3, fontSize: 7, fontWeight: '700' },
   coverageDetail: { color: C.ink, fontSize: 10, lineHeight: 15, marginTop: 6 },
-  coverageSource: { color: C.muted, fontSize: 8, marginTop: 6 },
-  coverageRelated: { color: C.blue, fontSize: 8, lineHeight: 13, marginTop: 4 },
+  coverageSourceAction: { alignSelf: 'flex-start' },
+  coverageSource: { color: C.blue, fontSize: 8, marginTop: 6 },
+  coverageRelatedRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  coverageRelatedPrefix: { color: C.muted, fontSize: 8, lineHeight: 13 },
+  coverageRelated: { color: C.blue, fontSize: 8, lineHeight: 13 },
 });
