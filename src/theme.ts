@@ -5,7 +5,7 @@ export const colors = {
   // and warm paper with clear, category-specific color for health records.
   bg: '#F3EEF4', bg2: '#EAE2ED', surface: '#FFFAF4', surfaceStrong: '#F0E7F2',
   border: '#DED2E3', text: '#33283A', muted: '#746979', quiet: '#988D9D',
-  violet: '#745487', plum: '#4A3458', mauve: '#A2768E', lilac: '#EDE1F0', cobalt: '#276FE0', aqua: '#276FE0', bluePale: '#E8EFFD', mint: '#E4F0E7', peach: '#F2DDD0',
+  violet: '#745487', plum: '#4A3458', mauve: '#A2768E', lilac: '#EDE1F0', cobalt: '#1769E8', aqua: '#2B8178', bluePale: '#EAF2FF', mint: '#E5F2EA', peach: '#F2DDD0',
   accent: '#EADDED', ink: '#33283A', warning: '#A76217', success: '#2E7955', cream: '#FFF8F0', rose: '#BC8193',
 } as const;
 
@@ -30,7 +30,7 @@ export const brandScenes = {
 
 // Node, halo, connecting line, and label use the same category hue.
 export const timelineColors = {
-  record: { node: '#3472D2', pale: '#EAF0FB', line: '#AEC3E8', accent: '#385E9D' },
+  record: { node: '#1769E8', pale: '#EAF2FF', line: '#AEC7F2', accent: '#285EA8' },
   care: { node: '#8B68A2', pale: '#F1EAF4', line: '#C7B1D1', accent: '#6C4F7D' },
   treatment: { node: '#BD745C', pale: '#F9ECE6', line: '#E2BCAC', accent: '#96533E' },
   vitals: { node: '#34847D', pale: '#E5F2EF', line: '#A5CDC6', accent: '#286A65' },
