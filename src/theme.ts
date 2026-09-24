@@ -3,10 +3,10 @@ import { Platform } from 'react-native';
 export const colors = {
   // Two connected color modes: immersive plum–rose for Nura-led moments,
   // and warm paper with clear, category-specific color for health records.
-  bg: '#F3EEF4', bg2: '#EAE2ED', surface: '#FFFAF4', surfaceStrong: '#F0E7F2',
-  border: '#DED2E3', text: '#33283A', muted: '#746979', quiet: '#988D9D',
+  bg: '#F0EBF3', bg2: '#E8DFEB', surface: '#FFFBF7', surfaceStrong: '#EEE7F1',
+  border: '#DDD2E3', text: '#322936', muted: '#716977', quiet: '#928998',
   violet: '#745487', plum: '#4A3458', mauve: '#A2768E', lilac: '#EDE1F0', cobalt: '#1769E8', aqua: '#2B8178', bluePale: '#EAF2FF', mint: '#E5F2EA', peach: '#F2DDD0',
-  accent: '#EADDED', ink: '#33283A', warning: '#A76217', success: '#2E7955', cream: '#FFF8F0', rose: '#BC8193',
+  accent: '#EADDED', ink: '#322936', warning: '#A76217', success: '#2E7955', cream: '#FFF8F0', rose: '#B47D92',
 } as const;
 
 // Shared scene recipes keep the reference's plum–mauve atmosphere and
@@ -14,17 +14,17 @@ export const colors = {
 export const brandScenes = {
   atmosphere: {
     base: '#30213C',
-    colors: ['#49345D', '#63466F', '#85637E', '#A7798D', '#493451'],
-    locations: [0, 0.25, 0.52, 0.76, 1],
+    colors: ['#48335C', '#65466F', '#89647F', '#B27D91', '#453152'],
+    locations: [0, 0.23, 0.5, 0.77, 1],
     peachGlow: 'rgba(243,183,155,0.30)',
     lilacGlow: 'rgba(184,157,222,0.27)',
   },
   home: {
-    colors: ['#49345D', '#765778', '#A7798D'],
+    colors: ['#49345D', '#825C78', '#B17F92'],
     locations: [0, 0.56, 1],
   },
   feed: {
-    colors: ['#C2DDF1', '#E9C2B7', '#796C99'],
+    colors: ['#C0DDF2', '#EBC3B6', '#7C7199'],
   },
 } as const;
 

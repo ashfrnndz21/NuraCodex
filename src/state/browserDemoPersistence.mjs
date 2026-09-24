@@ -3,6 +3,7 @@ const arrayFields = [
   'visitEvents', 'links', 'feedItems', 'savedQuestions', 'agentMessages', 'registryBriefs',
 ];
 const stringFields = ['name', 'birthday', 'country', 'email', 'phone'];
+const optionalArrayFields = ['policyReplacements'];
 
 export function readBrowserDemoSnapshot(storage, key, fallback) {
   if (!storage) return { snapshot: fallback, warning: null };
@@ -13,9 +14,10 @@ export function readBrowserDemoSnapshot(storage, key, fallback) {
     const valid = parsed && typeof parsed === 'object'
       && parsed.version === 1 && parsed.demoOnly === true
       && stringFields.every((field) => typeof parsed[field] === 'string')
-      && arrayFields.every((field) => Array.isArray(parsed[field]));
+      && arrayFields.every((field) => Array.isArray(parsed[field]))
+      && optionalArrayFields.every((field) => parsed[field] === undefined || Array.isArray(parsed[field]));
     if (!valid) return { snapshot: fallback, warning: 'Saved browser demo data could not be read. The sample workspace is open; your saved copy was left untouched.' };
-    return { snapshot: { ...fallback, ...parsed }, warning: null };
+    return { snapshot: { ...fallback, ...parsed, policyReplacements: parsed.policyReplacements ?? fallback.policyReplacements ?? [] }, warning: null };
   } catch {
     return { snapshot: fallback, warning: 'Browser storage could not be read. Changes may not survive a refresh.' };
   }

@@ -696,19 +696,19 @@ export default function ProfileSetup() {
               <Text style={styles.optionalLabel}>EDITABLE</Text>
             </View>
             <Text style={styles.fieldLabel}>NAME</Text>
-            <TextInput value={name} onChangeText={(value) => updateProfile({ name: value })} placeholder="What should Nura call you?" placeholderTextColor="rgba(255,249,244,.46)" style={styles.fieldInput} accessibilityLabel="Your name" autoComplete="name" returnKeyType="next" />
+            <TextInput value={name} onChangeText={(value) => updateProfile({ name: value })} placeholder="What should Nura call you?" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Your name" autoComplete="name" returnKeyType="next" />
             <Text style={styles.fieldLabel}>COUNTRY</Text>
             <Pressable accessibilityRole="button" accessibilityLabel={country ? 'Country: ' + country + '. Change country' : 'Select your country'} onPress={() => setCountryPickerOpen(true)} style={styles.countryButton}>
               <Text style={[styles.countryButtonText, !country && styles.countryPlaceholder]}>{countryIsCustom ? customCountry || (country === 'Other' ? 'Enter your country' : country) : country || 'Select your country'}</Text><Text style={styles.countryChevron}>⌄</Text>
             </Pressable>
-            {countryIsCustom ? <TextInput value={customCountry} onChangeText={(value) => { setCustomCountry(value); updateProfile({ country: value }); }} placeholder="Enter country name" placeholderTextColor="rgba(255,249,244,.46)" style={[styles.fieldInput, styles.customCountryInput]} accessibilityLabel="Enter another country" /> : null}
+            {countryIsCustom ? <TextInput value={customCountry} onChangeText={(value) => { setCustomCountry(value); updateProfile({ country: value }); }} placeholder="Enter country name" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.customCountryInput]} accessibilityLabel="Enter another country" /> : null}
             <Text style={styles.fieldLabel}>BIRTHDAY <Text style={styles.optionalInline}>· OPTIONAL</Text></Text>
-            <TextInput value={birthday} onChangeText={(value) => updateProfile({ birthday: value })} placeholder="YYYY-MM-DD" placeholderTextColor="rgba(255,249,244,.46)" style={styles.fieldInput} accessibilityLabel="Birthday" keyboardType="numbers-and-punctuation" maxLength={10} />
+            <TextInput value={birthday} onChangeText={(value) => updateProfile({ birthday: value })} placeholder="YYYY-MM-DD" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Birthday" keyboardType="numbers-and-punctuation" maxLength={10} />
             {age !== null ? <View style={styles.ageReadout}><View style={[styles.liveSignalDot, { backgroundColor: palette.blue }]} /><Text style={styles.ageReadoutText}>{age} years old · calculated from the birthday you entered</Text></View> : null}
             <Text style={styles.fieldLabel}>CONTACT <Text style={styles.optionalInline}>· OPTIONAL</Text></Text>
             <View style={styles.contactFields}>
-              <TextInput value={phone} onChangeText={(value) => updateProfile({ phone: value })} placeholder="Phone number" placeholderTextColor="rgba(255,249,244,.46)" keyboardType="phone-pad" style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Phone number" autoComplete="tel" />
-              <TextInput value={email} onChangeText={(value) => updateProfile({ email: value })} placeholder="Email address" placeholderTextColor="rgba(255,249,244,.46)" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Email address" autoComplete="email" returnKeyType="done" />
+              <TextInput value={phone} onChangeText={(value) => updateProfile({ phone: value })} placeholder="Phone number" placeholderTextColor="#8D8792" keyboardType="phone-pad" style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Phone number" autoComplete="tel" />
+              <TextInput value={email} onChangeText={(value) => updateProfile({ email: value })} placeholder="Email address" placeholderTextColor="#8D8792" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Email address" autoComplete="email" returnKeyType="done" />
             </View>
             <Text style={styles.fieldHelper}>The live profile preview updates as you type. You can add, correct or remove these details later.</Text>
           </View>
@@ -732,12 +732,12 @@ export default function ProfileSetup() {
             </View>
             <Text style={styles.fieldLabel}>HEIGHT</Text>
             <View style={styles.measureInputRow}>
-              <TextInput value={height} onChangeText={setHeight} placeholder="e.g. 168" placeholderTextColor="rgba(255,249,244,.46)" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Height" keyboardType="decimal-pad" />
+              <TextInput value={height} onChangeText={setHeight} placeholder="e.g. 168" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Height" keyboardType="decimal-pad" />
               <Text style={styles.unitLabel}>cm</Text>
             </View>
             <Text style={styles.fieldLabel}>WEIGHT</Text>
             <View style={styles.measureInputRow}>
-              <TextInput value={weight} onChangeText={setWeight} placeholder="e.g. 62" placeholderTextColor="rgba(255,249,244,.46)" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Weight" keyboardType="decimal-pad" />
+              <TextInput value={weight} onChangeText={setWeight} placeholder="e.g. 62" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Weight" keyboardType="decimal-pad" />
               <Text style={styles.unitLabel}>kg</Text>
             </View>
             <View style={styles.metricPreview}>
@@ -1035,11 +1035,11 @@ const styles = StyleSheet.create({
   optionalLabel: { color: '#E7CDBA', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   fieldLabel: { color: 'rgba(255,249,244,.66)', fontSize: 10, fontWeight: '700', letterSpacing: 1.1, marginTop: 9, marginBottom: 5 },
   optionalInline: { color: 'rgba(255,249,244,.43)', fontWeight: '500' },
-  fieldInput: { minHeight: 46, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,.22)', backgroundColor: 'rgba(255,255,255,.08)', paddingHorizontal: 12, color: palette.ink, fontSize: 14 },
-  countryButton: { minHeight: 46, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,.22)', backgroundColor: 'rgba(255,255,255,.08)', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  countryButtonText: { color: palette.ink, fontSize: 12 },
-  countryPlaceholder: { color: 'rgba(255,249,244,.46)' },
-  countryChevron: { color: '#F2CDAF', fontSize: 19 },
+  fieldInput: { minHeight: 46, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,.86)', backgroundColor: '#FFFBF7', paddingHorizontal: 12, color: '#322936', fontSize: 14 },
+  countryButton: { minHeight: 46, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,.86)', backgroundColor: '#FFFBF7', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  countryButtonText: { color: '#322936', fontSize: 12 },
+  countryPlaceholder: { color: '#8D8792' },
+  countryChevron: { color: '#745487', fontSize: 19 },
   customCountryInput: { marginTop: 7 },
   contactFields: { gap: 7 },
   contactInput: { width: '100%' },

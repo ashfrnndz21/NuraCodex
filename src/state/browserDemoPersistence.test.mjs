@@ -13,7 +13,7 @@ function memoryStorage(seed = {}) {
 
 const fallback = {
   version: 1, demoOnly: true, name: '', birthday: '', country: '', email: '', phone: '',
-  topics: [], assets: [], facts: [], treatments: [], treatmentEvents: [], visits: [],
+  topics: [], assets: [], facts: [], treatments: [], treatmentEvents: [], visits: [], policyReplacements: [],
   visitEvents: [], links: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [],
 };
 
@@ -30,6 +30,24 @@ test('an explicitly cleared empty workspace stays empty after refresh', () => {
   const storage = memoryStorage();
   writeBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.deepEqual(readBrowserDemoSnapshot(storage, 'nura-demo', { ...fallback, facts: [{ id: 'seed' }] }).snapshot, fallback);
+});
+
+test('older version-one workspaces migrate with an empty policy relationship list', () => {
+  const storage = memoryStorage();
+  const { policyReplacements: _policyReplacements, ...oldSnapshot } = fallback;
+  storage.setItem('nura-demo', JSON.stringify(oldSnapshot));
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
+  assert.equal(loaded.warning, null);
+  assert.deepEqual(loaded.snapshot.policyReplacements, []);
+  assert.equal(loaded.snapshot.name, '');
+});
+
+test('a malformed policy relationship field is rejected without rewriting the saved workspace', () => {
+  const raw = JSON.stringify({ ...fallback, policyReplacements: 'not-a-list' });
+  const storage = memoryStorage({ 'nura-demo': raw });
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
+  assert.match(loaded.warning ?? '', /could not be read/);
+  assert.equal(storage.getItem('nura-demo'), raw);
 });
 
 test('invalid or non-demo storage is ignored without overwriting its saved value', () => {
