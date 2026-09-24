@@ -369,3 +369,12 @@ The user should review a stable story slice, not act as the team's error detecto
 - Fixed the citation-to-timeline mapping for Registry summaries. Direct fact/treatment/visit citations open the matching item; page-level extracted document citations open the connected local source file; user-authored relationship citations open one linked endpoint. Unknown citation IDs fall back to the full History view instead of requesting a nonexistent selection.
 - Added focused tests for direct record, extracted document, relationship and unmatched citation IDs. `npm run test:repo` passed **72/72**; typecheck, lint and diff checks passed. A live tap-through of the citation path remains open.
 - This is a source-navigation fix within M2, not end-to-end Medical Registry acceptance. The package baseline remains **0/11 stories, 0/8 production gates, 0/19 packages**; browser refresh, native persistence/motion and remaining M2 states stay open.
+
+
+### Medical Registry citation tap-through — 25 September 2026
+
+- Continued the synthetic Registry journey from the saved Cholesterol summary. Tapping citation **R2 · Total cholesterol** opened Health History with the exact accepted fact selected (`6.1 mmol/L`, 24 September 2026), and displayed its linked `Nura-Synthetic-Lab-Report.pdf`, source quote, page reference and correction/source actions.
+- The source screen contained the expected summary evidence and selected record; the app did not route to an unrelated result or an unfiltered list. This verifies the direct-record citation branch in the live browser preview. The page-level document and user-link citation branches have focused code tests, but were not live-tapped in this journey.
+- The preceding synthetic browser journey had explicitly linked the source file and accepted fact to the Cholesterol topic, run the per-run consent review, received a provider-backed source-scoped summary with citations and unknowns, and saved it as current. No personal health record or user-supplied file was sent.
+- **M2 remains partial:** refresh/native persistence, all accept/edit/reject paths in one clean run, changing linked evidence and verifying stale/current version behavior, reduced-motion/native checks, and live taps for document/link citations remain open. Completion totals stay **0/11 stories, 0/8 production gates, 0/19 packages (0%)**.
+- **Next:** verify summary freshness and retained-version navigation using only synthetic data, then complete the remaining M2 source-review and recovery cases before offering a user milestone.
