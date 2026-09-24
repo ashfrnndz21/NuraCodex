@@ -363,3 +363,9 @@ The user should review a stable story slice, not act as the team's error detecto
 - Shifted the record/feed canvas closer to neutral paper while preserving warm cards, category colors and cobalt actions. Selected health-area chips now use the same cobalt treatment as the Explore reference.
 - Compared the running phone preview on Ask, Home, History and Explore. The views retain their distinct roles: immersive Nura moments and light evidence reading. Existing sample results remained untouched; no new source search, upload or profile edit was performed.
 - TypeScript, lint and diff checks passed. This is a palette-system refinement only; the acceptance baseline remains **0/11 user stories, 0/8 production gates, 0/19 packages**. Native, reduced-motion and full story acceptance checks remain open.
+
+### Medical Registry citation navigation — 25 September 2026
+
+- Fixed the citation-to-timeline mapping for Registry summaries. Direct fact/treatment/visit citations open the matching item; page-level extracted document citations open the connected local source file; user-authored relationship citations open one linked endpoint. Unknown citation IDs fall back to the full History view instead of requesting a nonexistent selection.
+- Added focused tests for direct record, extracted document, relationship and unmatched citation IDs. `npm run test:repo` passed **72/72**; typecheck, lint and diff checks passed. A live tap-through of the citation path remains open.
+- This is a source-navigation fix within M2, not end-to-end Medical Registry acceptance. The package baseline remains **0/11 stories, 0/8 production gates, 0/19 packages**; browser refresh, native persistence/motion and remaining M2 states stay open.

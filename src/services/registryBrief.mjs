@@ -20,6 +20,28 @@ export function registryBriefIsCurrent(brief, sourceSignature) {
   return Boolean(brief && sourceSignature && brief.sourceSignature === sourceSignature);
 }
 
+export function registryCitationTargetId(citation, connected) {
+  const citationId = String(citation?.id || '');
+  if (!citationId) return null;
+
+  const exactRecord = connected.find((record) => record.id === citationId);
+  if (exactRecord) return exactRecord.id;
+
+  const documentDetail = /^document:(.*):\d+$/.exec(citationId);
+  if (documentDetail) {
+    const sourceFile = connected.find((record) => record.kind === 'asset' && record.sourceIdentity === documentDetail[1]);
+    if (sourceFile) return sourceFile.id;
+  }
+
+  if (citationId.startsWith('link:')) {
+    const linkId = citationId.slice('link:'.length);
+    const linkedRecord = connected.find((record) => record.link?.id === linkId);
+    if (linkedRecord) return linkedRecord.id;
+  }
+
+  return null;
+}
+
 export function registryBriefCitations(answer, availableSources) {
   const allowed = new Set(availableSources.map((source) => source.reference).filter(Boolean));
   const references = new Set(answer.citations.filter((reference) => allowed.has(reference)));

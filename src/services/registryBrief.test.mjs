@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { registryBriefCitations, registryBriefDisplayText, registryBriefIsCurrent, registryEvidenceSnapshot } from './registryBrief.mjs';
+import { registryBriefCitations, registryBriefDisplayText, registryBriefIsCurrent, registryCitationTargetId, registryEvidenceSnapshot } from './registryBrief.mjs';
 
 const recordA = { id: 'fact:a', kind: 'fact', date: '2026-09-12', revision: '2026-09-12', status: 'reviewed' };
 const recordB = { id: 'asset:b', kind: 'asset', date: '2026-09-10', revision: '2026-09-10|source-b', status: 'Original source', sourceIdentity: 'source-b' };
@@ -32,6 +32,25 @@ test('a saved brief can retain only sources cited by the completed answer', () =
   const sources = [{ reference: 'R1', title: 'Report' }, { reference: 'R2', title: 'Visit note' }];
   assert.deepEqual(registryBriefCitations({ citations: ['R2', 'R9', 'R2'] }, sources), [sources[1]]);
   assert.deepEqual(registryBriefCitations({ citations: [] }, sources), []);
+});
+
+test('registry citations navigate to the exact connected record when ids match', () => {
+  const connected = [{ id: 'fact:lab-1', kind: 'fact', sourceIdentity: 'source-a' }];
+  assert.equal(registryCitationTargetId({ id: 'fact:lab-1' }, connected), 'fact:lab-1');
+});
+
+test('document-detail citations navigate to their linked local source file', () => {
+  const connected = [{ id: 'asset:local-file-1', kind: 'asset', sourceIdentity: 'source-uuid-1' }];
+  assert.equal(registryCitationTargetId({ id: 'document:source-uuid-1:2' }, connected), 'asset:local-file-1');
+});
+
+test('user-link citations navigate to a connected endpoint instead of an invalid timeline id', () => {
+  const connected = [{ id: 'fact:lab-1', kind: 'fact', link: { id: 'topic-link-1' } }];
+  assert.equal(registryCitationTargetId({ id: 'link:topic-link-1' }, connected), 'fact:lab-1');
+});
+
+test('unmatched registry citations do not invent a timeline target', () => {
+  assert.equal(registryCitationTargetId({ id: 'document:missing-source:0' }, []), null);
 });
 
 test('registry brief display removes markdown syntax but keeps readable headings and lists', () => {
