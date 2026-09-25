@@ -18,8 +18,8 @@ const sections = [
 ];
 
 const keyMedicalDetails = [
-  { label: 'Annual medical limit', match: /annual.{0,24}(?:medical|limit)|(?:medical|annual).{0,24}limit/i },
-  { label: 'Lifetime medical limit', match: /lifetime.{0,24}(?:medical|limit)|(?:medical|lifetime).{0,24}limit/i },
+  { label: 'Annual medical limit', match: /\bannual.{0,24}\bmedical.{0,20}\blimit\b|\bmedical.{0,20}\bannual.{0,20}\blimit\b|\bannual\s+(?:overall\s+)?limit\b/i },
+  { label: 'Lifetime medical limit', match: /\blifetime.{0,24}\bmedical.{0,20}\blimit\b|\bmedical.{0,20}\blifetime.{0,20}\blimit\b|\blifetime\s+(?:overall\s+)?limit\b/i },
   { label: 'Room & board limit', match: /room\s*(?:&|and)\s*board/i },
   { label: 'Deductible or co-insurance', match: /deductible|co-?insurance/i },
   { label: 'Outpatient benefits', match: /outpatient/i },

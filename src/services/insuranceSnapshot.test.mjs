@@ -49,6 +49,15 @@ test('builds compact highlights from approved key terms without inventing missin
   assert.equal(snapshot.exclusions.length, 0);
 });
 
+test('keeps annual visit caps distinct from annual and lifetime medical limits', () => {
+  const visitCap = buildInsuranceSnapshot([term('Annual visit limit', '8 cardiology visits')]);
+  assert.ok(visitCap.notFoundMedicalDetails.some((field) => field.label === 'Annual medical limit'));
+  assert.ok(visitCap.notFoundMedicalDetails.some((field) => field.label === 'Lifetime medical limit'));
+
+  const annualLimit = buildInsuranceSnapshot([term('Annual overall limit', 'MYR 80,000')]);
+  assert.ok(!annualLimit.notFoundMedicalDetails.some((field) => field.label === 'Annual medical limit'));
+});
+
 test('offers cautious plain-language explanations for common cost-sharing terms', () => {
   assert.match(interpretInsuranceTerm(term('Deductible', 'MYR 500')), /before the plan starts sharing/i);
   assert.match(interpretInsuranceTerm(term('Copay', 'MYR 60')), /eligible service/i);
