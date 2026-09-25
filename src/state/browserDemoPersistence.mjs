@@ -3,7 +3,7 @@ const arrayFields = [
   'visitEvents', 'links', 'feedItems', 'savedQuestions', 'agentMessages', 'registryBriefs',
 ];
 const stringFields = ['name', 'birthday', 'country', 'email', 'phone'];
-const optionalArrayFields = ['policyReplacements'];
+const optionalArrayFields = ['policyReplacements', 'intakeNotes'];
 const legacySeededTopics = [
   { id: 'bp-topic', label: 'Blood pressure' },
   { id: 'cholesterol', label: 'Cholesterol' },

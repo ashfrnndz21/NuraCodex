@@ -13,6 +13,7 @@ import { canonicalSourceFactValue } from '../services/sourceFactNormalization.mj
 
 export type HealthTopic = { id: string; label: string };
 export type IntakeAsset = { id: string; name: string; kind: 'image' | 'pdf' | 'video' | 'file'; uri: string; size?: number; mimeType?: string; purpose?: 'medical' | 'insurance'; serverSourceId?: string; possibleRepeat?: boolean; addedAt: string };
+export type HealthIntakeNote = { id: string; text: string; topicId?: string; topicLabel?: string; createdAt: string };
 export type HealthFact = { id: string; label: string; value: string; date: string; category: string; source: string; status: 'confirmed' | 'reviewed'; note?: string; sourceRunId?: string; sourceId?: string; sourceClaimId?: string; supersedesId?: string; reviewState?: 'user_confirmed' | 'user_retracted'; validFrom?: string; validUntil?: string | null; confidence?: number | null; permissionScope?: string };
 export type TreatmentStatus = 'current' | 'past';
 export type TreatmentRecord = { id: string; name: string; dose: string; schedule: string; purpose: string; prescriber: string; careLocation: string; pharmacy: string; status: TreatmentStatus; startedOn: string; endedOn?: string; source: string; sourceId?: string; createdAt: string; updatedAt: string };
@@ -52,10 +53,10 @@ export type RegistryBriefInput = Omit<RegistryBrief, 'id' | 'createdAt' | 'super
 export type AddFactMetadata = { source?: string; category?: string; note?: string; sourceRunId?: string; sourceId?: string; sourceClaimId?: string; supersedesId?: string; reviewState?: 'user_confirmed'; validFrom?: string; validUntil?: string | null; confidence?: number | null; permissionScope?: string };
 type NuraState = {
   ready: boolean; storageError: string | null; name: string; birthday: string; country: string; email: string; phone: string;
-  topics: HealthTopic[]; assets: IntakeAsset[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[];
+  topics: HealthTopic[]; assets: IntakeAsset[]; intakeNotes: HealthIntakeNote[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[];
   updateProfile: (patch: Partial<Pick<NuraState, 'name' | 'birthday' | 'country' | 'email' | 'phone'>>) => void;
   commitProfileSetup: () => Promise<void>;
-  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => void;
+  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; saveIntakeNote: (note: { id?: string; text: string; topicId?: string; topicLabel?: string }) => Promise<HealthIntakeNote>; commitIntakeNote: (id: string, text?: string) => Promise<HealthFact>; removeIntakeNote: (id: string) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => void;
   reconcileSourceFactDate: (factId: string, sourceId: string, sourceClaimId: string, effectiveAt: string) => boolean;
   reconcileSourceFactValue: (factId: string, sourceId: string, sourceClaimId: string, expectedValue: string, normalizedValue: string) => Promise<boolean>;
   addTreatment: (input: TreatmentInput) => TreatmentRecord | null; updateTreatment: (id: string, patch: Partial<TreatmentInput>) => TreatmentRecord | null; markTreatmentPast: (id: string, endedOn?: string) => TreatmentRecord | null;
@@ -70,13 +71,14 @@ const WEB_DEMO_KEY = 'nura-local-demo-v1';
 const DEMO_NOTE = 'Synthetic demo example · not your health information.';
 const FILES = Platform.OS === 'web' ? null : new Directory(Paths.document, 'nura-health-files');
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
-type BrowserDemoSnapshot = { version: 1; demoOnly: true; name: string; birthday: string; country: string; email: string; phone: string; topics: HealthTopic[]; assets: IntakeAsset[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[] };
+type BrowserDemoSnapshot = { version: 1; demoOnly: true; name: string; birthday: string; country: string; email: string; phone: string; topics: HealthTopic[]; assets: IntakeAsset[]; intakeNotes: HealthIntakeNote[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[] };
 function demoSnapshot(): BrowserDemoSnapshot {
   return {
     version: 1, demoOnly: true, name: '', birthday: '', country: '', email: '', phone: '',
     // A new profile starts with no selected health areas. Sample records remain
     // available in the demo, but they must never look like the user's choices.
     topics: [],
+    intakeNotes: [],
     assets: [{ id: 'demo-source-lab', name: 'Example blood test.pdf', kind: 'pdf', uri: 'demo://example-blood-test.pdf', mimeType: 'application/pdf', size: 128000, possibleRepeat: false, addedAt: '2026-09-12T09:00:00.000Z' }],
     facts: [
       { id: 'demo-fact-lab', label: 'Example blood test', value: 'Five values listed in a sample report', date: '2026-09-12T09:00:00.000Z', category: 'Lab results', source: 'Synthetic demo report · page 2', status: 'reviewed', note: DEMO_NOTE, reviewState: 'user_confirmed', validFrom: '2026-09-12T09:00:00.000Z', confidence: 1, permissionScope: 'demo_only' },
@@ -96,7 +98,7 @@ function demoSnapshot(): BrowserDemoSnapshot {
 }
 function emptyDemoSnapshot(): BrowserDemoSnapshot {
   const seed = demoSnapshot();
-  return { ...seed, name: '', birthday: '', country: '', email: '', phone: '', topics: [], assets: [], facts: [], treatments: [], treatmentEvents: [], visits: [], visitEvents: [], links: [], policyReplacements: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [] };
+  return { ...seed, name: '', birthday: '', country: '', email: '', phone: '', topics: [], assets: [], intakeNotes: [], facts: [], treatments: [], treatmentEvents: [], visits: [], visitEvents: [], links: [], policyReplacements: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [] };
 }
 async function getDatabase() {
   if (!dbPromise) dbPromise = (async () => {
@@ -121,6 +123,7 @@ async function getDatabase() {
       CREATE TABLE IF NOT EXISTS care_visits (id TEXT PRIMARY KEY, appointment_at TEXT NOT NULL, status TEXT NOT NULL, visit_json TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS care_visit_events (id TEXT PRIMARY KEY, visit_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL, snapshot_json TEXT NOT NULL, occurred_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, uri TEXT NOT NULL, size INTEGER, mime_type TEXT, added_at TEXT NOT NULL, purpose TEXT NOT NULL DEFAULT 'medical', server_source_id TEXT);
+      CREATE TABLE IF NOT EXISTS health_intake_notes (id TEXT PRIMARY KEY, text TEXT NOT NULL, topic_id TEXT, topic_label TEXT, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS health_links (id TEXT PRIMARY KEY, from_id TEXT NOT NULL, to_id TEXT NOT NULL, label TEXT NOT NULL, relation_type TEXT NOT NULL DEFAULT 'user_note', created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS policy_replacements (id TEXT PRIMARY KEY, newer_source_id TEXT NOT NULL, older_source_id TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(newer_source_id,older_source_id), CHECK(newer_source_id <> older_source_id));
       CREATE TABLE IF NOT EXISTS agent_messages (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, citations_json TEXT NOT NULL, trace_json TEXT NOT NULL, created_at TEXT NOT NULL, answer_metadata_json TEXT NOT NULL DEFAULT '{}');
@@ -157,8 +160,9 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
   const browserWritesAllowed = useRef(!browserBootstrap.warning);
   const [ready, setReady] = useState(Platform.OS === 'web'); const [storageError, setStorageError] = useState<string | null>(browserBootstrap.warning);
   const [name, setName] = useState(webBootstrap?.name ?? ''); const [birthday, setBirthday] = useState(webBootstrap?.birthday ?? ''); const [country, setCountry] = useState(webBootstrap?.country ?? ''); const [email, setEmail] = useState(webBootstrap?.email ?? ''); const [phone, setPhone] = useState(webBootstrap?.phone ?? '');
-  const [topics, setTopics] = useState<HealthTopic[]>(webBootstrap?.topics ?? []); const [assets, setAssets] = useState<IntakeAsset[]>(webBootstrap?.assets ?? []); const [facts, setFacts] = useState<HealthFact[]>(webBootstrap?.facts ?? []); const [treatments, setTreatments] = useState<TreatmentRecord[]>(webBootstrap?.treatments ?? []); const [treatmentEvents, setTreatmentEvents] = useState<TreatmentEvent[]>(webBootstrap?.treatmentEvents ?? []); const [visits, setVisits] = useState<HealthVisit[]>(webBootstrap?.visits ?? []); const [visitEvents, setVisitEvents] = useState<VisitEvent[]>(webBootstrap?.visitEvents ?? []); const [links, setLinks] = useState<HealthLink[]>(webBootstrap?.links ?? []); const [policyReplacements, setPolicyReplacements] = useState<PolicyReplacement[]>(webBootstrap?.policyReplacements ?? []); const [feedItems, setFeedItems] = useState<HealthFeedItem[]>(webBootstrap?.feedItems ?? []); const [savedQuestions, setSavedQuestions] = useState<string[]>(webBootstrap?.savedQuestions ?? []); const [agentMessages, setAgentMessages] = useState<AgentMessage[]>(webBootstrap?.agentMessages ?? []); const [registryBriefs, setRegistryBriefs] = useState<RegistryBrief[]>(webBootstrap?.registryBriefs ?? []);
+  const [topics, setTopics] = useState<HealthTopic[]>(webBootstrap?.topics ?? []); const [assets, setAssets] = useState<IntakeAsset[]>(webBootstrap?.assets ?? []); const [intakeNotes, setIntakeNotes] = useState<HealthIntakeNote[]>(webBootstrap?.intakeNotes ?? []); const [facts, setFacts] = useState<HealthFact[]>(webBootstrap?.facts ?? []); const [treatments, setTreatments] = useState<TreatmentRecord[]>(webBootstrap?.treatments ?? []); const [treatmentEvents, setTreatmentEvents] = useState<TreatmentEvent[]>(webBootstrap?.treatmentEvents ?? []); const [visits, setVisits] = useState<HealthVisit[]>(webBootstrap?.visits ?? []); const [visitEvents, setVisitEvents] = useState<VisitEvent[]>(webBootstrap?.visitEvents ?? []); const [links, setLinks] = useState<HealthLink[]>(webBootstrap?.links ?? []); const [policyReplacements, setPolicyReplacements] = useState<PolicyReplacement[]>(webBootstrap?.policyReplacements ?? []); const [feedItems, setFeedItems] = useState<HealthFeedItem[]>(webBootstrap?.feedItems ?? []); const [savedQuestions, setSavedQuestions] = useState<string[]>(webBootstrap?.savedQuestions ?? []); const [agentMessages, setAgentMessages] = useState<AgentMessage[]>(webBootstrap?.agentMessages ?? []); const [registryBriefs, setRegistryBriefs] = useState<RegistryBrief[]>(webBootstrap?.registryBriefs ?? []);
   const pendingProfileWrites = useRef(new Set<Promise<void>>());
+  const committingIntakeNotes = useRef(new Set<string>());
   const profileWriteFailures = useRef<string[]>([]);
   const explicitlyRemovedTopics = useRef(new Set<string>());
   const enqueueProfileWrite = useCallback((write: Promise<unknown>) => {
@@ -189,23 +193,24 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
         const loadedVisits = await db.getAllAsync<{ visit_json: string }>('SELECT visit_json FROM care_visits ORDER BY appointment_at DESC');
         const loadedVisitEvents = await db.getAllAsync<{ id: string; visit_id: string; kind: VisitEvent['kind']; summary: string; snapshot_json: string; occurred_at: string }>('SELECT id,visit_id,kind,summary,snapshot_json,occurred_at FROM care_visit_events ORDER BY occurred_at DESC');
         const loadedAssets = await db.getAllAsync<{ id: string; name: string; kind: IntakeAsset['kind']; uri: string; size: number | null; mime_type: string | null; added_at: string; purpose: 'medical' | 'insurance' | null; server_source_id: string | null }>('SELECT id,name,kind,uri,size,mime_type,added_at,purpose,server_source_id FROM assets ORDER BY added_at DESC');
+        const loadedIntakeNotes = await db.getAllAsync<HealthIntakeNote>('SELECT id,text,topic_id AS topicId,topic_label AS topicLabel,created_at AS createdAt FROM health_intake_notes ORDER BY created_at DESC');
         const loadedLinks = await db.getAllAsync<{ id: string; from_id: string; to_id: string; label: string; relation_type: HealthLinkRelation; created_at: string }>('SELECT id,from_id,to_id,label,relation_type,created_at FROM health_links ORDER BY created_at DESC');
         const loadedPolicyReplacements = await db.getAllAsync<{ id: string; newer_source_id: string; older_source_id: string; created_at: string }>('SELECT id,newer_source_id,older_source_id,created_at FROM policy_replacements ORDER BY created_at DESC');
         const loadedQuestions = await db.getAllAsync<{ question: string }>('SELECT question FROM questions ORDER BY added_at DESC');
         const loadedMessages = await db.getAllAsync<AgentMessageRow>('SELECT id,run_id,role,text,citations_json,trace_json,created_at,answer_metadata_json FROM agent_messages ORDER BY created_at');
         const loadedRegistryBriefs = await db.getAllAsync<{ id: string; topic_id: string; topic_label: string; answer: string; unknowns_json: string; citations_json: string; source_signature: string; run_id: string; created_at: string; supersedes_brief_id: string | null }>('SELECT id,topic_id,topic_label,answer,unknowns_json,citations_json,source_signature,run_id,created_at,supersedes_brief_id FROM registry_briefs ORDER BY created_at DESC');
         const loadedFeed = await db.getAllAsync<{ id: string; title: string; detail: string; url: string; publisher: string; topic: string; retrieved_at: string; saved: number; dismissed: number }>('SELECT id,title,detail,url,publisher,topic,retrieved_at,saved,dismissed FROM health_feed ORDER BY retrieved_at DESC');
-        if (active) { if (profile) { setName(profile.name); setBirthday(profile.birthday); setCountry(profile.country); setEmail(profile.email); setPhone(profile.phone); } setTopics(loadedTopics); setFacts(loadedFacts); setTreatments(loadedTreatments.map((record) => ({ id: record.id, name: record.name, dose: record.dose, schedule: record.schedule, purpose: record.purpose, prescriber: record.prescriber, careLocation: record.care_location, pharmacy: record.pharmacy, status: record.status, startedOn: record.started_on, endedOn: record.ended_on ?? undefined, source: record.source, sourceId: record.source_id ?? undefined, createdAt: record.created_at, updatedAt: record.updated_at }))); setTreatmentEvents(loadedTreatmentEvents.map((event) => ({ id: event.id, treatmentId: event.treatment_id, kind: event.kind, summary: event.summary, snapshot: JSON.parse(event.snapshot_json) as TreatmentRecord, occurredAt: event.occurred_at }))); setVisits(loadedVisits.map((row) => { const visit = JSON.parse(row.visit_json) as HealthVisit; return { ...visit, followUpActions: visit.followUpActions ?? [] }; })); setVisitEvents(loadedVisitEvents.map((event) => ({ id: event.id, visitId: event.visit_id, kind: event.kind, summary: event.summary, snapshot: JSON.parse(event.snapshot_json) as HealthVisit, occurredAt: event.occurred_at }))); setAssets(loadedAssets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, uri: a.uri, size: a.size ?? undefined, mimeType: a.mime_type ?? undefined, purpose: a.purpose ?? 'medical', serverSourceId: a.server_source_id ?? undefined, addedAt: a.added_at }))); setLinks(loadedLinks.map((link) => ({ id: link.id, from: link.from_id, to: link.to_id, relationType: link.relation_type, label: link.label, createdAt: link.created_at }))); setPolicyReplacements(loadedPolicyReplacements.map((link) => ({ id: link.id, newerSourceId: link.newer_source_id, olderSourceId: link.older_source_id, createdAt: link.created_at }))); setSavedQuestions(loadedQuestions.map((q) => q.question)); setAgentMessages(loadedMessages.map(agentMessageFromRow)); setRegistryBriefs(loadedRegistryBriefs.map((item) => ({ id: item.id, topicId: item.topic_id, topicLabel: item.topic_label, answer: item.answer, unknowns: JSON.parse(item.unknowns_json || '[]') as string[], citations: JSON.parse(item.citations_json) as AgentCitation[], sourceSignature: item.source_signature, runId: item.run_id, createdAt: item.created_at, supersedesBriefId: item.supersedes_brief_id ?? undefined }))); setFeedItems(loadedFeed.map((item) => ({ id: item.id, title: item.title, detail: item.detail, url: item.url, publisher: item.publisher, topic: item.topic, retrievedAt: item.retrieved_at, saved: item.saved === 1, dismissed: item.dismissed === 1 }))); setReady(true); }
+        if (active) { if (profile) { setName(profile.name); setBirthday(profile.birthday); setCountry(profile.country); setEmail(profile.email); setPhone(profile.phone); } setTopics(loadedTopics); setIntakeNotes(loadedIntakeNotes); setFacts(loadedFacts); setTreatments(loadedTreatments.map((record) => ({ id: record.id, name: record.name, dose: record.dose, schedule: record.schedule, purpose: record.purpose, prescriber: record.prescriber, careLocation: record.care_location, pharmacy: record.pharmacy, status: record.status, startedOn: record.started_on, endedOn: record.ended_on ?? undefined, source: record.source, sourceId: record.source_id ?? undefined, createdAt: record.created_at, updatedAt: record.updated_at }))); setTreatmentEvents(loadedTreatmentEvents.map((event) => ({ id: event.id, treatmentId: event.treatment_id, kind: event.kind, summary: event.summary, snapshot: JSON.parse(event.snapshot_json) as TreatmentRecord, occurredAt: event.occurred_at }))); setVisits(loadedVisits.map((row) => { const visit = JSON.parse(row.visit_json) as HealthVisit; return { ...visit, followUpActions: visit.followUpActions ?? [] }; })); setVisitEvents(loadedVisitEvents.map((event) => ({ id: event.id, visitId: event.visit_id, kind: event.kind, summary: event.summary, snapshot: JSON.parse(event.snapshot_json) as HealthVisit, occurredAt: event.occurred_at }))); setAssets(loadedAssets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, uri: a.uri, size: a.size ?? undefined, mimeType: a.mime_type ?? undefined, purpose: a.purpose ?? 'medical', serverSourceId: a.server_source_id ?? undefined, addedAt: a.added_at }))); setLinks(loadedLinks.map((link) => ({ id: link.id, from: link.from_id, to: link.to_id, relationType: link.relation_type, label: link.label, createdAt: link.created_at }))); setPolicyReplacements(loadedPolicyReplacements.map((link) => ({ id: link.id, newerSourceId: link.newer_source_id, olderSourceId: link.older_source_id, createdAt: link.created_at }))); setSavedQuestions(loadedQuestions.map((q) => q.question)); setAgentMessages(loadedMessages.map(agentMessageFromRow)); setRegistryBriefs(loadedRegistryBriefs.map((item) => ({ id: item.id, topicId: item.topic_id, topicLabel: item.topic_label, answer: item.answer, unknowns: JSON.parse(item.unknowns_json || '[]') as string[], citations: JSON.parse(item.citations_json) as AgentCitation[], sourceSignature: item.source_signature, runId: item.run_id, createdAt: item.created_at, supersedesBriefId: item.supersedes_brief_id ?? undefined }))); setFeedItems(loadedFeed.map((item) => ({ id: item.id, title: item.title, detail: item.detail, url: item.url, publisher: item.publisher, topic: item.topic, retrievedAt: item.retrieved_at, saved: item.saved === 1, dismissed: item.dismissed === 1 }))); setReady(true); }
       } catch (error) { if (active) { setStorageError(error instanceof Error ? error.message : 'Private local storage could not be opened.'); setReady(true); } }
     })();
     return () => { active = false; };
   }, []);
   useEffect(() => {
     if (Platform.OS !== 'web' || !ready || !browserWritesAllowed.current || typeof window === 'undefined') return;
-    const snapshot: BrowserDemoSnapshot = { version: 1, demoOnly: true, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs };
+    const snapshot: BrowserDemoSnapshot = { version: 1, demoOnly: true, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs };
     try { writeBrowserDemoSnapshot(window.localStorage, WEB_DEMO_KEY, snapshot); }
     catch { browserWritesAllowed.current = false; queueMicrotask(() => setStorageError('The browser could not save this synthetic workspace. Changes may not survive a refresh.')); }
-  }, [ready, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs]);
+  }, [ready, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs]);
   const updateProfile = useCallback((patch: Partial<Pick<NuraState, 'name' | 'birthday' | 'country' | 'email' | 'phone'>>) => {
     const next = { name, birthday, country, email, phone, ...patch };
     setName(next.name); setBirthday(next.birthday); setCountry(next.country); setEmail(next.email); setPhone(next.phone);
@@ -411,6 +416,61 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     }
     setAssets((current) => [...additions, ...current]);
   }, [assets]);
+  const saveIntakeNote = useCallback(async (input: { id?: string; text: string; topicId?: string; topicLabel?: string }) => {
+    const text = input.text.trim();
+    if (!text) throw new Error('Write a short description before saving it for review.');
+    if (text.length > 2000) throw new Error('Keep your description under 2,000 characters.');
+    const previous = input.id ? intakeNotes.find((note) => note.id === input.id) : undefined;
+    const note: HealthIntakeNote = { id: previous?.id ?? input.id ?? newId(), text, topicId: input.topicId?.trim() || undefined, topicLabel: input.topicLabel?.trim() || undefined, createdAt: previous?.createdAt ?? new Date().toISOString() };
+    if (Platform.OS !== 'web') {
+      try {
+        const db = await getDatabase();
+        await db.runAsync('INSERT INTO health_intake_notes (id,text,topic_id,topic_label,created_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET text=excluded.text,topic_id=excluded.topic_id,topic_label=excluded.topic_label', note.id, note.text, note.topicId ?? null, note.topicLabel ?? null, note.createdAt);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Your note could not be saved on this device.';
+        setStorageError(message);
+        throw new Error('Your note could not be saved. Keep it open and try again.');
+      }
+    }
+    setIntakeNotes((current) => [note, ...current.filter((item) => item.id !== note.id)]);
+    return note;
+  }, [intakeNotes]);
+  const commitIntakeNote = useCallback(async (id: string, editedText?: string) => {
+    if (committingIntakeNotes.current.has(id)) throw new Error('This note is already being saved.');
+    const pending = intakeNotes.find((note) => note.id === id);
+    const value = (editedText ?? pending?.text ?? '').trim();
+    if (!pending || !value) throw new Error('This note is no longer available. Reopen the intake and try again.');
+    committingIntakeNotes.current.add(id);
+    const now = new Date().toISOString();
+    const fact: HealthFact = { id: newId(), label: pending.topicLabel ? `${pending.topicLabel} · your note` : 'Your health note', value, date: now, category: pending.topicLabel ?? 'Self-reported', source: 'Written by you', status: 'reviewed', note: 'Saved in your own words. The timeline date is when you added this note; an event date was not provided. This is not an AI interpretation or diagnosis.', reviewState: 'user_confirmed', validFrom: now, validUntil: null, confidence: null, permissionScope: 'profile_write' };
+    try {
+      if (Platform.OS !== 'web') {
+        const db = await getDatabase();
+        await db.withTransactionAsync(async () => {
+          const removed = await db.runAsync('DELETE FROM health_intake_notes WHERE id=?', id);
+          if (removed.changes !== 1) throw new Error('This note was already saved or removed.');
+          await db.runAsync('INSERT INTO health_facts (id,label,value,date,category,source,status,note) VALUES (?,?,?,?,?,?,?,?)', fact.id, fact.label, fact.value, fact.date, fact.category, fact.source, fact.status, fact.note ?? null);
+          await db.runAsync('INSERT INTO memory_provenance (fact_id,source_run_id,review_state,valid_from,valid_until,confidence,permission_scope,source_id,source_claim_id,supersedes_fact_id) VALUES (?,?,?,?,?,?,?,?,?,?)', fact.id, null, 'user_confirmed', now, null, null, 'profile_write', null, null, null);
+        });
+      }
+      setFacts((current) => [fact, ...current]);
+      setIntakeNotes((current) => current.filter((note) => note.id !== id));
+      return fact;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The reviewed note could not be saved on this device.';
+      if (Platform.OS !== 'web') setStorageError(message);
+      throw new Error('The note is still in review. Try saving it again.');
+    } finally {
+      committingIntakeNotes.current.delete(id);
+    }
+  }, [intakeNotes]);
+  const removeIntakeNote = useCallback(async (id: string) => {
+    if (Platform.OS !== 'web') {
+      try { await getDatabase().then((db) => db.runAsync('DELETE FROM health_intake_notes WHERE id=?', id)); }
+      catch (error) { setStorageError(error instanceof Error ? error.message : 'The draft note could not be removed.'); throw new Error('The draft note could not be removed. Try again.'); }
+    }
+    setIntakeNotes((current) => current.filter((note) => note.id !== id));
+  }, []);
   const attachSourceToAsset = useCallback((assetId: string, sourceId: string | null) => {
     setAssets((current) => current.map((asset) => asset.id === assetId ? { ...asset, serverSourceId: sourceId ?? undefined } : asset));
     if (Platform.OS !== 'web') void getDatabase().then((db) => db.runAsync('UPDATE assets SET server_source_id=? WHERE id=?', sourceId, assetId)).catch((error) => setStorageError(String(error)));
@@ -489,6 +549,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
         await db.runAsync('DELETE FROM care_visits');
         await db.runAsync('DELETE FROM care_visit_events');
         await db.runAsync('DELETE FROM assets');
+        await db.runAsync('DELETE FROM health_intake_notes');
         await db.runAsync('DELETE FROM health_links');
         await db.runAsync('DELETE FROM policy_replacements');
         await db.runAsync('DELETE FROM agent_messages');
@@ -502,7 +563,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
       try { FILES.delete(); } catch { fileCleanupFailed = true; }
     }
     setName(''); setBirthday(''); setCountry(''); setEmail(''); setPhone('');
-    setTopics([]); setAssets([]); setFacts([]); setTreatments([]); setTreatmentEvents([]); setVisits([]); setVisitEvents([]); setLinks([]); setPolicyReplacements([]); setFeedItems([]); setSavedQuestions([]); setAgentMessages([]); setRegistryBriefs([]); setStorageError(null);
+    setTopics([]); setAssets([]); setIntakeNotes([]); setFacts([]); setTreatments([]); setTreatmentEvents([]); setVisits([]); setVisitEvents([]); setLinks([]); setPolicyReplacements([]); setFeedItems([]); setSavedQuestions([]); setAgentMessages([]); setRegistryBriefs([]); setStorageError(null);
     return { fileCleanupFailed };
   }, []);
   const mergeFeedItems = useCallback((incoming: Omit<HealthFeedItem, 'saved' | 'dismissed'>[]) => {
@@ -531,9 +592,9 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     catch { setStorageError('This browser could not reset the demo seed.'); }
     void clearBrowserAssets().catch(() => setStorageError('The demo restarted, but a saved browser file could not be removed.'));
     setName(snapshot.name); setBirthday(snapshot.birthday); setCountry(snapshot.country); setEmail(snapshot.email); setPhone(snapshot.phone);
-    setTopics(snapshot.topics); setAssets(snapshot.assets); setFacts(snapshot.facts); setTreatments(snapshot.treatments); setTreatmentEvents(snapshot.treatmentEvents); setVisits(snapshot.visits); setVisitEvents(snapshot.visitEvents); setLinks(snapshot.links); setPolicyReplacements(snapshot.policyReplacements); setFeedItems(snapshot.feedItems); setSavedQuestions(snapshot.savedQuestions); setAgentMessages(snapshot.agentMessages); setRegistryBriefs(snapshot.registryBriefs); setStorageError(null);
+    setTopics(snapshot.topics); setAssets(snapshot.assets); setIntakeNotes(snapshot.intakeNotes); setFacts(snapshot.facts); setTreatments(snapshot.treatments); setTreatmentEvents(snapshot.treatmentEvents); setVisits(snapshot.visits); setVisitEvents(snapshot.visitEvents); setLinks(snapshot.links); setPolicyReplacements(snapshot.policyReplacements); setFeedItems(snapshot.feedItems); setSavedQuestions(snapshot.savedQuestions); setAgentMessages(snapshot.agentMessages); setRegistryBriefs(snapshot.registryBriefs); setStorageError(null);
   }, []);
-  const value = useMemo<NuraState>(() => ({ ready, storageError, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo }), [ready, storageError, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo]);
+  const value = useMemo<NuraState>(() => ({ ready, storageError, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, saveIntakeNote, commitIntakeNote, removeIntakeNote, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo }), [ready, storageError, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, saveIntakeNote, commitIntakeNote, removeIntakeNote, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo]);
   return <NuraContext.Provider value={value}>{children}</NuraContext.Provider>;
 }
 export function useNura() { const state = useContext(NuraContext); if (!state) throw new Error('useNura must be used inside NuraProvider'); return state; }

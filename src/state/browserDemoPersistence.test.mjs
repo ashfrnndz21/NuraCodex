@@ -13,7 +13,7 @@ function memoryStorage(seed = {}) {
 
 const fallback = {
   version: 1, demoOnly: true, name: '', birthday: '', country: '', email: '', phone: '',
-  topics: [], assets: [], facts: [], treatments: [], treatmentEvents: [], visits: [], policyReplacements: [],
+  topics: [], assets: [], intakeNotes: [], facts: [], treatments: [], treatmentEvents: [], visits: [], policyReplacements: [],
   visitEvents: [], links: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [],
 };
 
@@ -25,6 +25,13 @@ test('browser demo snapshot round-trips profile, facts, source links and agent h
   const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.equal(loaded.warning, null);
   assert.deepEqual(loaded.snapshot, snapshot);
+});
+
+test('browser demo snapshot restores an unsaved health description for review', () => {
+  const storage = memoryStorage();
+  const intakeNotes = [{ id: 'n1', text: 'I want to keep track of morning stiffness.', topicId: 'joints', topicLabel: 'Joints and movement', createdAt: '2026-09-25T08:00:00.000Z' }];
+  writeBrowserDemoSnapshot(storage, 'nura-demo', { ...fallback, intakeNotes });
+  assert.deepEqual(readBrowserDemoSnapshot(storage, 'nura-demo', fallback).snapshot.intakeNotes, intakeNotes);
 });
 
 test('an explicitly cleared empty workspace stays empty after refresh', () => {
@@ -41,6 +48,7 @@ test('older version-one workspaces migrate with an empty policy relationship lis
   assert.equal(loaded.warning, null);
   assert.deepEqual(loaded.snapshot.policyReplacements, []);
   assert.equal(loaded.snapshot.name, '');
+  assert.deepEqual(loaded.snapshot.intakeNotes, []);
 });
 
 test('the untouched legacy sample seed clears its preselected focus bubbles but keeps sample records', () => {
