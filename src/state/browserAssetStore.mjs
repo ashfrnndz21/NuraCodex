@@ -3,6 +3,8 @@ const STORE_NAME = 'assets';
 const URI_PREFIX = 'nura-local-asset://';
 let databasePromise;
 
+export function isSyntheticPlaceholderUri(uri) { return uri.startsWith('demo://'); }
+
 function openDatabase() {
   if (typeof indexedDB === 'undefined') return Promise.reject(new Error('This browser does not provide local file storage.'));
   if (!databasePromise) databasePromise = new Promise((resolve, reject) => {

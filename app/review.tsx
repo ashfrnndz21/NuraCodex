@@ -13,9 +13,12 @@ import { formatClaimValue } from '../src/services/claimValue.mjs';
 import { processIntakeBatch } from '../src/services/intakeBatch.mjs';
 import { analyzeIntakeBatch } from '../src/services/intakeBatchAnalysis.mjs';
 import type { IntakeBatchFinding } from '../src/services/intakeBatchAnalysis.mjs';
+import { commitReviewBatch } from '../src/services/reviewBatch.mjs';
+import { isReviewableIntakeAsset } from '../src/services/reviewableIntakeAsset.mjs';
 
 const supported = (asset: { name: string; mimeType?: string }) => Boolean(resolveIntakeMediaType(asset));
 type BatchSourceReview = { assetId: string; name: string; status: 'loading' | 'verified' | 'mismatch' | 'unavailable'; source?: LocalSource; claims: CandidateClaim[] };
+type StagedReviewDecision = { decision: 'accept' | 'edit' | 'reject'; editedValue?: { label: string; value: string; unit: string } };
 export default function Review() {
   const params = useLocalSearchParams<{ purpose?: string; assetId?: string; sourceId?: string; claimId?: string; focusClaimId?: string }>();
   const existingSourceId = typeof params.sourceId === 'string' ? params.sourceId : '';
@@ -24,7 +27,7 @@ export default function Review() {
   const routeAssetId = typeof params.assetId === 'string' ? params.assetId : '';
   const purpose: 'medical' | 'insurance' = params.purpose === 'insurance' ? 'insurance' : 'medical';
   const { ready, assets, intakeNotes, facts, addFact, correctFact, retractFact, reconcileSourceFactDate, attachSourceToAsset, saveIntakeNote, commitIntakeNote, removeIntakeNote } = useNura();
-  const readable = useMemo<IntakeAsset[]>(() => assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && supported(asset) && !(purpose === 'insurance' && asset.kind === 'video')), [assets, purpose]);
+  const readable = useMemo<IntakeAsset[]>(() => assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && supported(asset) && isReviewableIntakeAsset(asset, purpose)), [assets, purpose]);
   const linkedSourceAssets = useMemo(() => readable.filter((asset) => Boolean(asset.serverSourceId)), [readable]);
   const [selectedId, setSelectedId] = useState(typeof params.assetId === 'string' ? params.assetId : readable[0]?.id ?? '');
   const selected = readable.find((asset) => asset.id === selectedId) ?? (existingSourceId ? undefined : readable[0]);
@@ -45,6 +48,8 @@ export default function Review() {
   const [retractConfirmId, setRetractConfirmId] = useState<string | null>(null);
   const pendingRetractionSyncs = useRef(new Set<string>());
   const [drafts, setDrafts] = useState<Record<string, { label: string; value: string; unit: string }>>({});
+  const [reviewDecisions, setReviewDecisions] = useState<Record<string, StagedReviewDecision>>({});
+  const [notesToInclude, setNotesToInclude] = useState<Record<string, boolean>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [discardNoteId, setDiscardNoteId] = useState<string | null>(null);
@@ -61,6 +66,8 @@ export default function Review() {
     sourceId: item.source!.id, sourceName: item.name, claims: item.claims,
   }))), [batchSourceReviews]);
   const batchComparisonComplete = linkedSourceKey !== '' && batchReviewRun.key === linkedSourceKey && batchReviewRun.complete;
+  const stagedNoteIds = Object.keys(notesToInclude).filter((id) => notesToInclude[id] && intakeNotes.some((note) => note.id === id));
+  const stagedReviewCount = Object.keys(reviewDecisions).length + stagedNoteIds.length;
 
   useEffect(() => () => extractionAbort.current?.abort(), []);
 
@@ -203,25 +210,72 @@ export default function Review() {
       setBusy(false);
     }
   }
-  async function reviewClaim(claim: CandidateClaim, decision: 'accept' | 'edit' | 'reject') {
+  function reviewClaim(claim: CandidateClaim, decision: 'accept' | 'edit' | 'reject') {
     if (busy) return;
     if (purpose === 'insurance' && claim.kind !== 'coverage_term' && decision !== 'reject') { setError('Only explicit policy terms can be added to the Insurance Registry.'); return; }
-    setBusy(true); setError('');
-    const draft = drafts[claim.id] ?? { label: claim.label, value: claim.value, unit: claim.unit ?? '' };
+    const editedValue = decision === 'edit' ? drafts[claim.id] ?? { label: claim.label, value: claim.value, unit: claim.unit ?? '' } : undefined;
+    if (decision === 'edit' && (!editedValue?.label.trim() || !editedValue.value.trim())) { setError('Add a detail name and value before including this edit.'); return; }
+    setError(''); setEditingId(null);
+    setReviewDecisions((current) => ({ ...current, [claim.id]: { decision, ...(editedValue ? { editedValue } : {}) } }));
+    setNotice('Your choice is staged. Nothing changes in your registry until you save the reviewed items.');
+  }
+
+  function updateReviewedClaim(updated: CandidateClaim) {
+    setClaims((items) => items.map((item) => item.id === updated.id ? updated : item));
+    setBatchReviewRun((current) => ({ ...current, reviews: current.reviews.map((item) => ({
+      ...item,
+      claims: item.claims.map((claim) => claim.id === updated.id ? updated : claim),
+    })) }));
+  }
+
+  async function saveReviewBatch() {
+    if (busy || !stagedReviewCount) return;
+    const allClaims = [...claims, ...batchSourceReviews.flatMap((item) => item.claims)];
+    const operations = [
+      ...Object.entries(reviewDecisions).map(([claimId, staged]) => ({
+        id: `claim:${claimId}`, type: 'claim' as const, claimId, staged,
+        claim: allClaims.find((item) => item.id === claimId),
+        sourceName: batchSourceReviews.find((item) => item.source?.id === allClaims.find((claim) => claim.id === claimId)?.sourceId)?.name
+          ?? (allClaims.find((claim) => claim.id === claimId)?.sourceId === source?.id ? source?.displayName : undefined)
+          ?? 'Reviewed document',
+      })),
+      ...stagedNoteIds.map((noteId) => ({ id: `note:${noteId}`, type: 'note' as const, noteId })),
+    ];
+    setBusy(true); setError(''); setNotice('Saving your reviewed items…');
     try {
-      const result = await decideCandidate(claim.id, decision, decision === 'edit' ? draft : undefined);
-      setClaims((items) => items.map((item) => item.id === result.claim.id ? result.claim : item));
-      setEditingId(null);
-      if (result.assertion && !result.unchanged) addFact(result.claim.label, formatClaimValue(result.claim.value, result.claim.unit), {
-        category: purpose === 'insurance' ? 'Insurance coverage' : result.claim.kind, source: selected?.name ?? 'Reviewed document',
-        sourceId: result.claim.sourceId, sourceClaimId: result.claim.id,
-        note: [describeSourceLocation(result.claim.sourceLocation), result.claim.referenceRange ? `Reference range ${result.claim.referenceRange}` : null, result.claim.method ? `Method ${result.claim.method}` : null].filter(Boolean).join(' · '),
-        validFrom: result.claim.effectiveAt ?? new Date().toISOString(), validUntil: null,
-        confidence: result.claim.confidence, permissionScope: 'profile_write',
+      const results = await commitReviewBatch(operations, async (operation) => {
+        if (operation.type === 'note') {
+          await commitIntakeNote(operation.noteId, noteDrafts[operation.noteId]);
+          setNotesToInclude((current) => ({ ...current, [operation.noteId]: false }));
+          return;
+        }
+        const claim = operation.claim;
+        if (!claim) throw new Error('This source suggestion is no longer available. Reopen the file and review it again.');
+        const result = await decideCandidate(claim.id, operation.staged.decision, operation.staged.decision === 'edit' ? operation.staged.editedValue : undefined);
+        const expectedState = operation.staged.decision === 'reject' ? 'rejected' : 'user_confirmed';
+        if (result.unchanged && result.claim.evidenceState !== expectedState) throw new Error('This suggestion changed while you were reviewing it. Reopen its source before saving.');
+        updateReviewedClaim(result.claim);
+        if (result.claim.evidenceState === 'user_confirmed' && !facts.some((fact) => fact.sourceClaimId === result.claim.id && !fact.validUntil)) {
+          addFact(result.claim.label, formatClaimValue(result.claim.value, result.claim.unit), {
+            category: purpose === 'insurance' ? 'Insurance coverage' : result.claim.kind,
+            source: operation.sourceName, sourceId: result.claim.sourceId, sourceClaimId: result.claim.id,
+            note: [describeSourceLocation(result.claim.sourceLocation), result.claim.referenceRange ? `Reference range ${result.claim.referenceRange}` : null, result.claim.method ? `Method ${result.claim.method}` : null].filter(Boolean).join(' · '),
+            validFrom: result.claim.effectiveAt ?? new Date().toISOString(), validUntil: null,
+            confidence: result.claim.confidence, permissionScope: 'profile_write',
+          });
+        }
+        setReviewDecisions((current) => { const next = { ...current }; delete next[operation.claimId]; return next; });
       });
-      setNotice(decision === 'reject' ? purpose === 'insurance' ? 'This policy suggestion was dismissed and wasn’t added to your Insurance Registry.' : 'This suggestion was dismissed and wasn’t added to your profile.' : purpose === 'insurance' ? 'This policy term has been added to your Insurance Registry.' : 'This sourced detail has been added to your Medical Registry.');
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'The review decision could not be saved.'); }
-    finally { setBusy(false); }
+      const saved = results.filter((item) => item.status === 'saved').length;
+      const failed = results.filter((item) => item.status === 'failed');
+      setNotice(failed.length
+        ? `${saved} item${saved === 1 ? '' : 's'} saved. ${failed.length} still need attention and remain ready to retry.`
+        : `${saved} reviewed item${saved === 1 ? '' : 's'} saved to your ${purpose === 'insurance' ? 'Insurance Registry' : 'health record'}.`);
+      if (failed.length) setError(failed.map((item) => item.message).join('\n'));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Your reviewed items could not be saved.');
+      setNotice('Your choices are still staged. Try saving again when you’re ready.');
+    } finally { setBusy(false); }
   }
   async function saveClaimCorrection(claim: CandidateClaim) {
     if (busy || !claim.acceptedAssertionId) return;
@@ -270,7 +324,8 @@ export default function Review() {
     } finally { setBusy(false); }
   }
   function startEdit(claim: CandidateClaim) {
-    setDrafts((current) => ({ ...current, [claim.id]: { label: claim.label, value: claim.value, unit: claim.unit ?? '' } }));
+    const draft = reviewDecisions[claim.id]?.editedValue ?? drafts[claim.id] ?? { label: claim.label, value: claim.value, unit: claim.unit ?? '' };
+    setDrafts((current) => ({ ...current, [claim.id]: draft }));
     setEditingId(claim.id);
   }
 
@@ -286,15 +341,12 @@ export default function Review() {
     finally { setBusy(false); }
   }
 
-  async function addSelfReportToProfile(noteId: string) {
-    if (busy) return;
-    setBusy(true); setError('');
-    try {
-      await commitIntakeNote(noteId, noteDrafts[noteId]);
-      setEditingNoteId(null);
-      setNotice('Your description is now saved in your Medical Registry as a self-reported note.');
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Your note could not be added to your profile.'); }
-    finally { setBusy(false); }
+  function addSelfReportToProfile(noteId: string) {
+    if (busy || !intakeNotes.some((note) => note.id === noteId)) return;
+    setNotesToInclude((current) => ({ ...current, [noteId]: !current[noteId] }));
+    setNotice(notesToInclude[noteId]
+      ? 'Your description was removed from the save list; it remains in review.'
+      : 'Your description is included in the same save as the reviewed source details. It stays labelled as self-reported.');
   }
 
   async function discardSelfReport(noteId: string) {
@@ -312,7 +364,7 @@ export default function Review() {
     <Pressable onPress={() => router.back()}><Text style={styles.back}>‹  Back</Text></Pressable>
     <View style={styles.heading}><Orb size={36} state={busy ? 'thinking' : 'idle'} /><View style={{ flex: 1 }}><Label>{purpose === 'insurance' ? 'YOUR POLICY · SOURCE REVIEW' : 'YOUR FILES · SOURCE REVIEW'}</Label><Text style={styles.title}>{purpose === 'insurance' ? 'Review policy terms.' : 'Read, then decide.'}</Text></View></View>
     <Text style={styles.intro}>{purpose === 'insurance' ? 'After you confirm, Nura will highlight stated policy terms and show their source. Use these details to prepare questions; they are not a coverage decision.' : 'Files are read only after you confirm. Review, edit or dismiss each suggestion. Your own description stays labeled as your words and is saved only when you choose.'}</Text>
-    {purpose === 'medical' && intakeNotes.length > 0 && <View style={styles.selfReportSection}><Label>YOUR WORDS · {intakeNotes.length} DESCRIPTION{intakeNotes.length === 1 ? '' : 'S'}</Label>{intakeNotes.map((note) => <Surface key={note.id} style={styles.selfReportCard}><View style={styles.selfReportHeader}><View style={{ flex: 1 }}><Text style={styles.selfReportTitle}>{note.topicLabel ? `${note.topicLabel} · your description` : 'Your health description'}</Text><Text style={styles.selfReportMeta}>Written by you · {new Date(note.createdAt).toLocaleDateString()}</Text></View><Text style={styles.selfReportState}>NEEDS YOUR REVIEW</Text></View>{editingNoteId === note.id ? <TextInput value={noteDrafts[note.id] ?? note.text} onChangeText={(text) => setNoteDrafts((current) => ({ ...current, [note.id]: text }))} multiline maxLength={2000} textAlignVertical="top" accessibilityLabel="Edit your health description" style={styles.selfReportInput} /> : <Text style={styles.selfReportText}>{noteDrafts[note.id] ?? note.text}</Text>}<Text style={styles.selfReportFoot}>Nura has not interpreted this note. If you add it, it remains a self-reported detail.</Text>{discardNoteId === note.id ? <View style={styles.selfReportConfirm}><Text style={styles.selfReportFoot}>Remove this unsaved description from the review queue?</Text><View style={styles.actions}><Pressable disabled={busy} onPress={() => void discardSelfReport(note.id)} style={styles.reject}><Text style={styles.actionText}>{busy ? 'Removing…' : 'Remove draft'}</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(null)} style={styles.edit}><Text style={styles.actionText}>Keep note</Text></Pressable></View></View> : <View style={styles.actions}>{editingNoteId === note.id ? <><Pressable disabled={busy} onPress={() => void saveSelfReportDraft(note.id)} style={styles.edit}><Text style={styles.actionText}>{busy ? 'Saving…' : 'Save changes'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setEditingNoteId(null); setNoteDrafts((current) => { const next = { ...current }; delete next[note.id]; return next; }); }} style={styles.reject}><Text style={styles.actionText}>Cancel</Text></Pressable></> : <><Pressable disabled={busy} onPress={() => void addSelfReportToProfile(note.id)} style={styles.accept}><Text style={styles.actionOnText}>{busy ? 'Saving…' : 'Add to my record'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setNoteDrafts((current) => ({ ...current, [note.id]: note.text })); setEditingNoteId(note.id); }} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(note.id)} style={styles.reject}><Text style={styles.actionText}>Remove</Text></Pressable></>}</View>}</Surface>)}</View>}
+    {purpose === 'medical' && intakeNotes.length > 0 && <View style={styles.selfReportSection}><Label>YOUR WORDS · {intakeNotes.length} DESCRIPTION{intakeNotes.length === 1 ? '' : 'S'}</Label>{intakeNotes.map((note) => <Surface key={note.id} style={styles.selfReportCard}><View style={styles.selfReportHeader}><View style={{ flex: 1 }}><Text style={styles.selfReportTitle}>{note.topicLabel ? `${note.topicLabel} · your description` : 'Your health description'}</Text><Text style={styles.selfReportMeta}>Written by you · {new Date(note.createdAt).toLocaleDateString()}</Text></View><Text style={styles.selfReportState}>NEEDS YOUR REVIEW</Text></View>{editingNoteId === note.id ? <TextInput value={noteDrafts[note.id] ?? note.text} onChangeText={(text) => setNoteDrafts((current) => ({ ...current, [note.id]: text }))} multiline maxLength={2000} textAlignVertical="top" accessibilityLabel="Edit your health description" style={styles.selfReportInput} /> : <Text style={styles.selfReportText}>{noteDrafts[note.id] ?? note.text}</Text>}<Text style={styles.selfReportFoot}>Your description stays separate from extracted findings and is labelled as self-reported if you save it.</Text>{discardNoteId === note.id ? <View style={styles.selfReportConfirm}><Text style={styles.selfReportFoot}>Remove this unsaved description from the review queue?</Text><View style={styles.actions}><Pressable disabled={busy} onPress={() => void discardSelfReport(note.id)} style={styles.reject}><Text style={styles.actionText}>{busy ? 'Removing…' : 'Remove draft'}</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(null)} style={styles.edit}><Text style={styles.actionText}>Keep note</Text></Pressable></View></View> : <View style={styles.actions}>{editingNoteId === note.id ? <><Pressable disabled={busy} onPress={() => void saveSelfReportDraft(note.id)} style={styles.edit}><Text style={styles.actionText}>{busy ? 'Saving…' : 'Save changes'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setEditingNoteId(null); setNoteDrafts((current) => { const next = { ...current }; delete next[note.id]; return next; }); }} style={styles.reject}><Text style={styles.actionText}>Cancel</Text></Pressable></> : <><Pressable disabled={busy} onPress={() => addSelfReportToProfile(note.id)} style={styles.accept}><Text style={styles.actionOnText}>{notesToInclude[note.id] ? 'Included · Undo' : 'Include in save'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setNoteDrafts((current) => ({ ...current, [note.id]: note.text })); setEditingNoteId(note.id); }} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(note.id)} style={styles.reject}><Text style={styles.actionText}>Remove</Text></Pressable></>}</View>}</Surface>)}</View>}
     {readable.length > 0 ? <View style={styles.files}><Label>{purpose === 'insurance' ? 'POLICY FILES' : 'HEALTH FILES'} · {readable.length}</Label>{readable.map((asset) => { const run = fileStates[asset.id]; const status = run?.status === 'reading' ? 'Reading now' : run?.status === 'complete' || asset.serverSourceId ? 'Ready to review' : run?.status === 'failed' ? 'Needs another try' : run?.status === 'cancelled' ? 'Stopped' : 'Ready'; return <Pressable key={asset.id} disabled={busy} onPress={() => { setSelectionChanged(true); setSelectedId(asset.id); setSource(null); setClaims([]); setActivity([]); setNotice(''); setError(''); }}><Surface style={{ ...styles.file, ...(selected?.id === asset.id ? styles.fileSelected : {}) }}><Text style={styles.fileType}>{asset.kind.toUpperCase()}</Text><View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.fileName}>{asset.name}</Text><Text style={styles.fileSub}>{asset.kind === 'video' ? 'Up to 3 minutes · up to 6 timestamped moments' : asset.size ? `${Math.round(asset.size / 1024)} KB` : 'Ready for explicit review'} · {status}</Text>{run?.detail ? <Text numberOfLines={2} style={styles.fileSub}>{run.detail}</Text> : null}</View><Text style={styles.select}>{selected?.id === asset.id ? 'Selected' : 'Open'}</Text></Surface></Pressable>; })}</View> : null}
     {!readable.length && assets.length > 0 && <Surface style={styles.notice}><Text style={styles.noticeTitle}>{purpose === 'insurance' ? 'Choose a policy PDF or image' : 'Choose a supported health file'}</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'The Insurance Registry reads policy PDFs and images. Video files are not used for policy review.' : 'Nura can review PDFs, JPG, PNG and WebP images, and short MP4, MOV or WebM health videos.'}</Text></Surface>}
     {filesNeedingReview.length > 0 && <Pressable disabled={busy} onPress={() => { setError(''); setConsentOpen(true); setConsentAssetIds(filesNeedingReview.map((asset) => asset.id)); }} style={[styles.primary, busy && styles.disabled]}><View style={{ flex: 1 }}><Text style={styles.primaryText}>{busy ? 'Reviewing files…' : `Review ${filesNeedingReview.length === 1 ? 'file' : `all ${filesNeedingReview.length} files`} with Nura`}</Text><Text style={[styles.fileSub, { color: colors.violet }]}>One approval · each file gets its own source-linked review</Text></View><Text style={styles.arrow}>→</Text></Pressable>}
@@ -340,6 +392,7 @@ export default function Review() {
         </Surface>;
       })}
     </View>}
+    {stagedReviewCount > 0 && <Surface style={styles.batchSave}><Label>{stagedReviewCount} ITEM{stagedReviewCount === 1 ? '' : 'S'} READY TO SAVE</Label><Text style={styles.batchIntro}>Your choices stay in review until you save. Approved details and selected self-reported notes will be added together.</Text><Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void saveReviewBatch()} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Saving reviewed items…' : 'Save reviewed items'}</Text><Text style={styles.arrow}>→</Text></Pressable></Surface>}
     {Boolean(sourceToOpen) && !source && !error && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Opening your saved review</Text><Text style={styles.noticeBody}>The suggestions for this file are loading. The original won’t be sent again.</Text></Surface>}
     {extracting && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Nura is reviewing your files</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP READING</Text></Pressable></Surface>}
     {activity.length > 0 && <Surface style={styles.activity}><Label>HOW NURA IS WORKING</Label>{activity.map((item) => <View key={item.id} style={styles.activityRow}><Text style={[styles.activityMark, item.status === 'complete' && styles.activityDone, item.status === 'failed' && styles.activityFailed, item.status === 'cancelled' && styles.activityCancelled]}>{item.status === 'complete' ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '·'}</Text><Text style={styles.activityText}>{item.label}</Text></View>)}</Surface>}
@@ -358,15 +411,16 @@ export default function Review() {
         {claim.id === focusClaimId && <Text style={styles.focusNotice}>OPENED FROM POLICY COMPARISON</Text>}
         {claim.sourceLocation.quote ? <Text style={styles.quote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · page ${claim.sourceLocation.page}` : typeof claim.sourceLocation.timestampSeconds === 'number' ? ` · video ${formatVideoTimestamp(claim.sourceLocation.timestampSeconds)}` : ''}</Text> : <Text style={styles.quote}>No source quote was found. Check the original before saving this detail.</Text>}
         <Text style={styles.confidence}>AI confidence estimate {claim.confidence === null ? 'not available' : `${Math.round(claim.confidence * 100)}%`} · check against the original</Text>
+        {pending && reviewDecisions[claim.id] && <Text style={styles.stagedHint}>{reviewDecisions[claim.id].decision === 'reject' ? 'Marked to dismiss when you save this review.' : 'Marked to add when you save this review. It is not in your registry yet.'}</Text>}
         {retracted && <View style={styles.retractedNote}><Text style={styles.retractedText}>{purpose === 'insurance' ? 'Removed from the Insurance Registry. The original policy file, source quote and review history remain available.' : 'Removed from your active profile. The original file, source quote and review history remain available.'}</Text></View>}
         {claim.originalExtraction && <View style={styles.versionHistory}><Text style={styles.historyTitle}>WHAT NURA FIRST READ</Text><Text style={styles.historyCopy}>{claim.originalExtraction.label}: {formatClaimValue(claim.originalExtraction.value, claim.originalExtraction.unit)} · kept with the source quote</Text></View>}
         {(claim.revisionHistory ?? []).length > 0 && <View style={styles.versionHistory}><Text style={styles.historyTitle}>EARLIER VERSIONS</Text>{[...(claim.revisionHistory ?? [])].reverse().map((version) => <Text key={version.assertionId} style={styles.historyCopy}>v{version.version} · {new Date(version.recordedAt).toLocaleDateString()} · {version.label}: {formatClaimValue(version.value, version.unit)}</Text>)}</View>}
-        {pending && editingId === claim.id ? <View style={styles.editFields}><TextInput value={draft.label} onChangeText={(label) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, label } }))} placeholder="Detail name" style={styles.input} /><TextInput value={draft.value} onChangeText={(value) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, value } }))} placeholder="Value" style={styles.input} /><TextInput value={draft.unit} onChangeText={(unit) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, unit } }))} placeholder="Unit (optional)" style={styles.input} /><Pressable disabled={busy} onPress={() => void reviewClaim(claim, 'edit')} style={styles.primarySmall}><Text style={styles.primarySmallText}>Save edit and add</Text></Pressable></View> : null}
+        {pending && editingId === claim.id ? <View style={styles.editFields}><TextInput value={draft.label} onChangeText={(label) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, label } }))} placeholder="Detail name" style={styles.input} /><TextInput value={draft.value} onChangeText={(value) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, value } }))} placeholder="Value" style={styles.input} /><TextInput value={draft.unit} onChangeText={(unit) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, unit } }))} placeholder="Unit (optional)" style={styles.input} /><Pressable disabled={busy} onPress={() => reviewClaim(claim, 'edit')} style={styles.primarySmall}><Text style={styles.primarySmallText}>Use edited details</Text></Pressable></View> : null}
         {correctingAccepted && <View style={styles.editFields}><Text style={styles.confidence}>Your correction creates a new version and keeps the earlier accepted value linked to this source.</Text><TextInput value={draft.label} onChangeText={(label) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, label } }))} placeholder="Detail name" style={styles.input} /><TextInput value={draft.value} onChangeText={(value) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, value } }))} placeholder="Corrected value" style={styles.input} /><TextInput value={draft.unit} onChangeText={(unit) => setDrafts((items) => ({ ...items, [claim.id]: { ...draft, unit } }))} placeholder="Unit (optional)" style={styles.input} /><Pressable disabled={busy} onPress={() => void saveClaimCorrection(claim)} style={styles.primarySmall}><Text style={styles.primarySmallText}>{busy ? 'Saving version…' : 'Save corrected version'}</Text></Pressable><Pressable disabled={busy} onPress={() => setEditingId(null)} style={styles.cancel}><Text style={styles.secondaryText}>Cancel</Text></Pressable></View>}
         {accepted && !correctingAccepted && <View style={styles.actions}><Pressable disabled={busy} accessibilityRole="button" onPress={() => startEdit(claim)} style={styles.edit}><Text style={styles.actionText}>{purpose === 'insurance' ? 'Correct this policy term' : 'Correct this detail'}</Text></Pressable><Pressable disabled={busy} accessibilityRole="button" onPress={() => setRetractConfirmId(claim.id)} style={styles.reject}><Text style={styles.actionText}>{purpose === 'insurance' ? 'Remove from registry' : 'Remove from profile'}</Text></Pressable></View>}
         {accepted && retractConfirmId === claim.id && <View style={styles.retractConfirm}><Text style={styles.retractConfirmText}>{purpose === 'insurance' ? 'Remove this policy term from your Insurance Registry? Its source quote, original policy file and review history will be kept.' : 'Remove this as a personal health fact? Its source quote, original file and review history will be kept.'}</Text><View style={styles.actions}><Pressable disabled={busy} accessibilityRole="button" onPress={() => void retractClaim(claim)} style={styles.removeConfirm}><Text style={styles.removeConfirmText}>{busy ? 'Removing…' : purpose === 'insurance' ? 'Remove policy term' : 'Remove from profile'}</Text></Pressable><Pressable disabled={busy} accessibilityRole="button" onPress={() => setRetractConfirmId(null)} style={styles.edit}><Text style={styles.actionText}>Keep it</Text></Pressable></View></View>}
-        {pending && purpose === 'insurance' && claim.kind !== 'coverage_term' ? <View style={styles.actions}><Text style={styles.confidence}>This isn’t a policy term, so it can’t be added to your Insurance Registry.</Text><Pressable disabled={busy} onPress={() => void reviewClaim(claim, 'reject')} style={styles.reject}><Text style={styles.actionText}>Dismiss</Text></Pressable></View> : null}
-        {pending && editingId !== claim.id && (purpose !== 'insurance' || claim.kind === 'coverage_term') ? <View style={styles.actions}><Pressable disabled={busy} onPress={() => void reviewClaim(claim, 'accept')} style={styles.accept}><Text style={styles.actionOnText}>{purpose === 'insurance' ? 'Add policy term' : 'Add to my record'}</Text></Pressable><Pressable disabled={busy} onPress={() => startEdit(claim)} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable><Pressable disabled={busy} onPress={() => void reviewClaim(claim, 'reject')} style={styles.reject}><Text style={styles.actionText}>Dismiss</Text></Pressable></View> : null}
+        {pending && purpose === 'insurance' && claim.kind !== 'coverage_term' ? <View style={styles.actions}><Text style={styles.confidence}>This isn’t a policy term, so it can’t be added to your Insurance Registry.</Text><Pressable disabled={busy} onPress={() => reviewClaim(claim, 'reject')} style={styles.reject}><Text style={styles.actionText}>{reviewDecisions[claim.id]?.decision === 'reject' ? 'Dismiss on save' : 'Dismiss'}</Text></Pressable></View> : null}
+        {pending && editingId !== claim.id && (purpose !== 'insurance' || claim.kind === 'coverage_term') ? <View style={styles.actions}><Pressable disabled={busy} onPress={() => reviewClaim(claim, 'accept')} style={styles.accept}><Text style={styles.actionOnText}>{reviewDecisions[claim.id]?.decision === 'accept' ? 'Included in save' : purpose === 'insurance' ? 'Include policy term' : 'Include in save'}</Text></Pressable><Pressable disabled={busy} onPress={() => startEdit(claim)} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable><Pressable disabled={busy} onPress={() => reviewClaim(claim, 'reject')} style={styles.reject}><Text style={styles.actionText}>{reviewDecisions[claim.id]?.decision === 'reject' ? 'Dismiss on save' : 'Dismiss'}</Text></Pressable></View> : null}
       </Surface></View>;
     })}
     {!assets.length && <Surface style={styles.notice}><Text style={styles.noticeTitle}>No file selected</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'Choose a policy PDF or image to review its stated terms.' : 'Choose a PDF, image or short health video to begin a source-linked review.'}</Text></Surface>}
@@ -380,8 +434,9 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.bg }, content: { padding: 22, paddingTop: 38, paddingBottom: 50, maxWidth: 600, width: '100%', alignSelf: 'center' }, back: { color: colors.muted, fontSize: 15, marginBottom: 22 }, heading: { flexDirection: 'row', alignItems: 'center', gap: 9 }, title: { color: colors.text, fontSize: 27, fontWeight: '300', marginTop: 6 }, intro: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 13, marginBottom: 17 }, files: { marginTop: 3, marginBottom: 12 }, file: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: radius.md, marginTop: 8, gap: 10 }, fileSelected: { borderColor: colors.violet, borderWidth: 1.5 }, fileType: { color: colors.aqua, fontSize: 9, fontWeight: '700', borderColor: colors.border, borderWidth: 1, borderRadius: 9, padding: 8 }, fileName: { color: colors.text, fontSize: 12, fontWeight: '500' }, fileSub: { color: colors.quiet, fontSize: 10, marginTop: 3 }, select: { color: colors.violet, fontSize: 10, fontWeight: '600' }, notice: { marginTop: 12, borderColor: colors.border }, activity: { marginTop: 12, padding: 13 }, activityRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingTop: 9 }, activityMark: { color: colors.quiet, fontSize: 14, width: 18, textAlign: 'center' }, activityDone: { color: '#3B8863' }, activityFailed: { color: '#A55142' }, activityCancelled: { color: colors.muted }, activityText: { color: colors.muted, fontSize: 10, flex: 1 }, noticeTitle: { color: colors.text, fontSize: 13, fontWeight: '600' }, noticeBody: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }, stop: { alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: '#D9D2E2', backgroundColor: '#F8F5FA' }, stopPressed: { opacity: .78, transform: [{ scale: .98 }] }, stopText: { color: colors.violet, fontSize: 9, fontWeight: '700', letterSpacing: .55 }, error: { marginTop: 12, borderColor: '#E8BDB4', backgroundColor: '#FFF5F2' }, primary: { backgroundColor: '#E8E0FF', borderRadius: radius.pill, minHeight: 53, marginTop: 13, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, disabled: { opacity: .6 }, primaryText: { color: colors.ink, fontWeight: '600', fontSize: 13 }, arrow: { color: colors.ink, fontSize: 19 }, sourceCard: { marginTop: 13 }, sourceName: { color: colors.text, fontSize: 15, fontWeight: '600', marginTop: 8 }, sourceSub: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 }, claim: { marginTop: 10, padding: 14 }, claimTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, claimLabel: { color: colors.text, fontSize: 14, fontWeight: '600' }, claimValue: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 4 }, claimMeta: { color: colors.quiet, fontSize: 10, lineHeight: 15, marginTop: 4 }, state: { color: '#8B672E', backgroundColor: '#FFF1D8', overflow: 'hidden', borderRadius: 10, paddingVertical: 5, paddingHorizontal: 7, fontSize: 8, fontWeight: '700' }, stateDone: { color: '#33785A', backgroundColor: '#E1F2E9' }, stateRemoved: { color: '#675478', backgroundColor: '#F0EAF5' }, retractedNote: { marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: '#F5F0F7' }, retractedText: { color: '#675478', fontSize: 10, lineHeight: 15 }, retractConfirm: { marginTop: 10, padding: 11, borderRadius: 12, borderWidth: 1, borderColor: '#E7D9E8', backgroundColor: '#FBF7FC' }, retractConfirmText: { color: colors.muted, fontSize: 11, lineHeight: 16 }, removeConfirm: { flex: 1, borderRadius: 12, backgroundColor: '#F5E8E6', padding: 10, alignItems: 'center' }, removeConfirmText: { color: '#8E473C', fontSize: 11, fontWeight: '600' }, quote: { color: colors.muted, fontSize: 11, lineHeight: 16, fontStyle: 'italic', marginTop: 10 }, confidence: { color: colors.quiet, fontSize: 9, lineHeight: 14, marginTop: 7 }, actions: { flexDirection: 'row', gap: 7, marginTop: 12 }, accept: { flex: 1, borderRadius: 12, backgroundColor: '#DFF2EA', padding: 10, alignItems: 'center' }, edit: { flex: 1, borderRadius: 12, backgroundColor: '#F2EDF5', padding: 10, alignItems: 'center' }, reject: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 10, alignItems: 'center' }, actionOnText: { color: '#327457', fontSize: 11, fontWeight: '600' }, actionText: { color: colors.text, fontSize: 11, fontWeight: '600' }, editFields: { gap: 7, marginTop: 10 }, input: { color: colors.text, fontSize: 12, backgroundColor: '#F7F5F8', borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 9 }, primarySmall: { backgroundColor: colors.violet, borderRadius: 11, padding: 11, alignItems: 'center' }, primarySmallText: { color: '#FFF', fontSize: 11, fontWeight: '600' }, secondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, minHeight: 48, marginTop: 17, paddingHorizontal: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, secondaryText: { color: colors.text, fontWeight: '500', fontSize: 12 }, footer: { color: colors.quiet, fontSize: 9, lineHeight: 14, textAlign: 'center', marginTop: 12 }, modalShade: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end', backgroundColor: 'rgba(20,16,26,.45)' }, modal: { backgroundColor: colors.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 21, paddingTop: 24, paddingBottom: 28 }, modalEyebrow: { color: colors.violet, fontSize: 8, fontWeight: '700', letterSpacing: 1.2 }, modalTitle: { color: colors.text, fontSize: 21, fontWeight: '500', marginTop: 7 }, modalBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 9 }, cancel: { alignItems: 'center', padding: 12, marginTop: 4 },
   selfReportSection: { marginTop: 12, marginBottom: 10 }, selfReportCard: { marginTop: 9, padding: 13, borderColor: '#CDBDD6', backgroundColor: '#FBF7FB' }, selfReportHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, selfReportTitle: { color: colors.text, fontSize: 13, fontWeight: '600' }, selfReportMeta: { color: colors.quiet, fontSize: 10, marginTop: 4 }, selfReportState: { color: '#8A6AA0', fontSize: 8, fontWeight: '700', letterSpacing: 0.5 }, selfReportText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 12 }, selfReportInput: { minHeight: 100, marginTop: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, padding: 11, fontSize: 12, lineHeight: 18 }, selfReportFoot: { color: colors.quiet, fontSize: 10, lineHeight: 15, marginTop: 9 }, selfReportConfirm: { marginTop: 10, padding: 10, borderRadius: 11, borderWidth: 1, borderColor: '#E7D9E8', backgroundColor: '#FBF7FC' },
   versionHistory: { marginTop: 9, padding: 10, borderRadius: 10, backgroundColor: '#F5F0FA', borderWidth: 1, borderColor: '#E6DDED' }, historyTitle: { color: colors.violet, fontSize: 8, fontWeight: '700', letterSpacing: .8 }, historyCopy: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
-  focusedClaim: { borderColor: colors.violet, borderWidth: 2, backgroundColor: '#F8F1FA' }, focusNotice: { color: colors.violet, fontSize: 8, fontWeight: '800', letterSpacing: 0.7, marginTop: 9 },
+  focusedClaim: { borderColor: colors.violet, borderWidth: 2, backgroundColor: '#F8F1FA' }, focusNotice: { color: colors.violet, fontSize: 8, fontWeight: '800', letterSpacing: 0.7, marginTop: 9 }, stagedHint: { color: colors.violet, fontSize: 10, lineHeight: 15, marginTop: 6 },
   batchAnalysis: { marginTop: 16, marginBottom: 8 }, batchIntro: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 7, marginBottom: 3 },
+  batchSave: { marginTop: 14, padding: 14, borderColor: '#CDBDD6', backgroundColor: '#FBF7FC' },
   batchFinding: { marginTop: 9, padding: 13, borderColor: '#D9C7A8', backgroundColor: '#FFFBF3' }, batchFindingTitle: { color: '#8B672E', fontSize: 12, fontWeight: '700' }, batchConflictTitle: { color: '#A34E43' }, batchFindingBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 6 },
   batchSources: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9 }, batchSourceButton: { borderRadius: 99, backgroundColor: colors.surfaceStrong, paddingHorizontal: 10, paddingVertical: 7 }, batchSourceText: { color: colors.violet, fontSize: 9, fontWeight: '600' },
 });

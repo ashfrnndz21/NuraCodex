@@ -7,13 +7,14 @@ import { sanitizeRunBody } from './agent/context.mjs';
 import { addHealthFeedCandidate, uniqueHealthFeedItems } from './agent/feedResults.mjs';
 import { localDemoRepository } from './adapters/localDemoRepository.mjs';
 import { createCandidateClaim, createDocumentContext, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from './contracts.mjs';
+import { allowedOriginsFromEnv, applyCorsHeaders, isAllowedOrigin } from './cors.mjs';
 
 const host = process.env.NURA_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.NURA_AGENT_PORT || 4175);
 const allowedHosts = new Set(['127.0.0.1', 'localhost', '::1']);
 if (!allowedHosts.has(host)) throw new Error('The development agent server binds to loopback only. Add authenticated deployment infrastructure before exposing it to a network.');
 if (process.env.NODE_ENV === 'production') throw new Error('This development agent server cannot be started in production.');
-const allowedOrigins = new Set((process.env.NURA_ALLOWED_ORIGINS || 'http://localhost:8092,http://127.0.0.1:8092,http://localhost:8081,http://127.0.0.1:8081').split(',').map((value) => value.trim()).filter(Boolean));
+const allowedOrigins = allowedOriginsFromEnv(process.env.NURA_ALLOWED_ORIGINS);
 const rate = new Map();
 const MAX_BODY_BYTES = 96_000;
 const configuredUploadCap = Number(process.env.NURA_MAX_INTAKE_BYTES || 15 * 1024 * 1024);
@@ -31,13 +32,7 @@ function json(response, status, value) {
 }
 
 function cors(request, response) {
-  const origin = request.headers.origin;
-  if (origin && allowedOrigins.has(origin)) {
-    response.setHeader('access-control-allow-origin', origin);
-    response.setHeader('vary', 'Origin');
-  }
-  response.setHeader('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  response.setHeader('access-control-allow-headers', 'content-type, accept, x-nura-file-name, x-nura-consent-confirmed, x-nura-document-purpose');
+  applyCorsHeaders(request.headers.origin, response, allowedOrigins);
 }
 
 async function readBody(request, limit = MAX_BODY_BYTES) {
@@ -284,7 +279,7 @@ const server = createServer(async (request, response) => {
   cors(request, response);
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
   const url = new URL(request.url ?? '/', `http://${host}:${port}`);
-  if (request.headers.origin && !allowedOrigins.has(request.headers.origin)) { json(response, 403, { error: 'origin_not_allowed' }); return; }
+  if (!isAllowedOrigin(request.headers.origin, allowedOrigins)) { json(response, 403, { error: 'origin_not_allowed' }); return; }
 
   if (request.method === 'GET' && url.pathname === '/healthz') {
     const provider = getLanguageModelStatus();
