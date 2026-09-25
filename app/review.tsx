@@ -11,8 +11,11 @@ import { CandidateClaim, IntakeActivity, LocalSource, correctCandidate, decideCa
 import { findMisdatedAcceptedClaims, findMissingAcceptedClaims, findMissingRetractions } from '../src/services/sourceClaimReconciliation.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
 import { processIntakeBatch } from '../src/services/intakeBatch.mjs';
+import { analyzeIntakeBatch } from '../src/services/intakeBatchAnalysis.mjs';
+import type { IntakeBatchFinding } from '../src/services/intakeBatchAnalysis.mjs';
 
 const supported = (asset: { name: string; mimeType?: string }) => Boolean(resolveIntakeMediaType(asset));
+type BatchSourceReview = { assetId: string; name: string; status: 'loading' | 'verified' | 'mismatch' | 'unavailable'; source?: LocalSource; claims: CandidateClaim[] };
 export default function Review() {
   const params = useLocalSearchParams<{ purpose?: string; assetId?: string; sourceId?: string; claimId?: string; focusClaimId?: string }>();
   const existingSourceId = typeof params.sourceId === 'string' ? params.sourceId : '';
@@ -22,6 +25,7 @@ export default function Review() {
   const purpose: 'medical' | 'insurance' = params.purpose === 'insurance' ? 'insurance' : 'medical';
   const { ready, assets, intakeNotes, facts, addFact, correctFact, retractFact, reconcileSourceFactDate, attachSourceToAsset, saveIntakeNote, commitIntakeNote, removeIntakeNote } = useNura();
   const readable = useMemo<IntakeAsset[]>(() => assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && supported(asset) && !(purpose === 'insurance' && asset.kind === 'video')), [assets, purpose]);
+  const linkedSourceAssets = useMemo(() => readable.filter((asset) => Boolean(asset.serverSourceId)), [readable]);
   const [selectedId, setSelectedId] = useState(typeof params.assetId === 'string' ? params.assetId : readable[0]?.id ?? '');
   const selected = readable.find((asset) => asset.id === selectedId) ?? (existingSourceId ? undefined : readable[0]);
   const selectedAssetId = selected?.id ?? '';
@@ -36,6 +40,7 @@ export default function Review() {
   const [activity, setActivity] = useState<IntakeActivity[]>([]);
   const [source, setSource] = useState<LocalSource | null>(null);
   const [claims, setClaims] = useState<CandidateClaim[]>([]);
+  const [batchReviewRun, setBatchReviewRun] = useState<{ key: string; reviews: BatchSourceReview[]; complete: boolean }>({ key: '', reviews: [], complete: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [retractConfirmId, setRetractConfirmId] = useState<string | null>(null);
   const pendingRetractionSyncs = useRef(new Set<string>());
@@ -50,6 +55,12 @@ export default function Review() {
     : selected?.serverSourceId ?? '';
   const filesNeedingReview = readable.filter((asset) => !asset.serverSourceId);
   const consentFiles = readable.filter((asset) => consentAssetIds.includes(asset.id));
+  const linkedSourceKey = useMemo(() => linkedSourceAssets.map((asset) => `${asset.id}:${asset.serverSourceId ?? ''}`).join('|'), [linkedSourceAssets]);
+  const batchSourceReviews = useMemo(() => batchReviewRun.key === linkedSourceKey ? batchReviewRun.reviews : [], [batchReviewRun, linkedSourceKey]);
+  const batchFindings = useMemo<IntakeBatchFinding[]>(() => analyzeIntakeBatch(batchSourceReviews.filter((item) => item.status === 'verified' && item.source).map((item) => ({
+    sourceId: item.source!.id, sourceName: item.name, claims: item.claims,
+  }))), [batchSourceReviews]);
+  const batchComparisonComplete = linkedSourceKey !== '' && batchReviewRun.key === linkedSourceKey && batchReviewRun.complete;
 
   useEffect(() => () => extractionAbort.current?.abort(), []);
 
@@ -83,6 +94,32 @@ export default function Review() {
     });
     return () => { active = false; };
   }, [sourceToOpen, requestedClaimId, selected, selectedAssetId, ready, attachSourceToAsset]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    void (async () => {
+      const reviews: BatchSourceReview[] = [];
+      for (const asset of linkedSourceAssets) {
+        let review: BatchSourceReview;
+        try {
+          if (!asset.serverSourceId) throw new Error('Source unavailable');
+          const result = await getSourceClaims(asset.serverSourceId);
+          const matches = await sourceMatchesAsset(asset, result.source);
+          review = matches
+            ? { assetId: asset.id, name: asset.name, status: 'verified', source: result.source, claims: result.claims }
+            : { assetId: asset.id, name: asset.name, status: 'mismatch', claims: [] };
+        } catch {
+          review = { assetId: asset.id, name: asset.name, status: 'unavailable', claims: [] };
+        }
+        if (!active) return;
+        reviews.push(review);
+        setBatchReviewRun({ key: linkedSourceKey, reviews: [...reviews], complete: false });
+      }
+      if (active) setBatchReviewRun({ key: linkedSourceKey, reviews, complete: true });
+    })();
+    return () => { active = false; };
+  }, [ready, linkedSourceAssets, linkedSourceKey]);
 
   const missingAccepted = useMemo(() => findMissingAcceptedClaims(claims, facts, source?.id), [claims, facts, source?.id]);
   const misdatedAccepted = useMemo(() => findMisdatedAcceptedClaims(claims, facts, source?.id), [claims, facts, source?.id]);
@@ -279,6 +316,30 @@ export default function Review() {
     {readable.length > 0 ? <View style={styles.files}><Label>{purpose === 'insurance' ? 'POLICY FILES' : 'HEALTH FILES'} · {readable.length}</Label>{readable.map((asset) => { const run = fileStates[asset.id]; const status = run?.status === 'reading' ? 'Reading now' : run?.status === 'complete' || asset.serverSourceId ? 'Ready to review' : run?.status === 'failed' ? 'Needs another try' : run?.status === 'cancelled' ? 'Stopped' : 'Ready'; return <Pressable key={asset.id} disabled={busy} onPress={() => { setSelectionChanged(true); setSelectedId(asset.id); setSource(null); setClaims([]); setActivity([]); setNotice(''); setError(''); }}><Surface style={{ ...styles.file, ...(selected?.id === asset.id ? styles.fileSelected : {}) }}><Text style={styles.fileType}>{asset.kind.toUpperCase()}</Text><View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.fileName}>{asset.name}</Text><Text style={styles.fileSub}>{asset.kind === 'video' ? 'Up to 3 minutes · up to 6 timestamped moments' : asset.size ? `${Math.round(asset.size / 1024)} KB` : 'Ready for explicit review'} · {status}</Text>{run?.detail ? <Text numberOfLines={2} style={styles.fileSub}>{run.detail}</Text> : null}</View><Text style={styles.select}>{selected?.id === asset.id ? 'Selected' : 'Open'}</Text></Surface></Pressable>; })}</View> : null}
     {!readable.length && assets.length > 0 && <Surface style={styles.notice}><Text style={styles.noticeTitle}>{purpose === 'insurance' ? 'Choose a policy PDF or image' : 'Choose a supported health file'}</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'The Insurance Registry reads policy PDFs and images. Video files are not used for policy review.' : 'Nura can review PDFs, JPG, PNG and WebP images, and short MP4, MOV or WebM health videos.'}</Text></Surface>}
     {filesNeedingReview.length > 0 && <Pressable disabled={busy} onPress={() => { setError(''); setConsentOpen(true); setConsentAssetIds(filesNeedingReview.map((asset) => asset.id)); }} style={[styles.primary, busy && styles.disabled]}><View style={{ flex: 1 }}><Text style={styles.primaryText}>{busy ? 'Reviewing files…' : `Review ${filesNeedingReview.length === 1 ? 'file' : `all ${filesNeedingReview.length} files`} with Nura`}</Text><Text style={[styles.fileSub, { color: colors.violet }]}>One approval · each file gets its own source-linked review</Text></View><Text style={styles.arrow}>→</Text></Pressable>}
+    {linkedSourceAssets.length > 1 && <View style={styles.batchAnalysis}>
+      <Label>CHECKS ACROSS YOUR FILES · {linkedSourceAssets.length}</Label>
+      <Text style={styles.batchIntro}>Nura compares matching detail names, units, values and dates across saved sources. These are review cues only; files and claims are never merged automatically.</Text>
+      {!batchComparisonComplete ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>Checking source-matched details</Text><Text style={styles.noticeBody}>Each result is checked against its original file before it is included.</Text></Surface> : null}
+      {batchComparisonComplete && batchSourceReviews.some((item) => item.status !== 'verified') ? <Surface style={styles.error}><Text style={styles.noticeTitle}>Some files could not be compared</Text><Text style={styles.noticeBody}>{batchSourceReviews.filter((item) => item.status !== 'verified').map((item) => `${item.name} · ${item.status === 'mismatch' ? 'source did not match; suggestions hidden' : 'source review unavailable'}`).join('\n')} Open those files individually to review them.</Text></Surface> : null}
+      {batchComparisonComplete && batchFindings.length === 0 && batchSourceReviews.every((item) => item.status === 'verified') ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>No exact overlaps found</Text><Text style={styles.noticeBody}>No repeated values for the same named detail and date, or same-date differences, were found across these extracted claims. Different wording or missing dates may still need your review.</Text></Surface> : null}
+      {batchComparisonComplete && batchFindings.map((finding) => {
+        const isConflict = finding.kind === 'same_date_difference';
+        const headline = isConflict ? 'Different values for the same date' : finding.kind === 'same_date_match' ? 'Possible repeat · same value and date' : 'Possible repeat · compare dates';
+        const when = finding.eventDates.length ? finding.eventDates.join(', ') : 'date not available';
+        const values = finding.values.map((value) => `${value}${finding.unit ? ` ${finding.unit}` : ''}`).join(' / ');
+        return <Surface key={finding.id} style={styles.batchFinding}>
+          <Text style={[styles.batchFindingTitle, isConflict && styles.batchConflictTitle]}>{headline}</Text>
+          <Text style={styles.batchFindingBody}>{finding.label} · {values} · {when}</Text>
+          <Text style={styles.batchFindingBody}>{isConflict ? 'Check the source passages and dates before deciding which value belongs in your history. Both suggestions remain separate.' : 'The same value appears in more than one file. Check the original reports before deciding whether these are the same event.'}</Text>
+          <View style={styles.batchSources}>{finding.sources.map((item) => {
+            const asset = batchSourceReviews.find((review) => review.source?.id === item.id);
+            return <Pressable key={item.id} disabled={!asset} onPress={() => { if (!asset) return; setSelectionChanged(true); setSelectedId(asset.assetId); setSource(null); setClaims([]); setActivity([]); setError(''); setNotice(`Opened ${asset.name} to compare its original source.`); }} style={styles.batchSourceButton}>
+              <Text style={styles.batchSourceText}>Open {item.name} ↗</Text>
+            </Pressable>;
+          })}</View>
+        </Surface>;
+      })}
+    </View>}
     {Boolean(sourceToOpen) && !source && !error && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Opening your saved review</Text><Text style={styles.noticeBody}>The suggestions for this file are loading. The original won’t be sent again.</Text></Surface>}
     {extracting && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Nura is reviewing your files</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP READING</Text></Pressable></Surface>}
     {activity.length > 0 && <Surface style={styles.activity}><Label>HOW NURA IS WORKING</Label>{activity.map((item) => <View key={item.id} style={styles.activityRow}><Text style={[styles.activityMark, item.status === 'complete' && styles.activityDone, item.status === 'failed' && styles.activityFailed, item.status === 'cancelled' && styles.activityCancelled]}>{item.status === 'complete' ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '·'}</Text><Text style={styles.activityText}>{item.label}</Text></View>)}</Surface>}
@@ -320,4 +381,7 @@ const styles = StyleSheet.create({
   selfReportSection: { marginTop: 12, marginBottom: 10 }, selfReportCard: { marginTop: 9, padding: 13, borderColor: '#CDBDD6', backgroundColor: '#FBF7FB' }, selfReportHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, selfReportTitle: { color: colors.text, fontSize: 13, fontWeight: '600' }, selfReportMeta: { color: colors.quiet, fontSize: 10, marginTop: 4 }, selfReportState: { color: '#8A6AA0', fontSize: 8, fontWeight: '700', letterSpacing: 0.5 }, selfReportText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 12 }, selfReportInput: { minHeight: 100, marginTop: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, padding: 11, fontSize: 12, lineHeight: 18 }, selfReportFoot: { color: colors.quiet, fontSize: 10, lineHeight: 15, marginTop: 9 }, selfReportConfirm: { marginTop: 10, padding: 10, borderRadius: 11, borderWidth: 1, borderColor: '#E7D9E8', backgroundColor: '#FBF7FC' },
   versionHistory: { marginTop: 9, padding: 10, borderRadius: 10, backgroundColor: '#F5F0FA', borderWidth: 1, borderColor: '#E6DDED' }, historyTitle: { color: colors.violet, fontSize: 8, fontWeight: '700', letterSpacing: .8 }, historyCopy: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
   focusedClaim: { borderColor: colors.violet, borderWidth: 2, backgroundColor: '#F8F1FA' }, focusNotice: { color: colors.violet, fontSize: 8, fontWeight: '800', letterSpacing: 0.7, marginTop: 9 },
+  batchAnalysis: { marginTop: 16, marginBottom: 8 }, batchIntro: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 7, marginBottom: 3 },
+  batchFinding: { marginTop: 9, padding: 13, borderColor: '#D9C7A8', backgroundColor: '#FFFBF3' }, batchFindingTitle: { color: '#8B672E', fontSize: 12, fontWeight: '700' }, batchConflictTitle: { color: '#A34E43' }, batchFindingBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 6 },
+  batchSources: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9 }, batchSourceButton: { borderRadius: 99, backgroundColor: colors.surfaceStrong, paddingHorizontal: 10, paddingVertical: 7 }, batchSourceText: { color: colors.violet, fontSize: 9, fontWeight: '600' },
 });
