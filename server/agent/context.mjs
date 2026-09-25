@@ -8,6 +8,7 @@ const SOURCE_CONTEXT_KINDS = {
 };
 const STOP_WORDS = new Set(['about', 'after', 'again', 'also', 'and', 'are', 'based', 'been', 'before', 'between', 'can', 'could', 'does', 'from', 'have', 'here', 'into', 'just', 'like', 'more', 'most', 'my', 'near', 'need', 'not', 'only', 'other', 'please', 'should', 'some', 'that', 'the', 'their', 'them', 'then', 'there', 'these', 'this', 'those', 'through', 'what', 'when', 'where', 'which', 'with', 'would', 'your']);
 const cleanText = (value, limit = 500) => typeof value === 'string' ? value.trim().slice(0, limit) : '';
+const isPolicyTermSource = (source) => source?.kind === 'user_record' && /^(insurance coverage|coverage_term|coverage term)$/i.test(cleanText(source.category, 80));
 
 function sanitizeContextEntries(items, allowedKinds, maxItems, maxValueLength) {
   if (!Array.isArray(items)) return [];
@@ -190,8 +191,7 @@ export function createEvidenceTools(context) {
 }
 
 export function coverageTraceDetail(answer, sources) {
-  const policySources = (Array.isArray(sources) ? sources : []).filter((source) =>
-    source?.kind === 'user_record' && /^(insurance coverage|coverage_term|coverage term)$/i.test(cleanText(source.category, 80)));
+  const policySources = (Array.isArray(sources) ? sources : []).filter(isPolicyTermSource);
   const policyReferences = new Set(policySources.map((source) => source.reference));
   const citedPolicyCount = new Set((Array.isArray(answer?.citations) ? answer.citations : []).filter((reference) => policyReferences.has(reference))).size;
   const assessmentCount = Array.isArray(answer?.coverageAssessments) ? answer.coverageAssessments.length : 0;
@@ -210,13 +210,13 @@ export function validateAnswer(answer, sources, intent) {
       const policySource = sourceByReference.get(policyReference);
       const policyKind = cleanText(item?.kind, 32);
       const detail = cleanText(item?.detail, 320);
-      const isPolicyTerm = policySource?.kind === 'user_record' && /^(insurance coverage|coverage_term)$/i.test(cleanText(policySource.category, 80));
+      const isPolicyTerm = isPolicyTermSource(policySource);
       if (!isPolicyTerm || !detail || !['explicit_benefit', 'explicit_limit', 'explicit_exclusion', 'unclear'].includes(policyKind)) return [];
       const relatedHealthReferences = Array.isArray(item?.relatedHealthReferences)
         ? [...new Set(item.relatedHealthReferences.filter((reference) => {
           if (typeof reference !== 'string' || !allowed.has(reference)) return false;
           const source = sourceByReference.get(reference);
-          return ['user_record', 'treatment_record', 'care_visit'].includes(source?.kind) && !/^(insurance coverage|coverage_term)$/i.test(cleanText(source.category, 80));
+          return ['user_record', 'treatment_record', 'care_visit'].includes(source?.kind) && !isPolicyTermSource(source);
         }))].slice(0, 5)
         : [];
       return [{ kind: policyKind, policyReference, detail, relatedHealthReferences }];

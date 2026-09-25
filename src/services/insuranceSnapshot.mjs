@@ -27,6 +27,16 @@ const keyMedicalDetails = [
   { label: 'Pre- and post-hospital care', match: /pre[- ]?hospital|post[- ]?hospital/i },
 ];
 
+const keyDetailFields = [
+  { key: 'annual-medical-limit', match: /annual.{0,24}medical.{0,20}limit|medical.{0,20}annual.{0,20}limit/i },
+  { key: 'lifetime-medical-limit', match: /lifetime.{0,24}medical.{0,20}limit|medical.{0,20}lifetime.{0,20}limit/i },
+  { key: 'room-board', match: /room\s*(?:&|and)\s*board/i },
+  { key: 'cost-share', match: /deductible|co-?insurance|copay|co-pay/i },
+  { key: 'outpatient', match: /outpatient/i },
+  { key: 'premium-amount', match: /annual premium|current premium|original premium|new premium|premium amount|premium per (?:year|month|annum)/i },
+  { key: 'life-cover', match: /sum assured|death benefit|life cover/i },
+];
+
 function textOf(term) {
   return [term?.label, term?.value].filter(Boolean).join(' · ').normalize('NFKC').trim();
 }
@@ -79,5 +89,12 @@ export function buildInsuranceSnapshot(terms) {
   const exclusions = approved.filter((term) => classifyInsuranceTerm(term) === 'explicit_exclusion');
   const clarifications = approved.filter((term) => classifyInsuranceTerm(term) === 'needs_clarification');
   const notFoundMedicalDetails = keyMedicalDetails.filter((field) => !approved.some((term) => field.match.test(String(term?.label ?? ''))));
-  return { groups, exclusions, clarifications, notFoundMedicalDetails };
+  const usedKeyTerms = new Set();
+  const keyDetails = keyDetailFields.flatMap((field) => {
+    const term = approved.find((candidate) => !usedKeyTerms.has(candidate) && field.match.test(String(candidate?.label ?? '')));
+    if (!term) return [];
+    usedKeyTerms.add(term);
+    return [{ key: field.key, label: term.label, term }];
+  });
+  return { groups, exclusions, clarifications, notFoundMedicalDetails, keyDetails };
 }

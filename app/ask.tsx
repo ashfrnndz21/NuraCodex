@@ -331,7 +331,7 @@ function CoveragePanel({ assessments, sources, onOpenSource, targetFor }: { asse
     explicit_exclusion: { title: 'EXCLUSION STATED', tone: '#FFC0B2', tint: 'rgba(192, 92, 75, 0.20)' },
     unclear: { title: 'WORDING UNCLEAR', tone: '#D7C2F1', tint: 'rgba(190, 159, 220, 0.20)' },
   };
-  return <View style={s.coveragePanel}><Text style={s.coverageHeading}>WHAT THE REVIEWED POLICY SAYS</Text>
+  return <View style={s.coveragePanel}><Text style={s.coverageHeading}>WHAT THE REVIEWED POLICY SAYS</Text><Text style={s.coverageContextNote}>Selected health details provide context for this review. Their presence does not establish that a term applies to you or predict an insurer decision.</Text>
     {assessments.map((item, index) => {
       const appearance = labels[item.kind];
       const policy = byReference.get(item.policyReference);
@@ -340,7 +340,7 @@ function CoveragePanel({ assessments, sources, onOpenSource, targetFor }: { asse
         <View style={s.coverageItemTop}><Text style={s.coverageKind}>{appearance.title}</Text><Text style={[s.coveragePill, { color: appearance.tone, backgroundColor: appearance.tint }]}>{item.policyReference}</Text></View>
         <Text style={s.coverageDetail}>{item.detail}</Text>
         {policy ? <Pressable accessibilityRole="button" accessibilityLabel={'Open cited policy source ' + policy.title} disabled={!targetFor(policy)} onPress={() => onOpenSource(policy)} style={s.coverageSourceAction}><Text style={s.coverageSource}>Policy · {policy.title}  ↗</Text></Pressable> : <Text style={s.coverageSource}>Policy source unavailable</Text>}
-        {related.length > 0 && <View style={s.coverageRelatedRow}><Text style={s.coverageRelatedPrefix}>Compared with · </Text>{related.map((source) => <Pressable key={source.reference} accessibilityRole="button" accessibilityLabel={'Open cited health source ' + source.title} disabled={!targetFor(source)} onPress={() => onOpenSource(source)}><Text style={s.coverageRelated}>{source.title} ↗</Text></Pressable>)}</View>}
+        {related.length > 0 && <View style={s.coverageRelatedRow}><Text style={s.coverageRelatedPrefix}>Selected health detail · </Text>{related.map((source) => <Pressable key={source.reference} accessibilityRole="button" accessibilityLabel={'Open cited health source ' + source.title} disabled={!targetFor(source)} onPress={() => onOpenSource(source)}><Text style={s.coverageRelated}>{source.title} ↗</Text></Pressable>)}</View>}
       </View>;
     })}
   </View>;
@@ -483,6 +483,7 @@ const s = StyleSheet.create({
 
   coveragePanel: { backgroundColor: 'rgba(255, 249, 246, 0.06)', borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 10, marginTop: 11 },
   coverageHeading: { color: C.plum, fontSize: 8, fontWeight: '700', letterSpacing: 0.8, marginBottom: 7 },
+  coverageContextNote: { color: C.muted, fontSize: 8, lineHeight: 12, marginBottom: 6 },
   coverageEmpty: { backgroundColor: 'rgba(226, 164, 82, 0.10)', borderColor: 'rgba(255, 215, 151, 0.28)' },
   coverageEmptyText: { color: C.muted, fontSize: 9, lineHeight: 14 },
   coverageItem: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 11, padding: 9, marginTop: 5 },

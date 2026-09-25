@@ -33,6 +33,22 @@ test('does not turn a missing policy detail into an exclusion', () => {
   assert.equal(classifyInsuranceTerm(term('Copay', 'MYR 60 per visit')), 'stated');
 });
 
+test('builds compact highlights from approved key terms without inventing missing values', () => {
+  const annualLimit = { id: 'limit-1', label: 'Annual medical limit', value: 'MYR 80,000' };
+  const copay = { id: 'copay-1', label: 'Outpatient copay', value: 'MYR 40 per visit' };
+  const premiumTerm = { id: 'term-1', label: 'Premium payment term', value: '20 years' };
+  const premium = { id: 'premium-1', label: 'Current premium', value: 'MYR 300 monthly' };
+  const snapshot = buildInsuranceSnapshot([annualLimit, copay, premiumTerm, premium]);
+
+  assert.deepEqual(snapshot.keyDetails.map(({ key, term: savedTerm }) => [key, savedTerm.id]), [
+    ['annual-medical-limit', annualLimit.id],
+    ['cost-share', copay.id],
+    ['premium-amount', premium.id],
+  ]);
+  assert.ok(snapshot.notFoundMedicalDetails.some((field) => field.label === 'Room & board limit'));
+  assert.equal(snapshot.exclusions.length, 0);
+});
+
 test('offers cautious plain-language explanations for common cost-sharing terms', () => {
   assert.match(interpretInsuranceTerm(term('Deductible', 'MYR 500')), /before the plan starts sharing/i);
   assert.match(interpretInsuranceTerm(term('Copay', 'MYR 60')), /eligible service/i);

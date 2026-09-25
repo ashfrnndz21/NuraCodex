@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyIntent, coverageTraceDetail, createEvidenceTools, sanitizeRunBody } from './context.mjs';
+import { classifyIntent, coverageTraceDetail, createEvidenceTools, sanitizeRunBody, validateAnswer } from './context.mjs';
 
 const sampleTreatment = {
   id: 'medicine-1', name: 'Sample medicine', dose: 'Example 10 mg', schedule: 'Example once daily',
@@ -26,6 +26,36 @@ test('coverage activity reports retrieved policy evidence accurately', () => {
   assert.match(coverageTraceDetail({ citations: [], coverageAssessments: [] }, [policySource]), /1 policy term retrieved/);
   assert.match(coverageTraceDetail({ citations: [], coverageAssessments: [] }, []), /comparison remains incomplete/);
   assert.match(coverageTraceDetail({ citations: ['R1'], coverageAssessments: [{ policyReference: 'R1' }] }, [policySource]), /1 policy finding linked/);
+});
+
+test('coverage findings cannot link health records outside the current evidence set', () => {
+  const sources = [
+    { reference: 'R1', id: 'fact:policy', title: 'Cardiology visit limit', kind: 'user_record', category: 'Insurance coverage' },
+    { reference: 'R2', id: 'visit:sample', title: 'Sample clinic visit', kind: 'care_visit', category: 'Care visit' },
+  ];
+  const answer = validateAnswer({
+    answer: 'The limit is stated in the policy.',
+    citations: ['R1', 'R2', 'R99'],
+    coverageAssessments: [{ kind: 'explicit_limit', policyReference: 'R1', detail: 'Eight visits per year.', relatedHealthReferences: ['R2', 'R99'] }],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'coverage', question: 'Compare the policy with the selected visit.' });
+
+  assert.deepEqual(answer.coverageAssessments, [{
+    kind: 'explicit_limit', policyReference: 'R1', detail: 'Eight visits per year.', relatedHealthReferences: ['R2'],
+  }]);
+  assert.deepEqual(answer.citations, ['R1', 'R2']);
+});
+
+test('coverage validation accepts the normalized policy-term category variants', () => {
+  const policySource = { reference: 'R1', id: 'fact:policy', title: 'Annual visit limit', kind: 'user_record', category: 'coverage term' };
+  const answer = validateAnswer({
+    answer: 'The policy states an annual visit limit.', citations: [],
+    coverageAssessments: [{ kind: 'explicit_limit', policyReference: 'R1', detail: 'Eight visits per year.', relatedHealthReferences: [] }],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, [policySource], { key: 'coverage', question: 'What is the policy limit?' });
+
+  assert.equal(answer.coverageAssessments.length, 1);
+  assert.match(coverageTraceDetail(answer, [policySource]), /1 policy finding linked/);
 });
 
 const run = (overrides = {}) => sanitizeRunBody({
