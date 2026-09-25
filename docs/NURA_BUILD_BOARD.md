@@ -454,3 +454,13 @@ The user should review a stable story slice, not act as the team's error detecto
 - Latest verification: npm run typecheck, npm run lint -- --no-cache, npm run test:repo (121/121 tests), and git diff --check passed. These are internal checks, not story acceptance.
 - No user story or production gate is accepted by this change. Totals remain 0/11 stories, 0/8 gates, 0/19 overall. Native-device/reduced-motion acceptance and the complete profile journey remain open.
 - Next: continue the G0 mobile visual audit, with active-area visibility, narrow-screen layout, and reduced-motion behavior included.
+
+
+### Onboarding name clarity and responsive focus map — 25 September 2026
+
+- The profile name is now explicitly required as a display name or nickname; a legal name is not requested. Country, birth date, contact details and measurements remain optional. Removed a contradictory helper line that implied every field could be skipped. Submitting an empty name stays on the identity step and shows an inline explanation.
+- Reworked the narrow onboarding header and health-area chooser so the progress labels no longer collide with the step title, the selected count is separate from its helper, and all nine area bubbles fit at phone widths. Scene transitions dismiss the keyboard and reset the new step to its top position.
+- In an isolated fictional browser preview at 360, 390 and 430 px widths, the nine-area selector fit within the phone viewport. Selecting all nine updated the count to 09 and rendered nine individual, interactive nodes in the connected profile map. The map continues below the selector in the scrollable onboarding screen. Empty-name validation stayed on the identity step. No preview runtime errors were reported.
+- Verification passed: `npm run typecheck`, `npm run lint -- --no-cache`, `npm run test:repo` (**121/121**), and `git diff --check`. This is a focused UI/interaction verification; native-device and reduced-motion review remain open.
+- Acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. Story 1 remains partial because the full profile synthesis, correction/recontextualization and restart journey has not passed its acceptance contract.
+- **Next:** continue the G0 mobile visual audit across the full onboarding storyboard and reduced-motion states, then proceed through the remaining story journeys and production gates.

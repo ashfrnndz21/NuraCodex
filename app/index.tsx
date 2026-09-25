@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
   Animated,
   Easing,
+  Keyboard,
   LayoutAnimation,
   Modal,
   Platform,
@@ -12,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -361,10 +363,10 @@ function FocusBubble({
   }, [activeProgress, open, reducedMotion]);
   const y = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
   const haloOpacity = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.8] });
-  const haloScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [0.84, 1.08] });
+  const haloScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.04] });
   const activeHaloOpacity = activeProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.9] });
-  const activeHaloScale = activeProgress.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.17] });
-  const selectedScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
+  const activeHaloScale = activeProgress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.04] });
+  const selectedScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] });
   const bubbleScale = Animated.multiply(scale, selectedScale);
   const colors: [string, string] = selected ? [area.color + 'E8', area.ink] : [area.color + '55', 'rgba(255,255,255,.12)'];
   const glyph = area.id === 'bp-topic' ? '↕' : area.id === 'cholesterol' ? '◌' : area.id === 'sleep' ? '☾' : area.id === 'heart' ? '♡' : area.id === 'sugar' ? '⌁' : area.id === 'medicines' ? '+' : area.id === 'family' ? '⌂' : area.id === 'joints' ? '↗' : '＋';
@@ -459,6 +461,8 @@ export default function ProfileSetup() {
     name, birthday, country, email, phone, updateProfile, topics, toggleTopic,
     facts, treatments, assets, addFact, correctFact, commitProfileSetup,
   } = useNura();
+  const { width: viewportWidth } = useWindowDimensions();
+  const compactHeader = viewportWidth < 420;
   const [step, setStep] = useState<OnboardingStep>('welcome');
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
   const [customArea, setCustomArea] = useState('');
@@ -473,6 +477,7 @@ export default function ProfileSetup() {
   const [moving, setMoving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [cloudWidth, setCloudWidth] = useState(315);
+  const sceneScrollRef = useRef<ScrollView | null>(null);
   const cloudScale = Math.min(cloudWidth / 315, 1);
   const cloudOffset = Math.max(0, (cloudWidth - 315 * cloudScale) / 2);
   const panelOpacity = useMemo(() => new Animated.Value(1), []);
@@ -481,6 +486,10 @@ export default function ProfileSetup() {
   const optionalDetailsOpacity = useMemo(() => new Animated.Value(0), []);
   const optionalDetailsY = useMemo(() => new Animated.Value(7), []);
   const sceneIndex = stepOrder.indexOf(step);
+
+  useEffect(() => {
+    sceneScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [step]);
 
   useEffect(() => {
     let active = true;
@@ -588,6 +597,13 @@ export default function ProfileSetup() {
   }
 
   function continueIdentity() {
+    Keyboard.dismiss();
+    const profileName = name.trim();
+    if (!profileName) {
+      setError('Enter a name or nickname to continue.');
+      return;
+    }
+    if (profileName !== name) updateProfile({ name: profileName });
     saveMeasurement('Height', height, 'cm');
     saveMeasurement('Weight', weight, 'kg');
     setError('');
@@ -657,15 +673,15 @@ export default function ProfileSetup() {
     if (step === 'identity') {
       return (
         <View>
-          {stepIntro('01  ·  YOUR PROFILE', 'Start with what you’re comfortable sharing.', 'A name helps personalize your profile. The rest can wait until it is useful.')}
+          {stepIntro('01  ·  YOUR PROFILE', 'The person behind the profile.', 'Choose the name you want Nura to use. Other details can wait until they are useful.')}
           <View style={styles.identityCard}>
             <View style={styles.cardHeadingRow}>
               <View style={styles.cardIcon}><Text style={styles.cardIconText}>01</Text></View>
-              <View style={{ flex: 1 }}><Text style={styles.cardOverline}>PROFILE DETAILS</Text><Text style={styles.cardTitle}>How should we label this profile?</Text></View>
-              <Text style={styles.optionalLabel}>OPTIONAL</Text>
+              <View style={{ flex: 1 }}><Text style={styles.cardOverline}>PROFILE DETAILS</Text><Text style={styles.cardTitle}>What should Nura call this profile?</Text></View>
             </View>
-            <Text style={styles.fieldLabel}>NAME <Text style={styles.optionalInline}>· OPTIONAL</Text></Text>
-            <TextInput value={name} onChangeText={(value) => updateProfile({ name: value })} placeholder="Name for this profile" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Name for this profile" autoComplete="name" returnKeyType="done" />
+            <Text style={styles.fieldLabel}>NAME · REQUIRED</Text>
+            <TextInput value={name} onChangeText={(value) => { updateProfile({ name: value }); setError(''); }} placeholder="Name or nickname" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Profile name" autoComplete="name" returnKeyType="done" />
+            <Text style={styles.fieldHelper}>Use any name or nickname; a legal name is not needed.</Text>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: optionalDetailsOpen }} onPress={toggleOptionalDetails} style={styles.optionalDetailsButton}>
               <View style={{ flex: 1 }}><Text style={styles.optionalDetailsTitle}>{optionalDetailsOpen ? 'Hide optional details' : 'Add optional details'}</Text><Text style={styles.optionalDetailsHint}>Country, birth date, contact and measurements</Text></View>
               <Text style={styles.optionalDetailsMark}>{optionalDetailsOpen ? '−' : '+'}</Text>
@@ -693,7 +709,7 @@ export default function ProfileSetup() {
                 <Text style={styles.fieldHelper}>Measurements are saved as self-reported details. Every field here is optional.</Text>
               </Animated.View>
             ) : null}
-            <Text style={styles.fieldHelper}>You can edit these details later. Nothing here is required to continue.</Text>
+            <Text style={styles.fieldHelper}>You can edit this name later. All other profile details are optional.</Text>
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
           <Pressable accessibilityRole="button" onPress={continueIdentity} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
@@ -707,9 +723,10 @@ export default function ProfileSetup() {
       <View>
         {stepIntro('02  ·  YOUR HEALTH AREAS', 'What would you like to keep track of?', 'Choose any areas that matter to you. These are focus choices, not diagnoses.')}
         <View style={styles.focusHeading}>
-          <View><Text style={styles.cardOverline}>CHOOSE YOUR AREAS</Text><Text style={styles.focusTitle}>Tap an area to connect it and see optional details.</Text></View>
+          <Text style={styles.cardOverline}>CHOOSE YOUR AREAS</Text>
           <Text style={styles.focusCount}>{String(selectedAreas.length).padStart(2, '0')} SELECTED</Text>
         </View>
+        <Text style={styles.focusHelper}>Tap a circle to select or clear an area. Details are optional.</Text>
         <View style={styles.focusCloud} onLayout={(event) => setCloudWidth(event.nativeEvent.layout.width)}>
           {focusAreas.map((area, index) => {
             const position = focusPositions[index];
@@ -747,12 +764,12 @@ export default function ProfileSetup() {
         <LinearGradient pointerEvents="none" colors={[brandScenes.atmosphere.lilacGlow, 'rgba(162,135,205,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ambientViolet} />
       <StatusBar style="light" />
       <View style={styles.content}>
-        <View style={styles.topbar}>
+        <View style={[styles.topbar, compactHeader && styles.topbarCompact]}>
           <View style={styles.brand}>
             <View style={styles.brandOrb}><Orb size={23} state="idle" /></View>
             <View><Text style={styles.brandName}>nura</Text><Text style={styles.brandTag}>HEALTH, IN CONTEXT</Text></View>
           </View>
-          <View style={styles.topActions}>
+          <View style={[styles.topActions, compactHeader && styles.topActionsCompact]}>
             <Text style={styles.private}>YOUR CHOICES, YOUR PACE</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Open Nura Home" onPress={() => router.replace('/(tabs)/home')} style={({ pressed }) => [styles.homeLink, pressed && styles.homeLinkPressed]}>
               <Text style={styles.homeLinkText}>OPEN HOME  ↗</Text>
@@ -773,7 +790,7 @@ export default function ProfileSetup() {
           </View>
         ) : null}
         <Animated.View pointerEvents={savingProfile ? 'none' : 'auto'} style={[styles.sceneFrame, { opacity: panelOpacity, transform: [{ translateX: panelX }, { scale: panelScale }] }]}>
-          <ScrollView key={step} contentContainerStyle={styles.sceneContent} keyboardShouldPersistTaps="handled">
+          <ScrollView ref={sceneScrollRef} key={step} contentContainerStyle={styles.sceneContent} keyboardShouldPersistTaps="handled">
             {step === 'welcome' ? currentContent : (
               <View>
                 <View style={styles.sceneBackRow}>
@@ -910,15 +927,15 @@ function FollowupBubbles({
 }
 
 const focusPositions = [
-  { x: 0, y: 0, size: 94 },
-  { x: 108, y: 5, size: 86 },
-  { x: 209, y: 0, size: 82 },
-  { x: 10, y: 97, size: 84 },
-  { x: 112, y: 101, size: 90 },
-  { x: 218, y: 99, size: 80 },
-  { x: 0, y: 193, size: 86 },
-  { x: 105, y: 190, size: 92 },
-  { x: 213, y: 195, size: 84 },
+  { x: 0, y: 0, size: 78 },
+  { x: 118, y: 4, size: 74 },
+  { x: 241, y: 0, size: 72 },
+  { x: 5, y: 83, size: 70 },
+  { x: 119, y: 81, size: 78 },
+  { x: 242, y: 84, size: 68 },
+  { x: 0, y: 167, size: 74 },
+  { x: 119, y: 164, size: 78 },
+  { x: 244, y: 168, size: 68 },
 ];
 
 const styles = StyleSheet.create({
@@ -928,11 +945,13 @@ const styles = StyleSheet.create({
   ambientViolet: { position: 'absolute', left: -150, bottom: 35, width: 330, height: 330, borderRadius: 170, opacity: 0.8 },
   content: { flex: 1, width: '100%', maxWidth: 520, alignSelf: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 48 : 27, paddingBottom: 8 },
   topbar: { minHeight: 46, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  topbarCompact: { flexDirection: 'column', alignItems: 'stretch', gap: 4 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   brandOrb: { width: 31, height: 31, borderRadius: 18, alignItems: 'center', justifyContent: 'center', shadowColor: palette.lilac, shadowOpacity: 0.48, shadowRadius: 14 },
   brandName: { color: palette.ink, fontSize: 17, fontWeight: '700', letterSpacing: 1.1 },
   brandTag: { color: 'rgba(255,249,244,.64)', fontSize: 10, letterSpacing: 1.35, marginTop: 2 },
   topActions: { alignItems: 'flex-end', gap: 3 },
+  topActionsCompact: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' },
   private: { color: 'rgba(255,249,244,.62)', fontSize: 10, fontWeight: '700', letterSpacing: 1.3 },
   homeLink: { minHeight: 29, justifyContent: 'center', paddingHorizontal: 9, borderRadius: 12 },
   homeLinkPressed: { backgroundColor: 'rgba(255,255,255,.12)' },
@@ -980,9 +999,7 @@ const styles = StyleSheet.create({
   cardIconText: { color: palette.cream, fontSize: 12, fontWeight: '700' },
   cardOverline: { color: 'rgba(255,249,244,.62)', fontSize: 10, fontWeight: '700', letterSpacing: 1.35 },
   cardTitle: { color: palette.ink, fontSize: 15, fontWeight: '600', marginTop: 3 },
-  optionalLabel: { color: '#E7CDBA', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   fieldLabel: { color: 'rgba(255,249,244,.66)', fontSize: 10, fontWeight: '700', letterSpacing: 1.1, marginTop: 9, marginBottom: 5 },
-  optionalInline: { color: 'rgba(255,249,244,.43)', fontWeight: '500' },
   fieldInput: { minHeight: 46, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,.86)', backgroundColor: '#FFFBF7', paddingHorizontal: 12, color: '#322936', fontSize: 14 },
   countryButton: { minHeight: 46, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,.86)', backgroundColor: '#FFFBF7', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   countryButtonText: { color: '#322936', fontSize: 12 },
@@ -1056,15 +1073,15 @@ const styles = StyleSheet.create({
   customAreaInput: { flex: 1 },
   customAreaAdd: { minWidth: 65, borderRadius: 13, backgroundColor: palette.cream, alignItems: 'center', justifyContent: 'center' },
   customAreaAddText: { color: '#30223B', fontSize: 10, fontWeight: '800', letterSpacing: .6 },
-  focusHeading: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 8, marginBottom: 5 },
-  focusTitle: { color: palette.ink, fontSize: 12, lineHeight: 15, fontWeight: '500', marginTop: 4 },
-  focusCount: { color: '#F2D4C1', fontSize: 10, fontWeight: '700', letterSpacing: .7, paddingBottom: 4 },
-  focusCloud: { width: '100%', height: 296, position: 'relative', overflow: 'visible', marginTop: 7, marginBottom: 11 },
+  focusHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8, marginBottom: 5 },
+  focusCount: { color: '#F2D4C1', fontSize: 10, fontWeight: '700', letterSpacing: .7, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 11, backgroundColor: 'rgba(255,255,255,.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,.16)' },
+  focusHelper: { color: 'rgba(255,249,244,.68)', fontSize: 11, lineHeight: 15, marginBottom: 4 },
+  focusCloud: { width: '100%', height: 252, position: 'relative', overflow: 'visible', marginTop: 7, marginBottom: 11 },
   focusBubblePosition: { position: 'absolute', zIndex: 2 },
   focusBubbleTouch: { flex: 1, borderRadius: 999, overflow: 'visible' },
   focusBubble: { borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, overflow: 'hidden', shadowOffset: { width: 0, height: 5 }, shadowRadius: 10, elevation: 3 },
-  focusBubbleHalo: { position: 'absolute', top: -5, left: -5, right: -5, bottom: -5, borderRadius: 999, borderWidth: 1.4 },
-  focusBubbleActiveHalo: { position: 'absolute', top: -8, left: -8, right: -8, bottom: -8, borderRadius: 999, borderWidth: 2 },
+  focusBubbleHalo: { position: 'absolute', top: -3, left: -3, right: -3, bottom: -3, borderRadius: 999, borderWidth: 1.25 },
+  focusBubbleActiveHalo: { position: 'absolute', top: -2, left: -2, right: -2, bottom: -2, borderRadius: 999, borderWidth: 1.5 },
   focusBubbleGlyph: { fontSize: 16, lineHeight: 19, fontWeight: '600', marginBottom: 1 },
   focusBubbleText: { color: palette.ink, fontSize: 10.5, lineHeight: 13, fontWeight: '500', textAlign: 'center' },
   focusBubbleTextSelected: { color: '#FFFFFF', fontWeight: '700' },
