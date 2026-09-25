@@ -5,10 +5,12 @@ import { Orb } from '../src/components/Orb';
 import { Label, Surface } from '../src/components/Surface';
 import { DocumentContextCard } from '../src/components/DocumentContextCard';
 import { useNura } from '../src/state/NuraContext';
+import type { IntakeAsset } from '../src/state/NuraContext';
 import { colors, radius } from '../src/theme';
-import { CandidateClaim, IntakeActivity, IntakeCancelledError, LocalSource, correctCandidate, decideCandidate, describeSourceLocation, extractPickedFile, formatVideoTimestamp, getSourceClaims, resolveIntakeMediaType, retractAcceptedCandidate, sourceMatchesAsset } from '../src/services/intakeClient';
+import { CandidateClaim, IntakeActivity, LocalSource, correctCandidate, decideCandidate, describeSourceLocation, extractPickedFile, formatVideoTimestamp, getSourceClaims, resolveIntakeMediaType, retractAcceptedCandidate, sourceMatchesAsset } from '../src/services/intakeClient';
 import { findMisdatedAcceptedClaims, findMissingAcceptedClaims, findMissingRetractions } from '../src/services/sourceClaimReconciliation.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
+import { processIntakeBatch } from '../src/services/intakeBatch.mjs';
 
 const supported = (asset: { name: string; mimeType?: string }) => Boolean(resolveIntakeMediaType(asset));
 export default function Review() {
@@ -16,13 +18,17 @@ export default function Review() {
   const existingSourceId = typeof params.sourceId === 'string' ? params.sourceId : '';
   const requestedClaimId = typeof params.claimId === 'string' ? params.claimId : '';
   const focusClaimId = typeof params.focusClaimId === 'string' ? params.focusClaimId : '';
+  const routeAssetId = typeof params.assetId === 'string' ? params.assetId : '';
   const purpose: 'medical' | 'insurance' = params.purpose === 'insurance' ? 'insurance' : 'medical';
   const { ready, assets, intakeNotes, facts, addFact, correctFact, retractFact, reconcileSourceFactDate, attachSourceToAsset, saveIntakeNote, commitIntakeNote, removeIntakeNote } = useNura();
-  const readable = useMemo(() => assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && supported(asset) && !(purpose === 'insurance' && asset.kind === 'video')), [assets, purpose]);
+  const readable = useMemo<IntakeAsset[]>(() => assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && supported(asset) && !(purpose === 'insurance' && asset.kind === 'video')), [assets, purpose]);
   const [selectedId, setSelectedId] = useState(typeof params.assetId === 'string' ? params.assetId : readable[0]?.id ?? '');
   const selected = readable.find((asset) => asset.id === selectedId) ?? (existingSourceId ? undefined : readable[0]);
   const selectedAssetId = selected?.id ?? '';
   const [consentOpen, setConsentOpen] = useState(false);
+  const [consentAssetIds, setConsentAssetIds] = useState<string[]>([]);
+  const [selectionChanged, setSelectionChanged] = useState(false);
+  const [fileStates, setFileStates] = useState<Record<string, { status: 'queued' | 'reading' | 'complete' | 'failed' | 'cancelled'; detail?: string }>>({});
   const [busy, setBusy] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const extractionAbort = useRef<AbortController | null>(null);
@@ -39,35 +45,44 @@ export default function Review() {
   const [discardNoteId, setDiscardNoteId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const sourceToOpen = !selectionChanged && existingSourceId && (!routeAssetId || selected?.id === routeAssetId)
+    ? existingSourceId
+    : selected?.serverSourceId ?? '';
+  const filesNeedingReview = readable.filter((asset) => !asset.serverSourceId);
+  const consentFiles = readable.filter((asset) => consentAssetIds.includes(asset.id));
 
   useEffect(() => () => extractionAbort.current?.abort(), []);
 
   useEffect(() => {
-    if (!existingSourceId || !ready) return;
+    if (!sourceToOpen || !ready) return;
     if (!selected) return;
     let active = true;
-    void getSourceClaims(existingSourceId).then(async (result) => {
+    void getSourceClaims(sourceToOpen).then(async (result) => {
       if (!active) return;
-      if (!(await sourceMatchesAsset(selected, result.source))) {
-        if (selectedAssetId && selected.serverSourceId === result.source.id) attachSourceToAsset(selectedAssetId, null);
+      const matchesOriginal = await sourceMatchesAsset(selected, result.source);
+      if (!active) return;
+      if (!matchesOriginal) {
+        if (selectedAssetId && selected.serverSourceId === result.source.id) await attachSourceToAsset(selectedAssetId, null);
+        if (!active) return;
         setSource(null); setClaims([]);
         setError('These extracted details did not match the saved file, so Nura hid them. Review the original file again to create a correct match.');
         return;
       }
       if (!active) return;
+      if (selectedAssetId && selected.serverSourceId !== result.source.id) await attachSourceToAsset(selectedAssetId, result.source.id);
+      if (!active) return;
       setSource(result.source); setClaims(result.claims);
-      setNotice('Opened the existing extraction; the original file was not sent again.');
+      setNotice('Opened the saved extraction for this file. The original was not sent again.');
       const requestedClaim = result.claims.find((claim) => claim.id === requestedClaimId && claim.evidenceState === 'user_confirmed');
       if (requestedClaim) {
         setDrafts((current) => ({ ...current, [requestedClaim.id]: { label: requestedClaim.label, value: requestedClaim.value, unit: requestedClaim.unit ?? '' } }));
         setEditingId(requestedClaim.id);
       }
-      if (selectedAssetId && selected.serverSourceId !== result.source.id) attachSourceToAsset(selectedAssetId, result.source.id);
     }).catch((caught) => {
       if (active) setError(caught instanceof Error ? caught.message : 'This source could not be opened.');
     });
     return () => { active = false; };
-  }, [existingSourceId, requestedClaimId, selected, selectedAssetId, ready, attachSourceToAsset]);
+  }, [sourceToOpen, requestedClaimId, selected, selectedAssetId, ready, attachSourceToAsset]);
 
   const missingAccepted = useMemo(() => findMissingAcceptedClaims(claims, facts, source?.id), [claims, facts, source?.id]);
   const misdatedAccepted = useMemo(() => findMisdatedAcceptedClaims(claims, facts, source?.id), [claims, facts, source?.id]);
@@ -108,21 +123,42 @@ export default function Review() {
     });
   }, [ready, source, missingAccepted, purpose, addFact]);
 
-  async function readSelected() {
-    if (!selected || busy) return;
+  async function readSelectedBatch() {
+    const batch = consentAssetIds.map((id) => readable.find((asset) => asset.id === id)).filter((asset): asset is typeof readable[number] => Boolean(asset && !asset.serverSourceId));
+    if (!batch.length || busy) return;
     const controller = new AbortController();
     extractionAbort.current = controller;
-    setConsentOpen(false); setBusy(true); setExtracting(true); setError(''); setNotice(''); setSource(null); setClaims([]); setActivity([]);
+    setConsentOpen(false); setBusy(true); setExtracting(true); setError(''); setNotice(''); if (!selected?.serverSourceId) { setSource(null); setClaims([]); } setActivity([]);
+    setFileStates((current) => ({ ...current, ...Object.fromEntries(batch.map((asset) => [asset.id, { status: 'queued' as const }])) }));
     try {
-      const result = await extractPickedFile({ uri: selected.uri, name: selected.name, mimeType: selected.mimeType, size: selected.size }, (item) => setActivity((current) => [...current, item]), purpose, controller.signal);
-      attachSourceToAsset(selected.id, result.source.id);
-      setSource(result.source); setClaims(result.claims);
-      setNotice(result.duplicate ? 'This file is already in your records. Nura has opened its saved review.' : result.claims.length ? purpose === 'insurance' ? `Nura found ${result.claims.length} policy terms to review. Nothing is added to your Insurance Registry until you approve it.` : `Nura found ${result.claims.length} personal health details to review. Nothing is added to your profile until you approve them.` : result.source.documentContext ? purpose === 'insurance' ? 'Nura saved the policy details with this source, but did not find a clear policy term to review.' : 'Nura saved report details with this source. It did not find a personal health detail to add.' : purpose === 'insurance' ? 'Nura couldn’t identify a clear policy term in this file. Nothing was added to your Insurance Registry.' : 'Nura couldn’t identify clear personal health details in this file. Nothing was added to your profile.');
-    } catch (caught) {
-      if (caught instanceof IntakeCancelledError) {
-        setNotice('Reading stopped. Nothing new was added to your profile. You can review this file again whenever you’re ready.');
+      const results = await processIntakeBatch(batch, async (asset) => {
+        const result = await extractPickedFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size }, (item) => setActivity((current) => [...current, { ...item, id: `${asset.id}:${item.id}`, label: `${asset.name} · ${item.label}` }]), purpose, controller.signal);
+        await attachSourceToAsset(asset.id, result.source.id);
+        return { claimsCount: result.claims.length };
+      }, { signal: controller.signal, onStatus: (event) => {
+        if (event.status === 'reading') setFileStates((current) => ({ ...current, [event.assetId]: { status: 'reading' } }));
+        if (event.status === 'failed') {
+          const detail = event.error instanceof Error ? event.error.message : 'Could not process this file';
+          setFileStates((current) => ({ ...current, [event.assetId]: { status: 'failed', detail } }));
+          setActivity((current) => [...current, { id: `${event.assetId}:failure`, label: `${batch.find((asset) => asset.id === event.assetId)?.name ?? 'File'} · Could not finish; you can try again`, status: 'failed' }]);
+        }
+        if (event.status === 'cancelled') setFileStates((current) => ({ ...current, [event.assetId]: { status: 'cancelled', detail: 'Stopped at your request' } }));
+      } });
+      const completedResults = results.filter((result) => result.status === 'complete');
+      const failed = results.filter((result) => result.status === 'failed').length;
+      const completed = completedResults.length;
+      for (const result of completedResults) setFileStates((current) => ({ ...current, [result.assetId]: { status: 'complete', detail: `${result.value.claimsCount} suggestions ready` } }));
+      const lastCompletedId = completedResults.at(-1)?.assetId ?? '';
+      const stopped = controller.signal.aborted || results.some((result) => result.status === 'cancelled');
+      if (lastCompletedId) { setSelectedId(lastCompletedId); setSelectionChanged(true); }
+      if (completed || failed) setNotice(`${completed} of ${batch.length} ${purpose === 'insurance' ? 'policy file' : 'health file'}${batch.length === 1 ? '' : 's'} processed${failed ? ` · ${failed} need another try` : ''}. Open each saved file to review its suggestions; nothing enters your registry without your approval.`);
+      if (!completed && failed) setError('Nura could not read the selected files. Each file’s status is shown above; you can retry the unprocessed files.');
+      if (stopped) {
+        setNotice(`Reading stopped at your request. ${completed} file${completed === 1 ? '' : 's'} finished and remain available to review; unstarted files are still ready.`);
         setActivity((current) => current.some((item) => item.status === 'cancelled') ? current : [...current, { id: `${Date.now()}-intake-cancelled`, label: 'Reading stopped at your request', status: 'cancelled' }]);
-      } else setError(caught instanceof Error ? caught.message : 'This source could not be processed.');
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'This source could not be processed.');
     }
     finally {
       if (extractionAbort.current === controller) extractionAbort.current = null;
@@ -240,11 +276,11 @@ export default function Review() {
     <View style={styles.heading}><Orb size={36} state={busy ? 'thinking' : 'idle'} /><View style={{ flex: 1 }}><Label>{purpose === 'insurance' ? 'YOUR POLICY · SOURCE REVIEW' : 'YOUR FILES · SOURCE REVIEW'}</Label><Text style={styles.title}>{purpose === 'insurance' ? 'Review policy terms.' : 'Read, then decide.'}</Text></View></View>
     <Text style={styles.intro}>{purpose === 'insurance' ? 'After you confirm, Nura will highlight stated policy terms and show their source. Use these details to prepare questions; they are not a coverage decision.' : 'Files are read only after you confirm. Review, edit or dismiss each suggestion. Your own description stays labeled as your words and is saved only when you choose.'}</Text>
     {purpose === 'medical' && intakeNotes.length > 0 && <View style={styles.selfReportSection}><Label>YOUR WORDS · {intakeNotes.length} DESCRIPTION{intakeNotes.length === 1 ? '' : 'S'}</Label>{intakeNotes.map((note) => <Surface key={note.id} style={styles.selfReportCard}><View style={styles.selfReportHeader}><View style={{ flex: 1 }}><Text style={styles.selfReportTitle}>{note.topicLabel ? `${note.topicLabel} · your description` : 'Your health description'}</Text><Text style={styles.selfReportMeta}>Written by you · {new Date(note.createdAt).toLocaleDateString()}</Text></View><Text style={styles.selfReportState}>NEEDS YOUR REVIEW</Text></View>{editingNoteId === note.id ? <TextInput value={noteDrafts[note.id] ?? note.text} onChangeText={(text) => setNoteDrafts((current) => ({ ...current, [note.id]: text }))} multiline maxLength={2000} textAlignVertical="top" accessibilityLabel="Edit your health description" style={styles.selfReportInput} /> : <Text style={styles.selfReportText}>{noteDrafts[note.id] ?? note.text}</Text>}<Text style={styles.selfReportFoot}>Nura has not interpreted this note. If you add it, it remains a self-reported detail.</Text>{discardNoteId === note.id ? <View style={styles.selfReportConfirm}><Text style={styles.selfReportFoot}>Remove this unsaved description from the review queue?</Text><View style={styles.actions}><Pressable disabled={busy} onPress={() => void discardSelfReport(note.id)} style={styles.reject}><Text style={styles.actionText}>{busy ? 'Removing…' : 'Remove draft'}</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(null)} style={styles.edit}><Text style={styles.actionText}>Keep note</Text></Pressable></View></View> : <View style={styles.actions}>{editingNoteId === note.id ? <><Pressable disabled={busy} onPress={() => void saveSelfReportDraft(note.id)} style={styles.edit}><Text style={styles.actionText}>{busy ? 'Saving…' : 'Save changes'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setEditingNoteId(null); setNoteDrafts((current) => { const next = { ...current }; delete next[note.id]; return next; }); }} style={styles.reject}><Text style={styles.actionText}>Cancel</Text></Pressable></> : <><Pressable disabled={busy} onPress={() => void addSelfReportToProfile(note.id)} style={styles.accept}><Text style={styles.actionOnText}>{busy ? 'Saving…' : 'Add to my record'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setNoteDrafts((current) => ({ ...current, [note.id]: note.text })); setEditingNoteId(note.id); }} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(note.id)} style={styles.reject}><Text style={styles.actionText}>Remove</Text></Pressable></>}</View>}</Surface>)}</View>}
-    {readable.length > 0 ? <View style={styles.files}><Label>{purpose === 'insurance' ? 'POLICY FILES' : 'HEALTH FILES'} · {readable.length}</Label>{readable.map((asset) => <Pressable key={asset.id} onPress={() => { setSelectedId(asset.id); setSource(null); setClaims([]); setActivity([]); setNotice(''); setError(''); }}><Surface style={{ ...styles.file, ...(selected?.id === asset.id ? styles.fileSelected : {}) }}><Text style={styles.fileType}>{asset.kind.toUpperCase()}</Text><View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.fileName}>{asset.name}</Text><Text style={styles.fileSub}>{asset.kind === 'video' ? 'Up to 3 minutes · up to 6 timestamped moments' : asset.size ? `${Math.round(asset.size / 1024)} KB` : 'Ready for explicit review'}</Text></View><Text style={styles.select}>{selected?.id === asset.id ? 'Selected' : 'Choose'}</Text></Surface></Pressable>)}</View> : null}
+    {readable.length > 0 ? <View style={styles.files}><Label>{purpose === 'insurance' ? 'POLICY FILES' : 'HEALTH FILES'} · {readable.length}</Label>{readable.map((asset) => { const run = fileStates[asset.id]; const status = run?.status === 'reading' ? 'Reading now' : run?.status === 'complete' || asset.serverSourceId ? 'Ready to review' : run?.status === 'failed' ? 'Needs another try' : run?.status === 'cancelled' ? 'Stopped' : 'Ready'; return <Pressable key={asset.id} disabled={busy} onPress={() => { setSelectionChanged(true); setSelectedId(asset.id); setSource(null); setClaims([]); setActivity([]); setNotice(''); setError(''); }}><Surface style={{ ...styles.file, ...(selected?.id === asset.id ? styles.fileSelected : {}) }}><Text style={styles.fileType}>{asset.kind.toUpperCase()}</Text><View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.fileName}>{asset.name}</Text><Text style={styles.fileSub}>{asset.kind === 'video' ? 'Up to 3 minutes · up to 6 timestamped moments' : asset.size ? `${Math.round(asset.size / 1024)} KB` : 'Ready for explicit review'} · {status}</Text>{run?.detail ? <Text numberOfLines={2} style={styles.fileSub}>{run.detail}</Text> : null}</View><Text style={styles.select}>{selected?.id === asset.id ? 'Selected' : 'Open'}</Text></Surface></Pressable>; })}</View> : null}
     {!readable.length && assets.length > 0 && <Surface style={styles.notice}><Text style={styles.noticeTitle}>{purpose === 'insurance' ? 'Choose a policy PDF or image' : 'Choose a supported health file'}</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'The Insurance Registry reads policy PDFs and images. Video files are not used for policy review.' : 'Nura can review PDFs, JPG, PNG and WebP images, and short MP4, MOV or WebM health videos.'}</Text></Surface>}
-    {selected && !source && (!existingSourceId || Boolean(error)) && <Pressable disabled={busy} onPress={() => { setError(''); setConsentOpen(true); }} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Reading your file…' : existingSourceId ? 'Review this file again' : 'Review this file with Nura'}</Text><Text style={styles.arrow}>→</Text></Pressable>}
-    {Boolean(existingSourceId) && !source && !error && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Opening your saved review</Text><Text style={styles.noticeBody}>Your earlier suggestions and decisions are loading. This file won’t be sent again.</Text></Surface>}
-    {extracting && <Surface style={styles.notice}><Text style={styles.noticeTitle}>{selected?.kind === 'video' ? 'Nura is reviewing selected moments' : 'Nura is reading your file'}</Text><Text style={styles.noticeBody}>{selected?.kind === 'video' ? 'Nura is selecting up to six clear stills, then reading visible text. The clip’s audio is not analyzed.' : 'This may take a moment. Suggested details will appear here with their source so you can review them.'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP READING</Text></Pressable></Surface>}
+    {filesNeedingReview.length > 0 && <Pressable disabled={busy} onPress={() => { setError(''); setConsentOpen(true); setConsentAssetIds(filesNeedingReview.map((asset) => asset.id)); }} style={[styles.primary, busy && styles.disabled]}><View style={{ flex: 1 }}><Text style={styles.primaryText}>{busy ? 'Reviewing files…' : `Review ${filesNeedingReview.length === 1 ? 'file' : `all ${filesNeedingReview.length} files`} with Nura`}</Text><Text style={[styles.fileSub, { color: colors.violet }]}>One approval · each file gets its own source-linked review</Text></View><Text style={styles.arrow}>→</Text></Pressable>}
+    {Boolean(sourceToOpen) && !source && !error && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Opening your saved review</Text><Text style={styles.noticeBody}>The suggestions for this file are loading. The original won’t be sent again.</Text></Surface>}
+    {extracting && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Nura is reviewing your files</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP READING</Text></Pressable></Surface>}
     {activity.length > 0 && <Surface style={styles.activity}><Label>HOW NURA IS WORKING</Label>{activity.map((item) => <View key={item.id} style={styles.activityRow}><Text style={[styles.activityMark, item.status === 'complete' && styles.activityDone, item.status === 'failed' && styles.activityFailed, item.status === 'cancelled' && styles.activityCancelled]}>{item.status === 'complete' ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '·'}</Text><Text style={styles.activityText}>{item.label}</Text></View>)}</Surface>}
     {notice ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>Review update</Text><Text style={styles.noticeBody}>{notice}</Text></Surface> : null}
     {error ? <Surface style={styles.error}><Text style={styles.noticeTitle}>Could not complete this step</Text><Text style={styles.noticeBody}>{error}</Text></Surface> : null}
@@ -276,7 +312,7 @@ export default function Review() {
     <Pressable onPress={() => router.replace(purpose === 'insurance' ? '/insurance' : '/(tabs)/health')} style={styles.secondary}><Text style={styles.secondaryText}>{purpose === 'insurance' ? 'Open Insurance Registry' : 'Open my registry'}</Text><Text style={styles.arrow}>→</Text></Pressable>
     <Text style={styles.footer}>Preview mode · Use fictional files only. A file is sent to the connected AI service only after you confirm. The service’s privacy practices apply. Please don’t upload real health records.</Text>
   </ScrollView>
-  {consentOpen && <View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalEyebrow}>ONE FILE · YOUR CHOICE</Text><Text style={styles.modalTitle}>{selected?.kind === 'video' ? 'Review moments from this video?' : 'Let Nura read this file?'}</Text><Text style={styles.modalBody}>{selected?.kind === 'video' ? `“${selected.name}” will be sent to Nura’s local demo service, which selects up to six still images from clips up to three minutes long. Those images—not the video audio—are sent to the configured AI service to find clearly visible text. Each suggestion keeps its timecode and a supporting quote. Nothing enters your record unless you approve it. Preview mode · use fictional files only.` : `${selected?.name} will be sent to Nura’s AI service for review. Nura will show suggested details with quotes from the source. Nothing is added to your record unless you approve it. Preview mode · use fictional files only. The AI service’s privacy practices apply.`}</Text><Pressable onPress={() => void readSelected()} style={styles.primary}><Text style={styles.primaryText}>{selected?.kind === 'video' ? 'Send selected moments for review' : 'Continue and read file'}</Text><Text style={styles.arrow}>→</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={styles.cancel}><Text style={styles.secondaryText}>Not now</Text></Pressable></View></View>}
+  {consentOpen && <View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalEyebrow}>ONE APPROVAL · {consentFiles.length} FILE{consentFiles.length === 1 ? '' : 'S'}</Text><Text style={styles.modalTitle}>{purpose === 'insurance' ? 'Review these policy files?' : 'Review these health files?'}</Text><Text style={styles.modalBody}>{consentFiles.map((asset) => `• ${asset.name}`).join('\n')}{consentFiles.some((asset) => asset.kind === 'video') ? '\n\nFor video, Nura selects up to six still images from clips up to three minutes long. Video audio is not analyzed.' : ''}{'\n\nAfter you continue, each listed file is sent to the configured Nura AI service, one at a time. Each keeps its own source and suggestions. Nothing enters your registry unless you approve it. Preview mode · use fictional files only. The service’s privacy practices apply.'}</Text><Pressable onPress={() => void readSelectedBatch()} style={styles.primary}><Text style={styles.primaryText}>Approve and read {consentFiles.length} {consentFiles.length === 1 ? 'file' : 'files'}</Text><Text style={styles.arrow}>→</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={styles.cancel}><Text style={styles.secondaryText}>Not now</Text></Pressable></View></View>}
   </View>;
 }
 const styles = StyleSheet.create({

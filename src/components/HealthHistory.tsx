@@ -237,7 +237,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
     try {
       const result = await getSourceClaims(sourceId);
       if (asset && !(await sourceMatchesAsset(asset, result.source))) {
-        attachSourceToAsset(asset.id, null);
+        await attachSourceToAsset(asset.id, null);
         setSourceDetail((current) => current?.requestId === requestId ? { ...current, sourceId: null, source: null, claims: [], loading: false, error: 'These extracted details did not match this file, so Nura hid them and removed the source link. Review the file again to create a correct match.' } : current);
         return;
       }

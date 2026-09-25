@@ -56,7 +56,7 @@ type NuraState = {
   topics: HealthTopic[]; assets: IntakeAsset[]; intakeNotes: HealthIntakeNote[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[];
   updateProfile: (patch: Partial<Pick<NuraState, 'name' | 'birthday' | 'country' | 'email' | 'phone'>>) => void;
   commitProfileSetup: () => Promise<void>;
-  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; saveIntakeNote: (note: { id?: string; text: string; topicId?: string; topicLabel?: string }) => Promise<HealthIntakeNote>; commitIntakeNote: (id: string, text?: string) => Promise<HealthFact>; removeIntakeNote: (id: string) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => void;
+  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; saveIntakeNote: (note: { id?: string; text: string; topicId?: string; topicLabel?: string }) => Promise<HealthIntakeNote>; commitIntakeNote: (id: string, text?: string) => Promise<HealthFact>; removeIntakeNote: (id: string) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => Promise<void>;
   reconcileSourceFactDate: (factId: string, sourceId: string, sourceClaimId: string, effectiveAt: string) => boolean;
   reconcileSourceFactValue: (factId: string, sourceId: string, sourceClaimId: string, expectedValue: string, normalizedValue: string) => Promise<boolean>;
   addTreatment: (input: TreatmentInput) => TreatmentRecord | null; updateTreatment: (id: string, patch: Partial<TreatmentInput>) => TreatmentRecord | null; markTreatmentPast: (id: string, endedOn?: string) => TreatmentRecord | null;
@@ -471,9 +471,12 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     }
     setIntakeNotes((current) => current.filter((note) => note.id !== id));
   }, []);
-  const attachSourceToAsset = useCallback((assetId: string, sourceId: string | null) => {
+  const attachSourceToAsset = useCallback(async (assetId: string, sourceId: string | null) => {
+    if (Platform.OS !== 'web') {
+      try { await getDatabase().then((db) => db.runAsync('UPDATE assets SET server_source_id=? WHERE id=?', sourceId, assetId)); }
+      catch (error) { setStorageError(String(error)); throw new Error('The extraction is ready, but its link to the original file could not be saved on this device.'); }
+    }
     setAssets((current) => current.map((asset) => asset.id === assetId ? { ...asset, serverSourceId: sourceId ?? undefined } : asset));
-    if (Platform.OS !== 'web') void getDatabase().then((db) => db.runAsync('UPDATE assets SET server_source_id=? WHERE id=?', sourceId, assetId)).catch((error) => setStorageError(String(error)));
   }, []);
   const addLink = useCallback((from: string, to: string, label: string, relationType: HealthLinkRelation = 'user_note') => {
     const cleanLabel = label.trim();
