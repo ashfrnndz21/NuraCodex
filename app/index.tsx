@@ -296,7 +296,7 @@ function LiveProfileMap({
         </View>
         <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>LIVE PROFILE</Text></View>
       </View>
-      <Text style={styles.mapSub}>{expanded ? `All ${visible.length} selected areas are shown. The map grows as you add more.` : 'Each area you choose joins your profile as a separate, color-coded connection.'}</Text>
+      <Text style={styles.mapSub}>{expanded ? `All ${visible.length} selected areas are shown. The map grows as you add more.` : 'Each area you choose connects to your profile. Tap a node to add details.'}</Text>
       <View style={[styles.mapGraph, { height: graphHeight }]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
         {connectors}
         {visible.map((area, index) => {
@@ -319,101 +319,30 @@ function LiveProfileMap({
   );
 }
 
-function FocusBubble({
-  area,
-  diameter,
-  cellWidth,
-  selected,
-  index,
-  open,
-  reducedMotion,
-  onPress,
-}: {
+function FocusAreaChoice({ area, selected, reducedMotion, onPress }: {
   area: FocusArea;
-  diameter: number;
-  cellWidth: number;
   selected: boolean;
-  index: number;
-  open: boolean;
   reducedMotion: boolean;
   onPress: () => void;
 }) {
-  const scale = useMemo(() => new Animated.Value(1), []);
-  const drift = useMemo(() => new Animated.Value(0), []);
-  const selectedProgress = useMemo(() => new Animated.Value(0), []);
-  const activeProgress = useMemo(() => new Animated.Value(0), []);
-  useEffect(() => {
-    if (reducedMotion) {
-      drift.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(Animated.sequence([
-      Animated.delay((index % 5) * motion.stagger.dense),
-      Animated.timing(drift, { toValue: 1, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(drift, { toValue: 0, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, [drift, index, reducedMotion]);
-  useEffect(() => {
-    if (reducedMotion) selectedProgress.setValue(selected ? 1 : 0);
-    else Animated.spring(selectedProgress, { toValue: selected ? 1 : 0, speed: 22, bounciness: 5, useNativeDriver: true }).start();
-  }, [reducedMotion, selected, selectedProgress]);
-  useEffect(() => {
-    if (reducedMotion) activeProgress.setValue(open ? 1 : 0);
-    else Animated.spring(activeProgress, { toValue: open ? 1 : 0, speed: 24, bounciness: 3, useNativeDriver: true }).start();
-  }, [activeProgress, open, reducedMotion]);
-  const y = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
-  const haloOpacity = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.8] });
-  const haloScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.04] });
-  const activeHaloOpacity = activeProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.9] });
-  const activeHaloScale = activeProgress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.04] });
-  const selectedScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] });
-  const bubbleScale = Animated.multiply(scale, selectedScale);
-  const colors: [string, string] = selected ? [area.color + 'E8', area.ink] : [area.color + '55', 'rgba(255,255,255,.12)'];
   const glyph = area.id === 'bp-topic' ? '↕' : area.id === 'cholesterol' ? '◌' : area.id === 'sleep' ? '☾' : area.id === 'heart' ? '♡' : area.id === 'sugar' ? '⌁' : area.id === 'medicines' ? '+' : area.id === 'family' ? '⌂' : area.id === 'joints' ? '↗' : '＋';
-
   return (
-    <Animated.View style={[styles.focusBubblePosition, { width: cellWidth, height: diameter + 32, transform: [{ translateY: y }, { scale: bubbleScale }] }] }>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={area.label + (selected ? ', selected' : ', not selected') + (open ? ', details open' : '')}
-        accessibilityState={{ selected }}
-        onPress={onPress}
-        onPressIn={() => {
-          if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: true }).start();
-        }}
-        onPressOut={() => {
-          if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: true }).start();
-        }}
-        style={[styles.focusBubbleTouch, { width: cellWidth, height: diameter + 32 }]}
-      >
-        <View style={{ width: diameter, height: diameter, position: 'relative' }}>
-          <Animated.View pointerEvents="none" style={[styles.focusBubbleHalo, { borderColor: area.color, opacity: haloOpacity, transform: [{ scale: haloScale }] }]} />
-          <Animated.View pointerEvents="none" style={[styles.focusBubbleActiveHalo, { borderColor: area.pale, opacity: activeHaloOpacity, transform: [{ scale: activeHaloScale }] }]} />
-          <LinearGradient
-            colors={colors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[
-              styles.focusBubble,
-              {
-                width: diameter,
-                height: diameter,
-                borderRadius: diameter / 2,
-                borderColor: selected ? area.pale : area.color + 'B0',
-                shadowColor: area.color,
-                shadowOpacity: selected ? 0.42 : 0.16,
-              },
-            ]}
-          >
-            <Text style={[styles.focusBubbleGlyph, { color: selected ? '#FFFFFF' : area.pale }]}>{glyph}</Text>
-            {selected ? <View style={[styles.focusCheckBadge, { backgroundColor: area.pale }]}><Text style={[styles.focusCheck, { color: area.ink }]}>✓</Text></View> : null}
-          </LinearGradient>
-        </View>
-        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.88} style={[styles.focusBubbleLabel, selected && styles.focusBubbleLabelSelected]}>{area.label}</Text>
-      </Pressable>
-    </Animated.View>
+    <PressScale
+      selected={selected}
+      reducedMotion={reducedMotion}
+      label={(selected ? 'Remove ' : 'Add ') + area.label + (selected ? ' from' : ' to') + ' your health map'}
+      onPress={onPress}
+      containerStyle={styles.focusChoiceSlot}
+      style={[styles.focusChoice, selected && styles.focusChoiceSelected, { borderColor: selected ? area.color + 'CC' : 'rgba(255,255,255,.20)' }]}
+    >
+      <View style={[styles.focusChoiceIcon, { backgroundColor: selected ? area.color + '35' : 'rgba(255,255,255,.07)', borderColor: area.color + '88' }]}>
+        <Text style={[styles.focusChoiceGlyph, { color: selected ? area.pale : area.color }]}>{glyph}</Text>
+      </View>
+      <Text numberOfLines={2} style={[styles.focusChoiceLabel, selected && styles.focusChoiceLabelSelected]}>{area.label}</Text>
+      <View style={[styles.focusChoiceMark, selected && { backgroundColor: area.color, borderColor: area.pale }]}>
+        <Text style={[styles.focusChoiceMarkText, selected && styles.focusChoiceMarkTextSelected]}>{selected ? '✓' : '+'}</Text>
+      </View>
+    </PressScale>
   );
 }
 
@@ -480,10 +409,7 @@ export default function ProfileSetup() {
   const [error, setError] = useState('');
   const [moving, setMoving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [cloudWidth, setCloudWidth] = useState(315);
   const sceneScrollRef = useRef<ScrollView | null>(null);
-  const cloudScale = Math.min(cloudWidth / 315, 1);
-  const cloudOffset = Math.max(0, (cloudWidth - 315 * cloudScale) / 2);
   const panelOpacity = useMemo(() => new Animated.Value(1), []);
   const panelX = useMemo(() => new Animated.Value(0), []);
   const panelScale = useMemo(() => new Animated.Value(1), []);
@@ -566,9 +492,12 @@ export default function ProfileSetup() {
 
   function selectArea(area: FocusArea) {
     const exists = topics.some((topic) => topic.id === area.id);
+    if (exists) {
+      removeArea(area);
+      return;
+    }
     if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    if (!exists) toggleTopic(topicFor(area));
-    setActiveAreaId((current) => current === area.id ? null : area.id);
+    toggleTopic(topicFor(area));
   }
 
   function removeArea(area: FocusArea) {
@@ -683,9 +612,9 @@ export default function ProfileSetup() {
               <View style={styles.cardIcon}><Text style={styles.cardIconText}>01</Text></View>
               <View style={{ flex: 1 }}><Text style={styles.cardOverline}>PROFILE DETAILS</Text><Text style={styles.cardTitle}>What should Nura call this profile?</Text></View>
             </View>
-            <Text style={styles.fieldLabel}>NAME · REQUIRED</Text>
-            <TextInput value={name} onChangeText={(value) => { updateProfile({ name: value }); setError(''); }} placeholder="Name or nickname" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Profile name" autoComplete="name" returnKeyType="done" />
-            <Text style={styles.fieldHelper}>Use any name or nickname; a legal name is not needed.</Text>
+            <Text style={styles.fieldLabel}>DISPLAY NAME · REQUIRED</Text>
+            <TextInput value={name} onChangeText={(value) => { updateProfile({ name: value }); setError(''); }} placeholder="Name or nickname" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Profile display name" autoComplete="name" returnKeyType="done" />
+            <Text style={styles.fieldHelper}>A name or nickname is enough; you don’t need to use a legal name.</Text>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: optionalDetailsOpen }} onPress={toggleOptionalDetails} style={styles.optionalDetailsButton}>
               <View style={{ flex: 1 }}><Text style={styles.optionalDetailsTitle}>{optionalDetailsOpen ? 'Hide optional details' : 'Add optional details'}</Text><Text style={styles.optionalDetailsHint}>Country, birth date, contact and measurements</Text></View>
               <Text style={styles.optionalDetailsMark}>{optionalDetailsOpen ? '−' : '+'}</Text>
@@ -713,7 +642,7 @@ export default function ProfileSetup() {
                 <Text style={styles.fieldHelper}>Measurements are saved as self-reported details. Every field here is optional.</Text>
               </Animated.View>
             ) : null}
-            <Text style={styles.fieldHelper}>You can edit this name later. All other profile details are optional.</Text>
+            <Text style={styles.fieldHelper}>You can edit this display name later. All other profile details are optional.</Text>
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
           <Pressable accessibilityRole="button" onPress={continueIdentity} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
@@ -726,33 +655,25 @@ export default function ProfileSetup() {
     return (
       <View>
         {stepIntro('02  ·  YOUR HEALTH AREAS', 'What would you like to keep track of?', 'Choose any areas that matter to you. These are focus choices, not diagnoses.')}
-        <View style={styles.focusHeading}>
-          <Text style={styles.cardOverline}>CHOOSE YOUR AREAS</Text>
-          <Text style={styles.focusCount}>{String(selectedAreas.length).padStart(2, '0')} SELECTED</Text>
-        </View>
-        <Text style={styles.focusHelper}>Tap a circle to select or clear an area. Details are optional.</Text>
-        <View style={[styles.focusCloud, { height: 305 * cloudScale }]} onLayout={(event) => setCloudWidth(event.nativeEvent.layout.width)}>
-          {focusAreas.map((area, index) => {
-            const position = focusPositions[index];
-            const selected = selectedAreas.some((item) => item.id === area.id);
-            const open = activeAreaId === area.id;
-            return (
-              <View key={area.id} style={{ position: 'absolute', left: cloudOffset + position.x * cloudScale, top: position.y * cloudScale }}>
-                <FocusBubble
-                  area={area}
-                  diameter={position.size * cloudScale}
-                  cellWidth={position.width * cloudScale}
-                  selected={selected}
-                  index={index}
-                  open={open}
-                  reducedMotion={reducedMotion}
-                  onPress={() => selectArea(area)}
-                />
-              </View>
-            );
-          })}
-        </View>
         {profileMap()}
+        <View style={styles.focusPicker}>
+          <View style={styles.focusHeading}>
+            <Text style={styles.cardOverline}>CHOOSE HEALTH AREAS</Text>
+            <Text style={styles.focusCount}>{String(selectedAreas.length).padStart(2, '0')} SELECTED</Text>
+          </View>
+          <Text style={styles.focusHelper}>Choose any areas to add or remove them from your map. Tap a connected node above to add optional details.</Text>
+          <View style={styles.focusChoices}>
+            {focusAreas.map((area) => (
+              <FocusAreaChoice
+                key={area.id}
+                area={area}
+                selected={selectedAreas.some((item) => item.id === area.id)}
+                reducedMotion={reducedMotion}
+                onPress={() => selectArea(area)}
+              />
+            ))}
+          </View>
+        </View>
         {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: savingProfile, busy: savingProfile }} disabled={savingProfile} onPress={continueFocus} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed, savingProfile && styles.buttonDisabled]}>
           <Text style={styles.primaryButtonText}>{savingProfile ? 'SAVING YOUR PROFILE…' : 'REVIEW MY PROFILE'}</Text>{savingProfile ? <ActivityIndicator color="#2A203B" size="small" /> : <Text style={styles.primaryArrow}>→</Text>}
@@ -931,13 +852,6 @@ function FollowupBubbles({
   );
 }
 
-const focusPositions = Array.from({ length: 9 }, (_, index) => ({
-  x: (index % 3) * 105,
-  y: Math.floor(index / 3) * 102,
-  size: 68,
-  width: 105,
-}));
-
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: palette.canvas },
   ambientFill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
@@ -1076,17 +990,18 @@ const styles = StyleSheet.create({
   focusHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8, marginBottom: 5 },
   focusCount: { color: '#F2D4C1', fontSize: 10, fontWeight: '700', letterSpacing: .7, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 11, backgroundColor: 'rgba(255,255,255,.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,.16)' },
   focusHelper: { color: 'rgba(255,249,244,.68)', fontSize: 11, lineHeight: 15, marginBottom: 4 },
-  focusCloud: { width: '100%', position: 'relative', overflow: 'visible', marginTop: 7, marginBottom: 11 },
-  focusBubblePosition: { position: 'absolute', zIndex: 2 },
-  focusBubbleTouch: { alignItems: 'center', overflow: 'visible' },
-  focusBubble: { borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, overflow: 'hidden', shadowOffset: { width: 0, height: 5 }, shadowRadius: 10, elevation: 3 },
-  focusBubbleHalo: { position: 'absolute', top: -3, left: -3, right: -3, bottom: -3, borderRadius: 999, borderWidth: 1.25 },
-  focusBubbleActiveHalo: { position: 'absolute', top: -2, left: -2, right: -2, bottom: -2, borderRadius: 999, borderWidth: 1.5 },
-  focusBubbleGlyph: { fontSize: 21, lineHeight: 25, fontWeight: '600' },
-  focusBubbleLabel: { width: '100%', minHeight: 24, marginTop: 3, color: 'rgba(255,249,244,.76)', fontSize: 10, lineHeight: 12, fontWeight: '600', textAlign: 'center' },
-  focusBubbleLabelSelected: { color: '#FFFFFF', fontWeight: '700' },
-  focusCheckBadge: { position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  focusCheck: { color: '#30223B', fontSize: 9, fontWeight: '900', textAlign: 'center' },
+  focusPicker: { padding: 13, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,.18)', backgroundColor: 'rgba(255,255,255,.055)', marginTop: 2, marginBottom: 12 },
+  focusChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  focusChoiceSlot: { width: '48%' },
+  focusChoice: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 15, borderWidth: 1, backgroundColor: 'rgba(255,255,255,.045)' },
+  focusChoiceSelected: { backgroundColor: 'rgba(255,255,255,.12)' },
+  focusChoiceIcon: { width: 28, height: 28, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  focusChoiceGlyph: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
+  focusChoiceLabel: { flex: 1, color: 'rgba(255,249,244,.76)', fontSize: 10, lineHeight: 13, fontWeight: '500' },
+  focusChoiceLabelSelected: { color: '#FFFFFF', fontWeight: '700' },
+  focusChoiceMark: { width: 20, height: 20, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(255,255,255,.30)', alignItems: 'center', justifyContent: 'center' },
+  focusChoiceMarkText: { color: 'rgba(255,249,244,.74)', fontSize: 14, lineHeight: 16, fontWeight: '500' },
+  focusChoiceMarkTextSelected: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   optionalDetailsButton: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.15)', paddingTop: 12, marginTop: 13 },
   optionalDetailsTitle: { color: '#F3D8C9', fontSize: 11, fontWeight: '700' },
   optionalDetailsHint: { color: 'rgba(255,249,244,.54)', fontSize: 9, marginTop: 3 },

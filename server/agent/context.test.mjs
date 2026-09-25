@@ -226,3 +226,27 @@ test('report context is always unavailable to symptom support', () => {
   assert.deepEqual(request.context.documentSources, []);
   assert.equal(request.sourceContextConsent, false);
 });
+
+
+test('unconfirmed fact states never enter Ask retrieval', () => {
+  const request = run({
+    context: {
+      facts: [
+        { id: 'confirmed', label: 'Confirmed sample detail', value: 'Synthetic confirmed value', status: 'confirmed' },
+        { id: 'reviewed', label: 'Reviewed sample detail', value: 'Synthetic reviewed value', status: 'reviewed' },
+        { id: 'candidate', label: 'Candidate sample detail', value: 'Synthetic candidate value', status: 'candidate' },
+        { id: 'pending', label: 'Pending sample detail', value: 'Synthetic pending value', status: 'needs_review' },
+        { id: 'rejected', label: 'Rejected sample detail', value: 'Synthetic rejected value', status: 'rejected' },
+        { id: 'superseded', label: 'Superseded sample detail', value: 'Synthetic superseded value', status: 'superseded' },
+        { id: 'unknown', label: 'Unknown state detail', value: 'Synthetic unknown value', status: 'unknown' },
+        { id: 'missing', label: 'Missing state detail', value: 'Synthetic missing value', status: '' },
+      ],
+      topics: [], links: [], treatments: [], visits: [],
+    },
+  });
+  const evidence = createEvidenceTools(request.context);
+  const result = evidence.execute('search_profile', { query: 'Synthetic' });
+
+  assert.deepEqual(result.results.map((item) => item.id), ['fact:confirmed', 'fact:reviewed']);
+  assert.equal(evidence.sources().length, 2);
+});

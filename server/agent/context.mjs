@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 const MAX_ITEMS = 100;
 const MAX_PROFILE_SYNTHESIS_ITEMS = 32;
+const RETRIEVABLE_FACT_STATUSES = new Set(['confirmed', 'reviewed']);
 const LINK_RELATIONS = new Set(['same_source', 'happened_around', 'measured_during', 'treatment_for', 'related_by_me', 'user_note']);
 const SOURCE_CONTEXT_KINDS = {
   dates: new Set(['report_date', 'collected_at', 'received_at', 'approved_at', 'issued_at', 'effective_period']),
@@ -46,7 +47,7 @@ export function sanitizeRunBody(input) {
   const facts = Array.isArray(context.facts) ? context.facts.slice(0, MAX_ITEMS).map((fact) => ({
     id: cleanText(fact?.id, 96), label: cleanText(fact?.label, 140), value: cleanText(fact?.value, 500),
     date: cleanText(fact?.date, 64), category: cleanText(fact?.category, 80), source: cleanText(fact?.source, 120), status: cleanText(fact?.status, 32),
-  })).filter((fact) => fact.id && fact.label && fact.value && !(mode === 'symptom_support' && /medication|medicine|drug|dose|treatment|prescri|pharma|care plan|tablet|capsule|\b\d+\s?(?:mg|mcg|μg|ml|units?)\b/i.test(`${fact.category} ${fact.label} ${fact.value}`))) : [];
+  })).filter((fact) => fact.id && fact.label && fact.value && RETRIEVABLE_FACT_STATUSES.has(fact.status) && !(mode === 'symptom_support' && /medication|medicine|drug|dose|treatment|prescri|pharma|care plan|tablet|capsule|\b\d+\s?(?:mg|mcg|μg|ml|units?)\b/i.test(`${fact.category} ${fact.label} ${fact.value}`))) : [];
   const topics = Array.isArray(context.topics) ? context.topics.slice(0, MAX_ITEMS).map((topic) => ({ id: cleanText(topic?.id, 96), label: cleanText(topic?.label, 120) })).filter((topic) => topic.id && topic.label) : [];
   const links = mode === 'symptom_support' ? [] : Array.isArray(context.links) ? context.links.slice(0, MAX_ITEMS).map((link) => ({ id: cleanText(link?.id, 96), from: cleanText(link?.from, 96), to: cleanText(link?.to, 96), relationType: LINK_RELATIONS.has(link?.relationType) ? link.relationType : 'user_note', label: cleanText(link?.label, 240), createdAt: cleanText(link?.createdAt, 64) })).filter((link) => link.id && link.from && link.to && link.label) : [];
   const treatments = mode === 'symptom_support' || input.treatmentContextConsent !== true ? [] : Array.isArray(context.treatments) ? context.treatments.slice(0, MAX_ITEMS).map((treatment) => ({
