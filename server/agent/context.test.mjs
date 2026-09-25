@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyIntent, createEvidenceTools, sanitizeRunBody } from './context.mjs';
+import { classifyIntent, coverageTraceDetail, createEvidenceTools, sanitizeRunBody } from './context.mjs';
 
 const sampleTreatment = {
   id: 'medicine-1', name: 'Sample medicine', dose: 'Example 10 mg', schedule: 'Example once daily',
@@ -20,6 +20,14 @@ const sampleDocument = {
   entities: [{ kind: 'laboratory', value: 'Sample laboratory', page: 1, quote: 'Sample laboratory' }],
   notes: [{ kind: 'fasting_guidance', value: 'Lipid reports are best obtained after 10 hours fasting.', page: 1, quote: 'Reports of Lipid Profile are best obtained with 10 hours fasting.' }],
 };
+test('coverage activity reports retrieved policy evidence accurately', () => {
+  const policySource = { reference: 'R1', kind: 'user_record', category: 'Insurance coverage' };
+  assert.match(coverageTraceDetail({ citations: ['R1'], coverageAssessments: [] }, [policySource]), /1 cited policy term/);
+  assert.match(coverageTraceDetail({ citations: [], coverageAssessments: [] }, [policySource]), /1 policy term retrieved/);
+  assert.match(coverageTraceDetail({ citations: [], coverageAssessments: [] }, []), /comparison remains incomplete/);
+  assert.match(coverageTraceDetail({ citations: ['R1'], coverageAssessments: [{ policyReference: 'R1' }] }, [policySource]), /1 policy finding linked/);
+});
+
 const run = (overrides = {}) => sanitizeRunBody({
   runId: 'sample-run', question: 'What medicine is recorded?', consentConfirmed: true,
   treatmentContextConsent: false, visitContextConsent: false, context: { facts: [], topics: [], links: [], treatments: [], visits: [] }, ...overrides,

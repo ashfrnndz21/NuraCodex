@@ -1,4 +1,4 @@
-import { classifyIntent, createEvidenceTools, healthSearchTool, profileTools, sanitizeRunBody, validateAnswer } from './context.mjs';
+import { classifyIntent, coverageTraceDetail, createEvidenceTools, healthSearchTool, profileTools, sanitizeRunBody, validateAnswer } from './context.mjs';
 import { getLanguageModel, searchHealthSources } from '../adapters/index.mjs';
 
 const ANSWER_SCHEMA = {
@@ -94,7 +94,7 @@ export async function runAgent(input, emit, signal) {
   for (let round = 0; round < 3; round += 1) {
     const response = await model.createResponse({
       input: conversation,
-      instructions: `${INSTRUCTIONS}${symptomInstructions}\nThe latest profile search results are in the tool output. You may use get_saved_record for an exact record already retrieved, or search_profile for a narrower follow-up. ${intent.key === 'coverage' ? 'Act as Nura’s bounded policy-evidence specialist. Include a coverage assessment only when a reviewed policy term supports it. Use explicit_benefit for language that states a benefit, explicit_limit for a stated cap or cost share, explicit_exclusion for a stated exclusion, and unclear only for ambiguous policy wording. Link each assessment to its exact policy reference and any relevant confirmed health-record references. Do not label a coverage gap from missing text. Put missing or ambiguous information in unknowns and concrete insurer questions in nextSteps. If no reviewed policy term was retrieved, return no coverageAssessments.' : ''} When no further evidence is needed, return the grounded answer now.`,
+      instructions: `${INSTRUCTIONS}${symptomInstructions}\nThe latest profile search results are in the tool output. You may use get_saved_record for an exact record already retrieved, or search_profile for a narrower follow-up. ${intent.key === 'coverage' ? 'Act as Nura’s bounded policy-evidence specialist. Include a coverage assessment for each policy finding you state, tied to its exact policy reference and any relevant confirmed health-record references. Use explicit_benefit for language that states a benefit, explicit_limit for a stated cap or cost share, explicit_exclusion for a stated exclusion, and unclear only for ambiguous policy wording. Do not label a coverage gap from missing text. Put missing or ambiguous information in unknowns and concrete insurer questions in nextSteps. If selected personal health details were not returned by search, say no relevant health evidence was found in the selected details; do not say no details were selected. If no reviewed policy term was retrieved, return no coverageAssessments.' : ''} When no further evidence is needed, return the grounded answer now.`,
       tools: webSearchEnabled ? [...profileTools, healthSearchTool] : profileTools,
       toolChoice: 'auto',
       structuredOutput: intent.key === 'coverage' ? COVERAGE_ANSWER_SCHEMA : ANSWER_SCHEMA,
@@ -109,8 +109,7 @@ export async function runAgent(input, emit, signal) {
       const answer = validateAnswer(parsed, sources, { ...intent, question: request.question });
       trace('evidence', intent.key === 'coverage' ? 'Separating policy wording from unknowns' : 'Checking what the records support', 'complete', sources.length ? `${sources.length} source${sources.length === 1 ? '' : 's'} available to inspect` : 'No relevant profile evidence is available');
       if (intent.key === 'coverage') {
-        const assessmentCount = answer.coverageAssessments?.length ?? 0;
-        trace('coverage-analysis', 'Comparing the selected policy and health evidence', 'complete', assessmentCount ? `${assessmentCount} policy finding${assessmentCount === 1 ? '' : 's'} linked to reviewed terms` : 'No reviewed policy terms support a comparison yet.');
+        trace('coverage-analysis', 'Comparing the selected policy and health evidence', 'complete', coverageTraceDetail(answer, sources));
       }
       emit('evidence', { sources: sources.filter((source) => answer.citations.includes(source.reference)) });
       emit('answer', answer);

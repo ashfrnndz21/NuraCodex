@@ -2,9 +2,11 @@ import { Platform } from 'react-native';
 
 export const colors = {
   // Two connected color modes: immersive plum–rose for Nura-led moments,
-  // and warm paper with clear, category-specific color for health records.
-  bg: '#F0EBF3', bg2: '#E8DFEB', surface: '#FFFBF7', surfaceStrong: '#EEE7F1',
-  border: '#DDD2E3', text: '#322936', muted: '#716977', quiet: '#928998',
+  // and visibly lilac paper with warm cards for health records.
+  // Keep enough separation between the canvas, cards, and secondary surfaces
+  // that the light reading screens do not flatten into one white field.
+  bg: '#EDE5EF', bg2: '#E2D7E7', surface: '#FFFBF7', surfaceStrong: '#E8DEEB',
+  border: '#D7C9DE', text: '#322936', muted: '#716977', quiet: '#928998',
   violet: '#745487', plum: '#4A3458', mauve: '#A2768E', lilac: '#EDE1F0', cobalt: '#1769E8', aqua: '#2B8178', bluePale: '#EAF2FF', mint: '#E5F2EA', peach: '#F2DDD0',
   accent: '#EADDED', ink: '#322936', warning: '#A76217', success: '#2E7955', cream: '#FFF8F0', rose: '#B47D92',
 } as const;
@@ -20,7 +22,7 @@ export const brandScenes = {
     lilacGlow: 'rgba(184,157,222,0.27)',
   },
   home: {
-    colors: ['#49345D', '#825C78', '#B17F92'],
+    colors: ['#49345D', '#8C627F', '#B98295'],
     locations: [0, 0.56, 1],
   },
   feed: {

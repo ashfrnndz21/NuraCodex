@@ -189,6 +189,18 @@ export function createEvidenceTools(context) {
   return { execute, sources, addExternalSources };
 }
 
+export function coverageTraceDetail(answer, sources) {
+  const policySources = (Array.isArray(sources) ? sources : []).filter((source) =>
+    source?.kind === 'user_record' && /^(insurance coverage|coverage_term|coverage term)$/i.test(cleanText(source.category, 80)));
+  const policyReferences = new Set(policySources.map((source) => source.reference));
+  const citedPolicyCount = new Set((Array.isArray(answer?.citations) ? answer.citations : []).filter((reference) => policyReferences.has(reference))).size;
+  const assessmentCount = Array.isArray(answer?.coverageAssessments) ? answer.coverageAssessments.length : 0;
+  if (assessmentCount) return assessmentCount + ' policy finding' + (assessmentCount === 1 ? '' : 's') + ' linked to reviewed terms';
+  if (citedPolicyCount) return citedPolicyCount + ' cited policy term' + (citedPolicyCount === 1 ? '' : 's') + '; no structured policy-to-health finding was returned';
+  if (policySources.length) return policySources.length + ' policy term' + (policySources.length === 1 ? '' : 's') + ' retrieved; no structured policy-to-health finding was returned';
+  return 'No reviewed policy terms were retrieved; this comparison remains incomplete';
+}
+
 export function validateAnswer(answer, sources, intent) {
   const allowed = new Set(sources.map((source) => source.reference));
   const sourceByReference = new Map(sources.map((source) => [source.reference, source]));

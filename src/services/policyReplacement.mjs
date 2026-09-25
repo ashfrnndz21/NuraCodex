@@ -63,3 +63,49 @@ export function comparePolicyDocuments(newerPolicy, olderPolicy) {
     return { key, label: newGroup?.label ?? oldGroup.label, status, newerTerms, olderTerms };
   }).sort((left, right) => left.label.localeCompare(right.label));
 }
+
+function quantity(value) {
+  const clean = String(value ?? '').normalize('NFKC').replace(/,/g, ' ').trim();
+  const match = /(-?\d+(?:\.\d+)?)\s*(.*)$/.exec(clean);
+  if (!match) return null;
+  const prefix = clean.slice(0, match.index).trim();
+  return {
+    value: Number(match[1]),
+    unit: `${prefix} ${match[2]}`.trim().toLowerCase().replace(/\s+/g, ' '),
+  };
+}
+
+/** Describe only numeric direction that is explicit in matched, single-entry terms. */
+export function summarizePolicyDifferences(rows) {
+  /** @type {{ sameCount: number; wordingCount: number; oneSidedCount: number; ambiguousCount: number; observations: { label: string; olderValue: string; newerValue: string; kind: 'higher_stated_cost' | 'lower_stated_cost' | 'higher_stated_amount' | 'lower_stated_amount' }[] }} */
+  const summary = { sameCount: 0, wordingCount: 0, oneSidedCount: 0, ambiguousCount: 0, observations: [] };
+  for (const row of rows ?? []) {
+    if (row.status === 'same') { summary.sameCount += 1; continue; }
+    if (row.status === 'ambiguous') { summary.ambiguousCount += 1; continue; }
+    if (row.status === 'only_newer' || row.status === 'only_older') { summary.oneSidedCount += 1; continue; }
+    if (row.status !== 'different') continue;
+
+    const newerTerm = row.newerTerms?.length === 1 ? row.newerTerms[0] : null;
+    const olderTerm = row.olderTerms?.length === 1 ? row.olderTerms[0] : null;
+    const newer = quantity(newerTerm?.value);
+    const older = quantity(olderTerm?.value);
+    const direction = /premium|copay|co-pay|deductible|co-?insurance|out[- ]of[- ]pocket|payment/i.test(row.label)
+      ? 'cost'
+      : /limit|visit|cover|coverage|benefit|reimburse|sum assured|cash value|surrender value|maturity value/i.test(row.label)
+        ? 'benefit'
+        : null;
+    if (!newer || !older || !direction || newer.unit !== older.unit || newer.value === older.value) {
+      summary.wordingCount += 1;
+      continue;
+    }
+    summary.observations.push({
+      label: row.label,
+      olderValue: olderTerm.value,
+      newerValue: newerTerm.value,
+      kind: direction === 'cost'
+        ? newer.value > older.value ? 'higher_stated_cost' : 'lower_stated_cost'
+        : newer.value > older.value ? 'higher_stated_amount' : 'lower_stated_amount',
+    });
+  }
+  return summary;
+}

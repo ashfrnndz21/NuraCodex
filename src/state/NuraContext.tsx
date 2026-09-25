@@ -9,6 +9,7 @@ import { appendRegistryBrief } from './registryBriefPersistence.mjs';
 import { readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
 import { browserAssetUri, clearBrowserAssets, deleteBrowserAsset, saveBrowserAsset } from './browserAssetStore.mjs';
 import { validatePolicyReplacement } from '../services/policyReplacement.mjs';
+import { canonicalSourceFactValue } from '../services/sourceFactNormalization.mjs';
 
 export type HealthTopic = { id: string; label: string };
 export type IntakeAsset = { id: string; name: string; kind: 'image' | 'pdf' | 'video' | 'file'; uri: string; size?: number; mimeType?: string; purpose?: 'medical' | 'insurance'; serverSourceId?: string; possibleRepeat?: boolean; addedAt: string };
@@ -40,6 +41,7 @@ type NuraState = {
   commitProfileSetup: () => Promise<void>;
   toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => void;
   reconcileSourceFactDate: (factId: string, sourceId: string, sourceClaimId: string, effectiveAt: string) => boolean;
+  reconcileSourceFactValue: (factId: string, sourceId: string, sourceClaimId: string, expectedValue: string, normalizedValue: string) => Promise<boolean>;
   addTreatment: (input: TreatmentInput) => TreatmentRecord | null; updateTreatment: (id: string, patch: Partial<TreatmentInput>) => TreatmentRecord | null; markTreatmentPast: (id: string, endedOn?: string) => TreatmentRecord | null;
   addVisit: (input: VisitInput) => HealthVisit | null; updateVisit: (id: string, patch: Partial<VisitInput>) => HealthVisit | null;
   addLink: (from: string, to: string, label: string, relationType?: HealthLinkRelation) => HealthLink | null; removeLink: (id: string) => void; mergeFeedItems: (items: Omit<HealthFeedItem, 'saved' | 'dismissed'>[]) => void; setFeedSaved: (id: string, saved: boolean) => void; setFeedDismissed: (id: string, dismissed: boolean) => void;
@@ -243,6 +245,22 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
         await db.runAsync('UPDATE memory_provenance SET valid_from=? WHERE fact_id=? AND source_id=? AND source_claim_id=?', effectiveAt, factId, sourceId, sourceClaimId);
       });
     }));
+    return true;
+  }, [facts, enqueueProfileWrite]);
+  const reconcileSourceFactValue = useCallback(async (factId: string, sourceId: string, sourceClaimId: string, expectedValue: string, normalizedValue: string): Promise<boolean> => {
+    const current = facts.find((fact) => fact.id === factId);
+    const normalized = canonicalSourceFactValue(current, { factId, sourceId, sourceClaimId, expectedValue, normalizedValue });
+    if (!current || !normalized) return false;
+    if (Platform.OS !== 'web') await enqueueProfileWrite(getDatabase().then(async (db) => {
+      await db.withTransactionAsync(async () => {
+        const result = await db.runAsync(
+          'UPDATE health_facts SET value=? WHERE id=? AND value=? AND EXISTS (SELECT 1 FROM memory_provenance m WHERE m.fact_id=health_facts.id AND m.source_id=? AND m.source_claim_id=? AND m.valid_until IS NULL)',
+          normalized.value, factId, expectedValue, sourceId, sourceClaimId,
+        );
+        if (result.changes !== 1) throw new Error('This saved detail changed on this device. Reload its source before reconciling it.');
+      });
+    }));
+    setFacts((items) => items.map((fact) => fact.id === factId && fact.sourceId === sourceId && fact.sourceClaimId === sourceClaimId && fact.value === expectedValue && !fact.validUntil ? normalized : fact));
     return true;
   }, [facts, enqueueProfileWrite]);
   const correctFact = useCallback(async (id: string, label: string, value: string): Promise<HealthFact | null> => {
@@ -502,7 +520,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     setName(snapshot.name); setBirthday(snapshot.birthday); setCountry(snapshot.country); setEmail(snapshot.email); setPhone(snapshot.phone);
     setTopics(snapshot.topics); setAssets(snapshot.assets); setFacts(snapshot.facts); setTreatments(snapshot.treatments); setTreatmentEvents(snapshot.treatmentEvents); setVisits(snapshot.visits); setVisitEvents(snapshot.visitEvents); setLinks(snapshot.links); setPolicyReplacements(snapshot.policyReplacements); setFeedItems(snapshot.feedItems); setSavedQuestions(snapshot.savedQuestions); setAgentMessages(snapshot.agentMessages); setRegistryBriefs(snapshot.registryBriefs); setStorageError(null);
   }, []);
-  const value = useMemo<NuraState>(() => ({ ready, storageError, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, removeFact, addAssets, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo }), [ready, storageError, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, removeFact, addAssets, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo]);
+  const value = useMemo<NuraState>(() => ({ ready, storageError, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo }), [ready, storageError, name, birthday, country, email, phone, topics, assets, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo]);
   return <NuraContext.Provider value={value}>{children}</NuraContext.Provider>;
 }
 export function useNura() { const state = useContext(NuraContext); if (!state) throw new Error('useNura must be used inside NuraProvider'); return state; }

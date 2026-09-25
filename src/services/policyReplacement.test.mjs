@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { comparePolicyDocuments, validatePolicyReplacement } from './policyReplacement.mjs';
+import { comparePolicyDocuments, summarizePolicyDifferences, validatePolicyReplacement } from './policyReplacement.mjs';
 
 const sources = ['new', 'old', 'mid'].map((sourceId) => ({ sourceId }));
 
@@ -28,6 +28,18 @@ test('compares exact matching labels and preserves both values without deciding 
   assert.deepEqual(rows.map(({ label, status }) => [label, status]), [['Annual limit', 'different'], ['Hospital stay', 'same']]);
   assert.equal(rows[0].newerTerms[0].value, '$12,000');
   assert.equal(rows[0].olderTerms[0].value, '$10,000');
+});
+
+test('summarizes numeric changes by cautious direction and leaves wording-only changes unclassified', () => {
+  const summary = summarizePolicyDifferences([
+    { label: 'Annual outpatient visit limit', status: 'different', newerTerms: [{ value: '8 visits per year' }], olderTerms: [{ value: '10 visits per year' }] },
+    { label: 'Outpatient copay', status: 'different', newerTerms: [{ value: 'MYR 60 per visit' }], olderTerms: [{ value: 'MYR 40 per visit' }] },
+    { label: 'Treatment exclusion', status: 'different', newerTerms: [{ value: 'Treatment is excluded' }], olderTerms: [{ value: 'Excluded' }] },
+    { label: 'Annual premium', status: 'only_newer', newerTerms: [{ value: 'MYR 500' }], olderTerms: [] },
+  ]);
+  assert.deepEqual(summary.observations.map(({ kind }) => kind), ['lower_stated_amount', 'higher_stated_cost']);
+  assert.equal(summary.wordingCount, 1);
+  assert.equal(summary.oneSidedCount, 1);
 });
 
 test('does not treat a missing accepted term as an exclusion and flags duplicate labels as ambiguous', () => {
