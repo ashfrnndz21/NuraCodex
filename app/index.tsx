@@ -294,7 +294,7 @@ function LiveProfileMap({
           <Text style={styles.eyebrow}>YOUR HEALTH MAP</Text>
           <Text style={styles.mapTitle}>Your health, connected</Text>
         </View>
-        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>UPDATES WITH YOU</Text></View>
+        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>LIVE PROFILE</Text></View>
       </View>
       <Text style={styles.mapSub}>{expanded ? `All ${visible.length} selected areas are shown. The map grows as you add more.` : 'Each area you choose joins your profile as a separate, color-coded connection.'}</Text>
       <View style={[styles.mapGraph, { height: graphHeight }]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
@@ -309,9 +309,9 @@ function LiveProfileMap({
         {areas.length === 0 ? <Text style={styles.mapEmpty}>Choose an area to add your first connection.</Text> : null}
       </View>
       <View style={styles.mapStats}>
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(areas.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>AREAS CHOSEN</Text></View>
+        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(areas.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>AREAS</Text></View>
         <View style={styles.mapStatRule} />
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(detailCount).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>DETAILS CHOSEN</Text></View>
+        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(detailCount).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>DETAILS</Text></View>
         <View style={styles.mapStatRule} />
         <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(assets.length + facts.filter((fact) => !fact.validUntil).length + treatments.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>SAVED ITEMS</Text></View>
       </View>
@@ -322,6 +322,7 @@ function LiveProfileMap({
 function FocusBubble({
   area,
   diameter,
+  cellWidth,
   selected,
   index,
   open,
@@ -330,6 +331,7 @@ function FocusBubble({
 }: {
   area: FocusArea;
   diameter: number;
+  cellWidth: number;
   selected: boolean;
   index: number;
   open: boolean;
@@ -372,9 +374,7 @@ function FocusBubble({
   const glyph = area.id === 'bp-topic' ? '↕' : area.id === 'cholesterol' ? '◌' : area.id === 'sleep' ? '☾' : area.id === 'heart' ? '♡' : area.id === 'sugar' ? '⌁' : area.id === 'medicines' ? '+' : area.id === 'family' ? '⌂' : area.id === 'joints' ? '↗' : '＋';
 
   return (
-      <Animated.View style={[styles.focusBubblePosition, { width: diameter, height: diameter, transform: [{ translateY: y }, { scale: bubbleScale }] }]}>
-      <Animated.View pointerEvents="none" style={[styles.focusBubbleHalo, { borderColor: area.color, opacity: haloOpacity, transform: [{ scale: haloScale }] }]} />
-      <Animated.View pointerEvents="none" style={[styles.focusBubbleActiveHalo, { borderColor: area.pale, opacity: activeHaloOpacity, transform: [{ scale: activeHaloScale }] }]} />
+    <Animated.View style={[styles.focusBubblePosition, { width: cellWidth, height: diameter + 32, transform: [{ translateY: y }, { scale: bubbleScale }] }] }>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={area.label + (selected ? ', selected' : ', not selected') + (open ? ', details open' : '')}
@@ -386,28 +386,32 @@ function FocusBubble({
         onPressOut={() => {
           if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: true }).start();
         }}
-        style={styles.focusBubbleTouch}
+        style={[styles.focusBubbleTouch, { width: cellWidth, height: diameter + 32 }]}
       >
-        <LinearGradient
-          colors={colors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[
-            styles.focusBubble,
-            {
-              width: diameter,
-              height: diameter,
-              borderRadius: diameter / 2,
-              borderColor: selected ? area.pale : area.color + 'B0',
-              shadowColor: area.color,
-              shadowOpacity: selected ? 0.42 : 0.16,
-            },
-          ]}
-        >
-          <Text style={[styles.focusBubbleGlyph, { color: selected ? '#FFFFFF' : area.pale }]}>{glyph}</Text>
-          <Text numberOfLines={3} style={[styles.focusBubbleText, selected && styles.focusBubbleTextSelected]}>{area.label}</Text>
-          {selected ? <View style={[styles.focusCheckBadge, { backgroundColor: area.pale }]}><Text style={[styles.focusCheck, { color: area.ink }]}>✓</Text></View> : null}
-        </LinearGradient>
+        <View style={{ width: diameter, height: diameter, position: 'relative' }}>
+          <Animated.View pointerEvents="none" style={[styles.focusBubbleHalo, { borderColor: area.color, opacity: haloOpacity, transform: [{ scale: haloScale }] }]} />
+          <Animated.View pointerEvents="none" style={[styles.focusBubbleActiveHalo, { borderColor: area.pale, opacity: activeHaloOpacity, transform: [{ scale: activeHaloScale }] }]} />
+          <LinearGradient
+            colors={colors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              styles.focusBubble,
+              {
+                width: diameter,
+                height: diameter,
+                borderRadius: diameter / 2,
+                borderColor: selected ? area.pale : area.color + 'B0',
+                shadowColor: area.color,
+                shadowOpacity: selected ? 0.42 : 0.16,
+              },
+            ]}
+          >
+            <Text style={[styles.focusBubbleGlyph, { color: selected ? '#FFFFFF' : area.pale }]}>{glyph}</Text>
+            {selected ? <View style={[styles.focusCheckBadge, { backgroundColor: area.pale }]}><Text style={[styles.focusCheck, { color: area.ink }]}>✓</Text></View> : null}
+          </LinearGradient>
+        </View>
+        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.88} style={[styles.focusBubbleLabel, selected && styles.focusBubbleLabelSelected]}>{area.label}</Text>
       </Pressable>
     </Animated.View>
   );
@@ -727,7 +731,7 @@ export default function ProfileSetup() {
           <Text style={styles.focusCount}>{String(selectedAreas.length).padStart(2, '0')} SELECTED</Text>
         </View>
         <Text style={styles.focusHelper}>Tap a circle to select or clear an area. Details are optional.</Text>
-        <View style={styles.focusCloud} onLayout={(event) => setCloudWidth(event.nativeEvent.layout.width)}>
+        <View style={[styles.focusCloud, { height: 305 * cloudScale }]} onLayout={(event) => setCloudWidth(event.nativeEvent.layout.width)}>
           {focusAreas.map((area, index) => {
             const position = focusPositions[index];
             const selected = selectedAreas.some((item) => item.id === area.id);
@@ -737,6 +741,7 @@ export default function ProfileSetup() {
                 <FocusBubble
                   area={area}
                   diameter={position.size * cloudScale}
+                  cellWidth={position.width * cloudScale}
                   selected={selected}
                   index={index}
                   open={open}
@@ -926,17 +931,12 @@ function FollowupBubbles({
   );
 }
 
-const focusPositions = [
-  { x: 0, y: 0, size: 78 },
-  { x: 118, y: 4, size: 74 },
-  { x: 241, y: 0, size: 72 },
-  { x: 5, y: 83, size: 70 },
-  { x: 119, y: 81, size: 78 },
-  { x: 242, y: 84, size: 68 },
-  { x: 0, y: 167, size: 74 },
-  { x: 119, y: 164, size: 78 },
-  { x: 244, y: 168, size: 68 },
-];
+const focusPositions = Array.from({ length: 9 }, (_, index) => ({
+  x: (index % 3) * 105,
+  y: Math.floor(index / 3) * 102,
+  size: 68,
+  width: 105,
+}));
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: palette.canvas },
@@ -1017,7 +1017,7 @@ const styles = StyleSheet.create({
   mapTitle: { color: palette.ink, fontSize: 14, fontWeight: '600', marginTop: 3 },
   liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(199,168,229,.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,.18)' },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: palette.lilac },
-  liveBadgeText: { color: '#E8E1EA', fontSize: 9, fontWeight: '700', letterSpacing: 0.6 },
+  liveBadgeText: { color: '#E8E1EA', fontSize: 8, fontWeight: '700', letterSpacing: 0.55 },
   mapSub: { color: palette.muted, fontSize: 10, lineHeight: 14, marginTop: 4 },
   mapGraph: { height: 185, marginTop: 7, position: 'relative', overflow: 'hidden' },
   mapLine: { position: 'absolute', height: 1.4, borderRadius: 2, transformOrigin: 'center' } as any,
@@ -1040,7 +1040,7 @@ const styles = StyleSheet.create({
   mapStats: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.16)', minHeight: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
   mapStat: { alignItems: 'center', flex: 1 },
   mapStatNumber: { color: palette.ink, fontSize: 15, fontWeight: '400' },
-  mapStatLabel: { color: 'rgba(255,249,244,.48)', fontSize: 9, letterSpacing: .75, marginTop: 1 },
+  mapStatLabel: { color: 'rgba(255,249,244,.48)', fontSize: 8, letterSpacing: .6, marginTop: 1 },
   mapStatRule: { width: 1, height: 25, backgroundColor: 'rgba(255,255,255,.16)' },
   measureInputRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   measureInput: { flex: 1 },
@@ -1076,15 +1076,15 @@ const styles = StyleSheet.create({
   focusHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8, marginBottom: 5 },
   focusCount: { color: '#F2D4C1', fontSize: 10, fontWeight: '700', letterSpacing: .7, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 11, backgroundColor: 'rgba(255,255,255,.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,.16)' },
   focusHelper: { color: 'rgba(255,249,244,.68)', fontSize: 11, lineHeight: 15, marginBottom: 4 },
-  focusCloud: { width: '100%', height: 252, position: 'relative', overflow: 'visible', marginTop: 7, marginBottom: 11 },
+  focusCloud: { width: '100%', position: 'relative', overflow: 'visible', marginTop: 7, marginBottom: 11 },
   focusBubblePosition: { position: 'absolute', zIndex: 2 },
-  focusBubbleTouch: { flex: 1, borderRadius: 999, overflow: 'visible' },
+  focusBubbleTouch: { alignItems: 'center', overflow: 'visible' },
   focusBubble: { borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, overflow: 'hidden', shadowOffset: { width: 0, height: 5 }, shadowRadius: 10, elevation: 3 },
   focusBubbleHalo: { position: 'absolute', top: -3, left: -3, right: -3, bottom: -3, borderRadius: 999, borderWidth: 1.25 },
   focusBubbleActiveHalo: { position: 'absolute', top: -2, left: -2, right: -2, bottom: -2, borderRadius: 999, borderWidth: 1.5 },
-  focusBubbleGlyph: { fontSize: 16, lineHeight: 19, fontWeight: '600', marginBottom: 1 },
-  focusBubbleText: { color: palette.ink, fontSize: 10.5, lineHeight: 13, fontWeight: '500', textAlign: 'center' },
-  focusBubbleTextSelected: { color: '#FFFFFF', fontWeight: '700' },
+  focusBubbleGlyph: { fontSize: 21, lineHeight: 25, fontWeight: '600' },
+  focusBubbleLabel: { width: '100%', minHeight: 24, marginTop: 3, color: 'rgba(255,249,244,.76)', fontSize: 10, lineHeight: 12, fontWeight: '600', textAlign: 'center' },
+  focusBubbleLabelSelected: { color: '#FFFFFF', fontWeight: '700' },
   focusCheckBadge: { position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   focusCheck: { color: '#30223B', fontSize: 9, fontWeight: '900', textAlign: 'center' },
   optionalDetailsButton: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.15)', paddingTop: 12, marginTop: 13 },

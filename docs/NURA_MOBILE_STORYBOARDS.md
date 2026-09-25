@@ -129,7 +129,9 @@ Display only operational milestones that the app or agent service actually repor
 
 ### 1B. Identity and first details
 
-**Hierarchy:** progress context (e.g., “The person behind the profile”) → country selector → preferred/name field → birthday → phone/email choices → optional current height/weight/biometrics → concise explanation of why each item helps → continue/skip.
+**Hierarchy:** progress context (e.g., “The person behind the profile”) → required name-or-nickname field → optional country, birthday and contact details → optional current height/weight/biometrics → concise explanation of why each item helps → continue.
+
+The profile needs a display name to stay recognizable across the app; this is not a legal-name requirement. Country, birthday, contact details and biometrics remain optional. Avoid labeling the name field optional or preselecting health areas in a genuinely new profile.
 
 **Components:** inline text fields, country picker sheet, birthday picker, contact-method selection, small live profile map anchored beside or below form, privacy note.
 
@@ -137,7 +139,7 @@ Display only operational milestones that the app or agent service actually repor
 
 **Motion:** on valid save, add one labeled signal to the map and draw a short line from identity; no decorative live graph while the user types invalid partial values. Animate new elements once, reduced-motion falls back to highlight/outline.
 
-**Acceptance:** country, contact and birthday are handled clearly; edits persist; incomplete optional fields are not treated as zero or healthy.
+**Acceptance:** a name or nickname is required and accepted without a legal identity; country, contact and birthday are handled clearly; edits persist; incomplete optional fields are not treated as zero or healthy.
 
 ### 1C. “What is part of your health?” focus cloud
 

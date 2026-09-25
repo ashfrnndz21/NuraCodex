@@ -72,6 +72,53 @@ test('profile revision runs are labeled separately from the first synthesis', ()
   });
 });
 
+test('first profile synthesis retrieves all selected facts and topics rather than the eight-item Ask shortlist', () => {
+  const context = {
+    facts: Array.from({ length: 5 }, (_, index) => ({
+      id: `fact-${index + 1}`, label: `Saved detail ${index + 1}`, value: `Synthetic value ${index + 1}`,
+      date: '2026-09-25', category: 'Profile', source: 'Added by you', status: 'user_confirmed',
+    })),
+    topics: Array.from({ length: 6 }, (_, index) => ({ id: `topic-${index + 1}`, label: `Selected area ${index + 1}` })),
+    links: [{ id: 'link-1', from: 'fact:fact-1', to: 'topic:topic-1', relationType: 'user_note', label: 'Synthetic user link', createdAt: '2026-09-25' }],
+    treatments: [], visits: [], documentSources: [],
+  };
+  const evidence = createEvidenceTools(context);
+
+  const summary = evidence.execute('search_profile', { query: 'profile' }, { includeAllSelected: true });
+  const ordinaryAsk = evidence.execute('search_profile', { query: 'Synthetic value' });
+
+  assert.equal(summary.results.length, 11);
+  assert.equal(summary.userAuthoredLinks.length, 1);
+  assert.equal(summary.results.length + summary.userAuthoredLinks.length, 12);
+  assert.equal(summary.totalCount, 11);
+  assert.equal(summary.omittedCount, 0);
+  assert.deepEqual(new Set(summary.results.map((item) => item.id)), new Set([
+    ...context.facts.map((item) => `fact:${item.id}`),
+    ...context.topics.map((item) => `topic:${item.id}`),
+  ]));
+  assert.equal(ordinaryAsk.results.length, 5);
+  assert.equal(evidence.sources().length, 12);
+});
+
+test('profile synthesis reports bounded omissions instead of implying omitted data is unknown', () => {
+  const context = {
+    facts: Array.from({ length: 40 }, (_, index) => ({
+      id: `fact-${index + 1}`, label: `Saved detail ${index + 1}`, value: `Synthetic value ${index + 1}`,
+      date: '', category: 'Profile', source: 'Added by you', status: 'user_confirmed',
+    })),
+    topics: [], links: [], treatments: [], visits: [], documentSources: [],
+  };
+  const evidence = createEvidenceTools(context);
+  const summary = evidence.execute('search_profile', { query: 'profile' }, { includeAllSelected: true });
+  const ordinaryAsk = evidence.execute('search_profile', { query: 'Synthetic value' });
+
+  assert.equal(summary.results.length, 32);
+  assert.equal(summary.totalCount, 40);
+  assert.equal(summary.omittedCount, 8);
+  assert.equal(ordinaryAsk.results.length, 8);
+  assert.equal(evidence.sources().length, 32);
+});
+
 test('treatment records are excluded when the per-run treatment choice is absent or off', () => {
   const absent = run({ context: { facts: [], topics: [], links: [], treatments: [sampleTreatment] } });
   const unchecked = run({ treatmentContextConsent: false, context: { facts: [], topics: [], links: [], treatments: [sampleTreatment] } });

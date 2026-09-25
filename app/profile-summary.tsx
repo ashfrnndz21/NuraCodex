@@ -13,12 +13,13 @@ import { brandScenes, colors } from '../src/theme';
 const C = { ink: colors.cream, muted: 'rgba(255,248,240,.82)', soft: 'rgba(255,248,240,.62)', line: 'rgba(255,255,255,.21)', cream: colors.cream, plum: colors.plum, blue: '#C6DEFF', peach: '#F0BE9F', green: '#B7DFC1' };
 
 export default function ProfileSummary() {
-  const { facts, topics, links, addAgentMessage, addFact } = useNura();
+  const { ready, facts, topics, links, agentMessages, addAgentMessage, addFact } = useNura();
   const { dispatchRunEvent } = useAIState();
   const [consentOpen, setConsentOpen] = useState(false);
   const [revisionMode, setRevisionMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState<AgentAnswer | null>(null);
+  const [summaryRevision, setSummaryRevision] = useState(false);
   const [sources, setSources] = useState<AgentSource[]>([]);
   const [trace, setTrace] = useState<AgentTrace[]>([]);
   const [error, setError] = useState('');
@@ -39,14 +40,31 @@ export default function ProfileSummary() {
     topics: topics.map(({ id, label }) => ({ id, label })),
     links: links.map(({ id, from, to, label, createdAt }) => ({ id, from, to, label, createdAt })),
   }), [facts, topics, links]);
+  const latestSavedSummary = useMemo(
+    () => [...agentMessages].reverse().find((message) => message.role === 'assistant' && message.profileSummary) ?? null,
+    [agentMessages],
+  );
+  const savedSummary = ready && !busy && !answer ? latestSavedSummary?.profileSummary ?? null : null;
+  const displayedAnswer = answer ?? (savedSummary ? {
+    answer: savedSummary.answer,
+    citations: savedSummary.citations,
+    unknowns: savedSummary.unknowns,
+    nextSteps: savedSummary.nextSteps,
+    memoryProposal: savedSummary.memoryProposal,
+    coverageAssessments: latestSavedSummary?.coverageAssessments,
+  } : null);
+  const displayedSources = answer ? sources : savedSummary && latestSavedSummary ? latestSavedSummary.citations : [];
+  const displayedTrace = answer ? trace : savedSummary && latestSavedSummary ? latestSavedSummary.trace : [];
+  const displayedRevision = answer ? summaryRevision : savedSummary?.revision ?? false;
+  const displayedRunId = activeRunId || (!busy ? latestSavedSummary?.runId ?? '' : '');
   const itemCount = facts.filter((fact) => !fact.validUntil).length + topics.length + links.length;
-  const citedSources = useMemo(() => sources.filter((source) => answer?.citations.includes(source.reference)), [answer, sources]);
+  const citedSources = displayedSources.filter((source) => displayedAnswer?.citations.includes(source.reference));
 
   async function createUnderstanding(revision = false) {
     if (busy) return;
     if (revision && !correction.trim()) { setError('Add a note about what you want Nura to reconsider.'); return; }
     if (revision && !savedNote) { setError('Save your correction as a new profile note before recontextualizing.'); return; }
-    setConsentOpen(false); setBusy(true); setError(''); setAnswer(null); setSources([]); setTrace([]);
+    setConsentOpen(false); setBusy(true); setError(''); setAnswer(null); setSources([]); setTrace([]); setSummaryRevision(revision);
     const runId = Crypto.randomUUID();
     const labels = [...selectedContext.topics.map((topic) => topic.label), ...selectedContext.facts.map((fact) => fact.label)];
     const question = `${revision ? 'Re-contextualize' : 'Create a concise first-pass synthesis of'} my selected health profile. Search these selected items: ${labels.join(', ') || 'no saved health items yet'}. Keep the answer to at most 2 sentences and 45 words because citations and unknowns are shown separately. State only what the selected information supports, distinguish chosen topics from confirmed details, and say what is not known. Do not diagnose or recommend treatment.`;
@@ -70,7 +88,7 @@ export default function ProfileSummary() {
         } else if (event.type === 'run_finished' && finalAnswer) {
           const savedText = [finalAnswer.answer, finalAnswer.unknowns.length ? `\n\nStill not in this profile:\n${finalAnswer.unknowns.map((item) => `• ${item}`).join('\n')}` : ''].join('');
           addAgentMessage({ runId, role: 'user', text: question, citations: [], trace: [] });
-          addAgentMessage({ runId, role: 'assistant', text: savedText, citations: runSources.filter((source) => finalAnswer?.citations.includes(source.reference)), trace: runTrace.map((item) => ({ ...item, status: 'complete' })) });
+          addAgentMessage({ runId, role: 'assistant', text: savedText, citations: runSources.filter((source) => finalAnswer?.citations.includes(source.reference)), trace: runTrace.map((item) => ({ ...item, status: 'complete' })), profileSummary: { answer: finalAnswer.answer, citations: finalAnswer.citations, unknowns: finalAnswer.unknowns, nextSteps: finalAnswer.nextSteps, memoryProposal: finalAnswer.memoryProposal, revision } });
           setActiveRunId(runId);
           dispatchRunEvent('RUN_FINISHED');
         } else if (event.type === 'run_error') {
@@ -88,8 +106,8 @@ export default function ProfileSummary() {
 
   function saveCorrectionAsNote() {
     const value = correction.trim();
-    if (!value || !activeRunId || savedNote) return;
-    addFact('Profile note', value, { category: 'User-entered note', source: 'Entered by you', note: 'Added while reviewing a Nura profile synthesis; it does not replace another record.', sourceRunId: activeRunId, validFrom: new Date().toISOString(), confidence: 1, permissionScope: 'profile_write' });
+    if (!value || !displayedRunId || savedNote) return;
+    addFact('Profile note', value, { category: 'User-entered note', source: 'Entered by you', note: 'Added while reviewing a Nura profile synthesis; it does not replace another record.', sourceRunId: displayedRunId, validFrom: new Date().toISOString(), confidence: 1, permissionScope: 'profile_write' });
     setSavedNote(true);
   }
 
@@ -99,12 +117,14 @@ export default function ProfileSummary() {
     <StatusBar style="light" />
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <Pressable accessibilityRole="button" onPress={() => router.back()} style={s.back}><Text style={s.backText}>‹  BACK TO YOUR PROFILE</Text></Pressable>
-      <View style={s.brandRow}><Orb size={34} state={busy ? 'thinking' : 'idle'} /><View style={{ flex: 1 }}><Text style={s.brand}>nura</Text><Text style={s.tagline}>YOUR HEALTH, UNDERSTOOD</Text></View><Text style={s.privacy}>FIRST PROFILE PASS</Text></View>
-      <Text style={s.eyebrow}>YOUR 720 PROFILE · FIRST UNDERSTANDING</Text>
+      <View style={s.brandRow}><Orb size={34} state={busy ? 'thinking' : 'idle'} /><View style={{ flex: 1 }}><Text style={s.brand}>nura</Text><Text style={s.tagline}>YOUR HEALTH, UNDERSTOOD</Text></View><Text style={s.privacy}>{displayedRevision ? 'PROFILE UPDATE' : 'FIRST PROFILE PASS'}</Text></View>
+      <Text style={s.eyebrow}>{displayedRevision ? 'YOUR 720 PROFILE · UPDATED UNDERSTANDING' : 'YOUR 720 PROFILE · FIRST UNDERSTANDING'}</Text>
       <Text style={s.title}>Here’s what Nura knows so far.</Text>
       <Text style={s.intro}>A concise reading of the details and health areas you chose to include. You can question it, correct it, or add more context.</Text>
 
-      {!answer && !busy && <View style={s.snapshot}>
+      {!ready && !answer && !busy && <View style={s.snapshot}><Text style={s.snapshotTitle}>RESTORING PROFILE</Text><Text style={s.emptyText}>Opening your saved profile details and latest understanding.</Text></View>}
+
+      {ready && !displayedAnswer && !busy && <View style={s.snapshot}>
         <Text style={s.snapshotTitle}>WHAT WILL BE INCLUDED</Text>
         <View style={s.countRow}><Count value={facts.length} label="SAVED DETAILS" /><Count value={topics.length} label="HEALTH AREAS" /><Count value={links.length} label="LINKS" /></View>
         {topics.length > 0 && <View style={s.topicList}>{topics.map((topic) => <View key={topic.id} style={s.topic}><View style={s.topicDot} /><Text style={s.topicText}>{topic.label}</Text><Text style={s.topicType}>YOUR FOCUS</Text></View>)}</View>}
@@ -115,19 +135,19 @@ export default function ProfileSummary() {
 
       {busy && <View style={s.activityCard}><View style={s.activityHeading}><Orb size={28} state="thinking" /><View style={{ flex: 1 }}><Text style={s.activityTitle}>Nura is assembling the evidence.</Text><Text style={s.activitySub}>The activity below reflects live service events.</Text></View></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><Text style={[s.traceMark, item.status === 'complete' && s.traceDone]}>{item.status === 'complete' ? '✓' : '·'}</Text><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail ? <Text style={s.traceDetail}>{item.detail}</Text> : null}</View></View>)}</View>}
 
-      {answer && <View style={s.resultCard}>
-        <View style={s.resultHead}><Orb size={30} state="responding" /><View style={{ flex: 1 }}><Text style={s.resultEyebrow}>A FIRST PASS · REVIEWABLE</Text><Text style={s.resultTitle}>Your profile, in Nura’s words</Text></View><View style={s.reviewBadge}><Text style={s.reviewBadgeText}>YOUR REVIEW</Text></View></View>
-        <Text style={s.answer}>{answer.answer}</Text>
+      {displayedAnswer && <View style={s.resultCard}>
+        <View style={s.resultHead}><Orb size={30} state="responding" /><View style={{ flex: 1 }}><Text style={s.resultEyebrow}>{displayedRevision ? 'UPDATED UNDERSTANDING · REVIEWABLE' : 'A FIRST PASS · REVIEWABLE'}</Text><Text style={s.resultTitle}>Your profile, in Nura’s words</Text></View><View style={s.reviewBadge}><Text style={s.reviewBadgeText}>YOUR REVIEW</Text></View></View>
+        <Text style={s.answer}>{displayedAnswer.answer}</Text>
         {citedSources.length > 0 && <View style={s.sources}><Text style={s.sectionLabel}>WHAT THIS IS BASED ON</Text>{citedSources.map((source) => <View key={source.reference} style={s.sourceRow}><Text style={s.sourceRef}>{source.reference}</Text><View style={{ flex: 1 }}><Text style={s.sourceTitle}>{source.title}</Text><Text style={s.sourceMeta}>{source.source}{source.date ? ` · ${source.date}` : ''}</Text></View></View>)}</View>}
-        {answer.unknowns.length > 0 && <View style={s.unknowns}><Text style={s.sectionLabel}>WHAT NURA DOESN’T KNOW YET</Text>{answer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}</View>}
-        {answer.nextSteps.length > 0 && <View style={s.nextSteps}><Text style={s.sectionLabel}>POSSIBLE NEXT DETAILS</Text>{answer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}</View>}
+        {displayedAnswer.unknowns.length > 0 && <View style={s.unknowns}><Text style={s.sectionLabel}>WHAT NURA DOESN’T KNOW YET</Text>{displayedAnswer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}</View>}
+        {displayedAnswer.nextSteps.length > 0 && <View style={s.nextSteps}><Text style={s.sectionLabel}>POSSIBLE NEXT DETAILS</Text>{displayedAnswer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}</View>}
         <Text style={s.disclaimer}>This is a summary of selected information, not a diagnosis. A chosen health area is not a confirmed condition.</Text>
         <TextInput value={correction} onChangeText={(value) => { setCorrection(value); setSavedNote(false); }} placeholder="What should Nura reconsider or remember?" placeholderTextColor={C.soft} style={s.correction} multiline accessibilityLabel="Tell Nura what to reconsider" />
         <View style={s.actions}><Pressable accessibilityRole="button" disabled={!savedNote || busy} onPress={() => { setRevisionMode(true); setConsentOpen(true); }} style={[s.secondaryAction, (!savedNote || busy) && s.disabled]}><Text style={s.secondaryText}>RECONTEXTUALIZE</Text></Pressable><Pressable accessibilityRole="button" disabled={!correction.trim() || savedNote} onPress={saveCorrectionAsNote} style={[s.noteAction, (!correction.trim() || savedNote) && s.disabled]}><Text style={s.noteText}>{savedNote ? 'NOTE ADDED' : 'ADD AS A NEW NOTE'}</Text></Pressable></View>
         <View style={s.actions}><Pressable accessibilityRole="button" onPress={() => router.replace('/(tabs)/home')} style={s.confirmAction}><Text style={s.confirmText}>THIS LOOKS RIGHT · GO TO HOME</Text><Text style={s.confirmArrow}>→</Text></Pressable></View>
       </View>}
 
-      {trace.length > 0 && !busy && <View style={s.traceCard}><Text style={s.sectionLabel}>HOW THIS SUMMARY WAS PREPARED</Text>{trace.map((item) => <View key={item.id} style={s.traceRow}><Text style={[s.traceMark, item.status === 'complete' && s.traceDone]}>{item.status === 'complete' ? '✓' : '·'}</Text><Text style={s.traceLabel}>{item.label}</Text></View>)}</View>}
+      {displayedTrace.length > 0 && !busy && <View style={s.traceCard}><Text style={s.sectionLabel}>HOW THIS SUMMARY WAS PREPARED</Text>{displayedTrace.map((item) => <View key={item.id} style={s.traceRow}><Text style={[s.traceMark, item.status === 'complete' && s.traceDone]}>{item.status === 'complete' ? '✓' : '·'}</Text><Text style={s.traceLabel}>{item.label}</Text></View>)}</View>}
       {error ? <View style={s.errorCard}><Text style={s.errorTitle}>Nura couldn’t finish this pass.</Text><Text style={s.errorText}>{error}</Text><Pressable accessibilityRole="button" onPress={() => setConsentOpen(true)} style={s.retry}><Text style={s.retryText}>TRY AGAIN</Text></Pressable></View> : null}
       <Pressable accessibilityRole="button" onPress={() => router.push('/intake')} style={s.addRecord}><Text style={s.addRecordTitle}>ADD HEALTH RECORDS</Text><Text style={s.addRecordSub}>PDFs and images · review every suggestion</Text><Text style={s.addRecordArrow}>↗</Text></Pressable>
       <Text style={s.footer}>Preview mode uses fictional examples. Your changes stay in this browser until you clear Nura data. Please don’t enter real health or contact information.</Text>
@@ -136,7 +156,7 @@ export default function ProfileSummary() {
     <Modal transparent visible={consentOpen} animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setConsentOpen(false)}>
       <View style={[s.modalShade, Platform.OS === 'web' && s.modalShadeWeb]}><View style={[s.modal, Platform.OS === 'web' && s.modalWeb]}>
         <Text style={s.modalEyebrow}>ONE PROFILE · ONE SUMMARY</Text><Text style={s.modalTitle}>{revisionMode ? 'Revisit the updated profile?' : 'Use these selected details?'}</Text>
-        <Text style={s.modalBody}>Nura will search {itemCount} selected profile item{itemCount === 1 ? '' : 's'} for this answer. The selected items include saved details, focus areas and your links. No name, phone, email, birthday or external web search is included.</Text>
+        <Text style={s.modalBody}>{`Nura will search ${itemCount} selected profile ${itemCount === 1 ? 'item' : 'items'} for this answer. The selected items include saved details, focus areas and your links. No name, phone, email, birthday or external web search is included.`}</Text>
         <Pressable accessibilityRole="button" onPress={() => void createUnderstanding(revisionMode)} style={s.modalPrimary}><Text style={s.modalPrimaryText}>{revisionMode ? 'I AGREE · RECONTEXTUALIZE' : 'I AGREE · CREATE SUMMARY'}</Text><Text style={s.primaryArrow}>→</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={() => setConsentOpen(false)} style={s.modalCancel}><Text style={s.modalCancelText}>Not now</Text></Pressable>
       </View></View>

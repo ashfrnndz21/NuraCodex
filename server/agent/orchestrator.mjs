@@ -73,12 +73,21 @@ export async function runAgent(input, emit, signal) {
   const initialCalls = functionCalls(first);
   if (!initialCalls.length) throw new Error('Nura could not begin a grounded profile search.');
   const callOutputs = [];
+  let profileContextTotalCount = 0;
+  let profileContextOmittedCount = 0;
   for (const call of initialCalls) {
     const toolLabel = labelForTool(call.name);
     trace(`tool-${call.call_id}`, toolLabel, 'started');
     let args;
     try { args = JSON.parse(call.arguments || '{}'); } catch { args = {}; }
-    const result = evidence.execute(call.name, args);
+    // A first profile synthesis must review the whole consented selection. A
+    // relevance-ranked top-eight search is appropriate for ordinary questions,
+    // but can make entered facts look missing when the model searches broadly.
+    const result = evidence.execute(call.name, args, { includeAllSelected: intent.key === 'profile_summary' });
+    if (intent.key === 'profile_summary') {
+      profileContextTotalCount = result?.totalCount ?? 0;
+      profileContextOmittedCount = result?.omittedCount ?? 0;
+    }
     callOutputs.push({ type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(result) });
     const count = Array.isArray(result?.results) ? result.results.length : Array.isArray(result?.sources) ? result.sources.length : result?.id ? 1 : 0;
     trace(`tool-${call.call_id}`, toolLabel, 'complete', count ? `${count} saved item${count === 1 ? '' : 's'} found` : 'No matching saved items found');
@@ -94,7 +103,7 @@ export async function runAgent(input, emit, signal) {
   for (let round = 0; round < 3; round += 1) {
     const response = await model.createResponse({
       input: conversation,
-      instructions: `${INSTRUCTIONS}${symptomInstructions}\nThe latest profile search results are in the tool output. You may use get_saved_record for an exact record already retrieved, or search_profile for a narrower follow-up. ${intent.key === 'coverage' ? 'Act as Nura’s bounded policy-evidence specialist. Include a coverage assessment for each policy finding you state, tied to its exact policy reference and only those confirmed health-record references with a defensible topical connection to that specific term. A record is not relevant merely because it was selected; do not repeat one selected record under every policy term. Leave relatedHealthReferences empty when the relationship is not established. Use explicit_benefit for language that states a benefit, explicit_limit for a stated cap or cost share, explicit_exclusion for a stated exclusion, and unclear only for ambiguous policy wording. Do not label a coverage gap from missing text. Put missing or ambiguous information in unknowns and concrete insurer questions in nextSteps. If selected personal health details were not returned by search, say no relevant health evidence was found in the selected details; do not say no details were selected. If no reviewed policy term was retrieved, return no coverageAssessments.' : ''} When no further evidence is needed, return the grounded answer now.`,
+      instructions: `${INSTRUCTIONS}${symptomInstructions}\nThe latest profile search results are in the tool output. You may use get_saved_record for an exact record already retrieved, or search_profile for a narrower follow-up. ${profileContextOmittedCount ? `The first profile pass retrieved ${profileContextTotalCount - profileContextOmittedCount} of ${profileContextTotalCount} selected items. Do not describe omitted items as unknown or absent; clearly say the first pass did not assess them.` : ''} ${intent.key === 'coverage' ? 'Act as Nura’s bounded policy-evidence specialist. Include a coverage assessment for each policy finding you state, tied to its exact policy reference and only those confirmed health-record references with a defensible topical connection to that specific term. A record is not relevant merely because it was selected; do not repeat one selected record under every policy term. Leave relatedHealthReferences empty when the relationship is not established. Use explicit_benefit for language that states a benefit, explicit_limit for a stated cap or cost share, explicit_exclusion for a stated exclusion, and unclear only for ambiguous policy wording. Do not label a coverage gap from missing text. Put missing or ambiguous information in unknowns and concrete insurer questions in nextSteps. If selected personal health details were not returned by search, say no relevant health evidence was found in the selected details; do not say no details were selected. If no reviewed policy term was retrieved, return no coverageAssessments.' : ''} When no further evidence is needed, return the grounded answer now.`,
       tools: webSearchEnabled ? [...profileTools, healthSearchTool] : profileTools,
       toolChoice: 'auto',
       structuredOutput: intent.key === 'coverage' ? COVERAGE_ANSWER_SCHEMA : ANSWER_SCHEMA,
@@ -106,7 +115,11 @@ export async function runAgent(input, emit, signal) {
       let parsed;
       try { parsed = JSON.parse(raw); } catch { throw new Error('Nura’s answer service returned an unreadable response.'); }
       const sources = evidence.sources();
-      const answer = validateAnswer(parsed, sources, { ...intent, question: request.question });
+      let answer = validateAnswer(parsed, sources, { ...intent, question: request.question });
+      if (intent.key === 'profile_summary' && profileContextOmittedCount) {
+        const coverageNote = `${profileContextOmittedCount} selected item${profileContextOmittedCount === 1 ? ' was' : 's were'} not assessed in this first pass.`;
+        answer = { ...answer, unknowns: [...answer.unknowns.slice(0, 4), coverageNote] };
+      }
       trace('evidence', intent.key === 'coverage' ? 'Separating policy wording from unknowns' : 'Checking what the records support', 'complete', sources.length ? `${sources.length} source${sources.length === 1 ? '' : 's'} available to inspect` : 'No relevant profile evidence is available');
       if (intent.key === 'coverage') {
         trace('coverage-analysis', 'Comparing the selected policy and health evidence', 'complete', coverageTraceDetail(answer, sources));

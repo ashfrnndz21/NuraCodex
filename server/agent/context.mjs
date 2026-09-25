@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 const MAX_ITEMS = 100;
+const MAX_PROFILE_SYNTHESIS_ITEMS = 32;
 const LINK_RELATIONS = new Set(['same_source', 'happened_around', 'measured_during', 'treatment_for', 'related_by_me', 'user_note']);
 const SOURCE_CONTEXT_KINDS = {
   dates: new Set(['report_date', 'collected_at', 'received_at', 'approved_at', 'issued_at', 'effective_period']),
@@ -140,14 +141,16 @@ export function createEvidenceTools(context) {
     }),
   ];
   const byId = new Map(allRecords.map((record) => [record.id, record]));
-  function searchProfile(query) {
+  function searchProfile(query, { includeAllSelected = false } = {}) {
     const queryWords = [...new Set(tokens(query))];
-    const ranked = allRecords.map((record) => {
-      const haystack = `${record.title} ${record.detail} ${record.category ?? ''} ${record.source ?? ''}`.toLowerCase();
-      const score = queryWords.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0);
-      return { record, score };
-    }).filter((item) => queryWords.length ? item.score > 0 : false).sort((a, b) => b.score - a.score).slice(0, 8);
-    const results = ranked.map(({ record }) => issueReference(record));
+    const records = includeAllSelected
+      ? allRecords.slice(0, MAX_PROFILE_SYNTHESIS_ITEMS)
+      : allRecords.map((record) => {
+        const haystack = `${record.title} ${record.detail} ${record.category ?? ''} ${record.source ?? ''}`.toLowerCase();
+        const score = queryWords.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0);
+        return { record, score };
+      }).filter((item) => queryWords.length ? item.score > 0 : false).sort((a, b) => b.score - a.score).slice(0, 8).map(({ record }) => record);
+    const results = records.map((record) => issueReference(record));
     const ids = new Set(results.map((record) => record.id));
     const relatedLinks = context.links.filter((link) => {
       const from = link.from.startsWith('fact:') || link.from.startsWith('topic:') ? link.from : `fact:${link.from}`;
@@ -161,7 +164,11 @@ export function createEvidenceTools(context) {
       const source = issueReference({ id: `link:${link.id}`, title: `You linked ${from} to ${to}`, detail: `Your recorded association (${link.relationType.replaceAll('_', ' ')}): ${link.label}`, date: link.createdAt, source: 'Linked by you', status: 'user_authored', kind: 'user_link', category: 'Relationship' });
       return { id: source.id, reference: source.reference, from, to, relationType: link.relationType, label: link.label, authoredBy: 'user', createdAt: link.createdAt };
     });
-    return { results, userAuthoredLinks: relatedLinks };
+    return {
+      results,
+      userAuthoredLinks: relatedLinks,
+      ...(includeAllSelected ? { totalCount: allRecords.length, omittedCount: Math.max(0, allRecords.length - results.length) } : {}),
+    };
   }
   function getRecord(recordId) {
     const record = known.get(recordId);
@@ -181,8 +188,8 @@ export function createEvidenceTools(context) {
     }
     return { summary: cleanText(searchResult?.summary, 3000), sources: mapped };
   }
-  function execute(name, args) {
-    if (name === 'search_profile') return searchProfile(cleanText(args?.query, 240));
+  function execute(name, args, options) {
+    if (name === 'search_profile') return searchProfile(cleanText(args?.query, 240), options);
     if (name === 'get_saved_record') return getRecord(cleanText(args?.recordId, 120)) ?? { unavailable: true, note: 'That record was not returned by this run’s profile search.' };
     return { unavailable: true, note: 'This tool is not available in Nura.' };
   }

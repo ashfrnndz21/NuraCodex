@@ -19,7 +19,8 @@ const fallback = {
 
 test('browser demo snapshot round-trips profile, facts, source links and agent history', () => {
   const storage = memoryStorage();
-  const snapshot = { ...fallback, name: 'Riley Sample', facts: [{ id: 'f1', sourceId: 's1' }], links: [{ id: 'l1' }], agentMessages: [{ id: 'm1' }] };
+  const profileSummary = { answer: 'The sample profile includes a selected cholesterol focus.', citations: ['R1'], unknowns: ['No result values were provided.'], nextSteps: ['Add a recent report if useful.'], memoryProposal: null, revision: true };
+  const snapshot = { ...fallback, name: 'Riley Sample', facts: [{ id: 'f1', sourceId: 's1' }], links: [{ id: 'l1' }], agentMessages: [{ id: 'm1', profileSummary }] };
   writeBrowserDemoSnapshot(storage, 'nura-demo', snapshot);
   const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.equal(loaded.warning, null);
