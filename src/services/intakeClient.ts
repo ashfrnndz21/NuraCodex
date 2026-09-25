@@ -6,7 +6,7 @@ import { sourceSha256Matches } from './sourceIdentity.mjs';
 
 export type DocumentContextEntry = { kind: string; value: string; page: number | null; quote: string | null };
 export type DocumentContext = { documentType: string | null; dates: DocumentContextEntry[]; entities: DocumentContextEntry[]; notes: DocumentContextEntry[] };
-export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only'; documentContext?: DocumentContext | null };
+export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only'; origin?: 'user_entered' | 'document_extraction'; documentContext?: DocumentContext | null };
 export type CandidateClaim = {
   id: string; sourceId: string; kind: string; label: string; value: string; unit: string | null;
   referenceRange?: string | null; method?: string | null;
@@ -67,6 +67,12 @@ async function sha256Bytes(bytes: Uint8Array): Promise<string> {
   const digest = new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, ownedBytes));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+function utf8Bytes(value: string): Uint8Array {
+  const encoded = unescape(encodeURIComponent(value));
+  const bytes = new Uint8Array(encoded.length);
+  for (let index = 0; index < encoded.length; index += 1) bytes[index] = encoded.charCodeAt(index);
+  return bytes;
+}
 export async function sourceMatchesAsset(asset: { uri: string }, source: LocalSource): Promise<boolean> {
   try {
     const bytes = await readAssetBytes(asset.uri);
@@ -76,7 +82,15 @@ export async function sourceMatchesAsset(asset: { uri: string }, source: LocalSo
     return false;
   }
 }
+export async function sourceMatchesText(text: string, source: LocalSource): Promise<boolean> {
+  try {
+    const bytes = utf8Bytes(text);
+    if (bytes.byteLength !== source.sizeBytes) return false;
+    return sourceSha256Matches(source.sha256, await sha256Bytes(bytes));
+  } catch { return false; }
+}
 export type IntakeActivity = { id: string; label: string; status: 'started' | 'progress' | 'complete' | 'failed' | 'cancelled' };
+export type SelfReportReview = { source: LocalSource; claims: CandidateClaim[]; duplicate: boolean };
 export class IntakeCancelledError extends Error {
   constructor() {
     super('This extraction was stopped. No claim was added to the profile.');
@@ -104,6 +118,26 @@ export async function getSourceClaims(sourceId: string): Promise<{ source: Local
   const body = await response.json() as { message?: string; source?: LocalSource; claims?: CandidateClaim[] };
   if (!response.ok || !body.source) throw new Error(body.message || 'Nura could not open the extracted source.');
   return { source: body.source, claims: body.claims ?? [] };
+}
+export async function analyzeSelfReport(input: { noteId: string; text: string; topic?: { id: string; label: string }; consentForThisNote: boolean; syntheticDemoConfirmed: boolean }): Promise<SelfReportReview> {
+  let endpoint: URL;
+  try { endpoint = new URL(baseUrl); }
+  catch { throw new Error('Self-reported descriptions are available only in the local preview.'); }
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)) {
+    throw new Error('This preview keeps self-reported descriptions on the local Nura service. Remote description processing is not enabled.');
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/v1/intake/self-report`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ consentForThisNote: input.consentForThisNote, syntheticDemoConfirmed: input.syntheticDemoConfirmed, noteId: input.noteId, text: input.text, topic: input.topic ?? null }),
+    });
+  } catch {
+    throw new Error('The local description organizer could not be reached. Your note remains on this device.');
+  }
+  const body = await response.json() as { message?: string; source?: LocalSource; claims?: CandidateClaim[]; duplicate?: boolean };
+  if (!response.ok || !body.source) throw new Error(body.message || 'Nura could not organize this description.');
+  return { source: body.source, claims: body.claims ?? [], duplicate: body.duplicate ?? false };
 }
 export async function extractPickedFile(asset: { uri: string; name: string; mimeType?: string; size?: number }, onActivity?: (activity: IntakeActivity) => void, purpose: 'medical' | 'insurance' = 'medical', signal?: AbortSignal): Promise<IntakeResult> {
   const mimeType = resolveIntakeMediaType(asset);

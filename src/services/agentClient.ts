@@ -61,7 +61,7 @@ export async function clearLocalDemoProcessingData(): Promise<{ sources: number;
   };
 }
 
-export function runNuraAgent(input: AgentRunInput, onEvent: (event: AgentEvent) => void): Promise<void> {
+export function runNuraAgent(input: AgentRunInput, onEvent: (event: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let cursor = 0;
@@ -70,14 +70,24 @@ export function runNuraAgent(input: AgentRunInput, onEvent: (event: AgentEvent) 
     let dataLines: string[] = [];
     let finished = false;
     let sawFinish = false;
-    const fail = (message: string) => { if (finished) return; finished = true; reject(new Error(message)); };
+    let sawAnswer = false;
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    const fail = (message: string) => { if (finished) return; finished = true; cleanup(); reject(new Error(message)); };
+    const abort = () => {
+      if (finished) return;
+      xhr.abort();
+      fail('This run was stopped. You can try again when you’re ready.');
+    };
+    if (signal?.aborted) { fail('This run was stopped. You can try again when you’re ready.'); return; }
+    signal?.addEventListener('abort', abort, { once: true });
     const dispatch = () => {
-      if (!dataLines.length) { eventName = ''; return; }
+      if (finished || !dataLines.length) { eventName = ''; return; }
       try {
         const value = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
         const event = { ...value, type: eventName || String(value.type ?? '') } as AgentEvent;
         if (event.type === 'run_error') event.message = 'Nura couldn’t complete this answer. Your saved information has not changed. Please try again.';
         onEvent(event);
+        if (event.type === 'answer') sawAnswer = true;
         if (event.type === 'run_finished') sawFinish = true;
         if (event.type === 'run_error') fail(event.message);
       } catch (error) {
@@ -88,6 +98,7 @@ export function runNuraAgent(input: AgentRunInput, onEvent: (event: AgentEvent) 
       dataLines = [];
     };
     const consume = () => {
+      if (finished) return;
       const text = xhr.responseText.slice(cursor);
       cursor = xhr.responseText.length;
       buffer += text;
@@ -111,13 +122,14 @@ export function runNuraAgent(input: AgentRunInput, onEvent: (event: AgentEvent) 
         fail('Nura couldn’t complete this answer. Your saved information has not changed. Please try again.');
         return;
       }
-      if (!sawFinish) { fail('Nura couldn’t finish this answer. Your saved information has not changed. Please try again.'); return; }
+      if (!sawFinish || !sawAnswer) { fail('Nura couldn’t finish this answer. Your saved information has not changed. Please try again.'); return; }
       finished = true;
+      cleanup();
       resolve();
     };
     xhr.onerror = () => fail('Nura couldn’t connect. Check your connection and try again.');
     xhr.ontimeout = () => fail('Nura is taking longer than expected. Your saved information has not changed. Please try again.');
-    xhr.onabort = () => fail('This request was cancelled. Your saved health information has not changed.');
+    xhr.onabort = () => fail(signal?.aborted ? 'This run was stopped. You can try again when you’re ready.' : 'This request was cancelled. Your saved health information has not changed.');
     xhr.send(JSON.stringify(input));
   });
 }

@@ -7,14 +7,14 @@ import { useNura } from '../src/state/NuraContext';
 import { colors, radius } from '../src/theme';
 
 type InventoryRow = { id: string; title: string; count: number; summary: string; details: React.ReactNode };
-type ConfirmAction = 'device' | 'processor' | null;
+type ConfirmAction = 'device' | 'processor' | 'sample' | null;
 
 function RecordLine({ title, value, source }: { title: string; value?: string; source?: string }) {
   return <View style={styles.recordLine}><Text style={styles.recordTitle}>{title}</Text>{value ? <Text style={styles.recordValue}>{value}</Text> : null}{source ? <Text style={styles.recordSource}>{source}</Text> : null}</View>;
 }
 
 export default function Privacy() {
-  const { ready, storageError, name, birthday, country, email, phone, topics, facts, assets, treatments, visits, links, feedItems, savedQuestions, agentMessages, registryBriefs, clearAllLocalData } = useNura();
+  const { ready, storageError, name, birthday, country, email, phone, topics, facts, assets, treatments, visits, links, feedItems, savedQuestions, agentMessages, registryBriefs, clearAllLocalData, resetDemo } = useNura();
   const [expanded, setExpanded] = useState<string | null>('profile');
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [confirmError, setConfirmError] = useState('');
@@ -98,6 +98,9 @@ export default function Privacy() {
       if (confirmAction === 'processor') {
         const removed = await clearLocalDemoProcessingData();
         setNotice(`Cleared ${removed.sources} saved file detail${removed.sources === 1 ? '' : 's'}, ${removed.claims} suggested detail${removed.claims === 1 ? '' : 's'} and ${removed.assertions} approved profile entr${removed.assertions === 1 ? 'y' : 'ies'} from Nura’s preview service.`);
+      } else if (confirmAction === 'sample') {
+        resetDemo();
+        setNotice('Starter examples have been restored in this browser.');
       } else {
         const result = await clearAllLocalData();
         setNotice(result.fileCleanupFailed ? 'Your profile and records were cleared, but Nura couldn’t remove every saved file. Try again to finish clearing your files.' : 'Your profile, records, conversations and saved file copies have been cleared from this device.');
@@ -108,7 +111,7 @@ export default function Privacy() {
     } finally { setBusy(false); }
   }
 
-  const confirmTitle = confirmAction === 'processor' ? 'Clear document review data?' : 'Clear Nura data from this device?';
+  const confirmTitle = confirmAction === 'processor' ? 'Clear document review data?' : confirmAction === 'sample' ? 'Restore the starter examples?' : 'Clear Nura data from this device?';
   return <View style={styles.page}>
     <ScrollView contentContainerStyle={styles.content}>
       <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.back}><Text style={styles.backText}>‹  Profile</Text></Pressable>
@@ -117,8 +120,12 @@ export default function Privacy() {
       <Text style={styles.intro}>See what Nura holds, where it lives, and what happens when you ask it to do something.</Text>
 
       <View style={styles.storageCard}>
-        <View style={styles.storageHead}><View style={styles.storageMark}><Text style={styles.storageMarkText}>i</Text></View><Text style={styles.storageTitle}>{Platform.OS === 'web' ? 'Preview mode · fictional sample data' : 'Stored on this device'}</Text></View>
-        <Text style={styles.storageCopy}>{Platform.OS === 'web' ? 'This preview uses fictional sample records. Changes and files you add stay in this browser, even after refresh, until you clear Nura data. This is not a personal Nura account. Please use fictional details and documents only.' : 'Your profile and health records are stored on this device. Original file copies stay inside Nura. This preview does not sync to an online account.'}</Text>
+        <View style={styles.storageHead}><View style={styles.storageMark}><Text style={styles.storageMarkText}>i</Text></View><Text style={styles.storageTitle}>{Platform.OS === 'web' ? 'Preview data stays in this browser' : 'Stored on this device'}</Text></View>
+        <Text style={styles.storageCopy}>{Platform.OS === 'web' ? 'Profile details, records and selected files are stored in this browser for the Nura preview. They are not synced across devices or to an online Nura account. Use fictional health and contact details.' : 'Your profile and health records are stored on this device. Original file copies stay inside Nura. This preview does not sync to an online account.'}</Text>
+        {Platform.OS === 'web' && <Pressable accessibilityRole="button" disabled={!ready || busy} onPress={() => { setConfirmError(''); setConfirmAction('sample'); }} style={({ pressed }) => [styles.resetSampleButton, (!ready || busy) && styles.disabled, pressed && styles.pressed]}>
+          <Text style={styles.resetSampleTitle}>Restore starter examples</Text>
+          <Text style={styles.resetSampleCopy}>Replace the preview data and selected files in this browser with the original examples.</Text>
+        </Pressable>}
       </View>
 
       <View style={styles.sectionHead}><View><Label>DATA INVENTORY</Label><Text style={styles.sectionTitle}>What Nura has right now</Text></View><Text style={styles.total}>{rows.reduce((sum, row) => sum + row.count, 0)}</Text></View>
@@ -134,7 +141,7 @@ export default function Privacy() {
       <Surface style={styles.explainer}>
         <Text style={styles.explainerTitle}>Ask Nura and health searches</Text>
         <Text style={styles.explainerBody}>Before each answer, you choose which details Nura can use. When you continue, your question and selected details are sent to Nura’s AI service to prepare a response. Its privacy practices apply to each request.</Text>
-        <Text style={styles.explainerFoot}>Your choice is made for each request. Online accounts and cloud sync aren’t available in this preview.</Text>
+        <Text style={styles.explainerFoot}>Your choice is made for each request. This preview has no online account or cloud sync.</Text>
       </Surface>
 
       <View style={styles.sectionHead}><View><Label>YOUR CONTROL</Label><Text style={styles.sectionTitle}>Clear stored information</Text></View></View>
@@ -159,13 +166,13 @@ export default function Privacy() {
 
     <Modal transparent visible={confirmAction !== null} animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => { if (!busy) setConfirmAction(null); }}>
       <View style={styles.modalBackdrop}><View style={styles.modalCard}>
-        <Label>CONFIRM DELETION</Label>
+        <Label>{confirmAction === 'sample' ? 'CONFIRM RESET' : 'CONFIRM DELETION'}</Label>
         <Text style={styles.modalTitle}>{confirmTitle}</Text>
-        <Text style={styles.modalCopy}>{confirmAction === 'processor' ? 'This removes saved document details, suggested information, your review decisions and activity from Nura’s preview service. It doesn’t remove information the AI service may retain.' : 'This removes profile details, selected areas, health records, treatment and visit details, links, saved questions, Ask history and file copies saved by Nura on this device.'}</Text>
+        <Text style={styles.modalCopy}>{confirmAction === 'processor' ? 'This removes saved document details, suggested information, your review decisions and activity from Nura’s preview service. It doesn’t remove information the AI service may retain.' : confirmAction === 'sample' ? 'This replaces profile details, selected areas, health records, reading and selected files in this browser with the starter examples. Separately stored document-review data has its own control below.' : 'This removes profile details, selected areas, health records, treatment and visit details, links, saved questions, Ask history and file copies saved by Nura on this device.'}</Text>
         {confirmError ? <Text accessibilityLiveRegion="assertive" style={styles.warning}>{confirmError}</Text> : null}
         <View style={styles.modalActions}>
           <Pressable accessibilityRole="button" disabled={busy} onPress={() => setConfirmAction(null)} style={styles.cancelButton}><Text style={styles.cancelText}>Keep my data</Text></Pressable>
-          <Pressable accessibilityRole="button" disabled={busy} onPress={() => void confirmClear()} style={[styles.confirmButton, busy && styles.disabled]}>{busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.confirmText}>Delete this data</Text>}</Pressable>
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => void confirmClear()} style={[styles.confirmButton, busy && styles.disabled]}>{busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.confirmText}>{confirmAction === 'sample' ? 'Restore examples' : 'Delete this data'}</Text>}</Pressable>
         </View>
       </View></View>
     </Modal>
@@ -176,7 +183,7 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.bg }, content: { padding: 20, paddingTop: 24, paddingBottom: 36, width: '100%', maxWidth: 560, alignSelf: 'center' },
   back: { minHeight: 42, justifyContent: 'center', alignSelf: 'flex-start', paddingRight: 16, marginBottom: 18 }, backText: { color: colors.aqua, fontSize: 14, fontWeight: '600' },
   title: { color: colors.text, fontSize: 34, lineHeight: 40, fontWeight: '300', letterSpacing: -1, marginTop: 7 }, intro: { color: colors.muted, fontSize: 14, lineHeight: 21, marginTop: 8, marginBottom: 20 },
-  storageCard: { backgroundColor: '#EFF5FF', borderColor: '#D7E6FB', borderWidth: 1, borderRadius: radius.md, padding: 15, marginBottom: 26 }, storageHead: { flexDirection: 'row', alignItems: 'center', gap: 9 }, storageMark: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#D9E9FF', alignItems: 'center', justifyContent: 'center' }, storageMarkText: { color: colors.aqua, fontSize: 13, fontWeight: '700' }, storageTitle: { color: colors.text, fontSize: 14, fontWeight: '700' }, storageCopy: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 9 },
+  storageCard: { backgroundColor: '#EFF5FF', borderColor: '#D7E6FB', borderWidth: 1, borderRadius: radius.md, padding: 15, marginBottom: 26 }, storageHead: { flexDirection: 'row', alignItems: 'center', gap: 9 }, storageMark: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#D9E9FF', alignItems: 'center', justifyContent: 'center' }, storageMarkText: { color: colors.aqua, fontSize: 13, fontWeight: '700' }, storageTitle: { color: colors.text, fontSize: 14, fontWeight: '700' }, storageCopy: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 9 }, resetSampleButton: { minHeight: 54, justifyContent: 'center', padding: 11, marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, resetSampleTitle: { color: colors.text, fontSize: 12, fontWeight: '700' }, resetSampleCopy: { color: colors.muted, fontSize: 10, lineHeight: 14, marginTop: 3 },
   sectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 11, marginTop: 2 }, sectionTitle: { color: colors.text, fontSize: 19, fontWeight: '400', marginTop: 5 }, total: { color: colors.aqua, fontSize: 21, fontWeight: '600' },
   inventory: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: 'hidden', marginBottom: 25 }, rowWrap: { borderBottomWidth: 1, borderBottomColor: colors.border }, inventoryRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 10 }, rowCopy: { flex: 1 }, rowTitle: { color: colors.text, fontSize: 14, fontWeight: '600' }, rowSummary: { color: colors.muted, fontSize: 11, lineHeight: 15, marginTop: 3 }, rowCount: { minWidth: 26, color: colors.aqua, fontSize: 14, fontWeight: '700', textAlign: 'right' }, rowChevron: { color: colors.violet, fontSize: 19, width: 18, textAlign: 'right' }, rowDetails: { paddingHorizontal: 15, paddingTop: 1, paddingBottom: 14, backgroundColor: '#FBFAFC' }, recordLine: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#EEEAF2' }, recordTitle: { color: colors.text, fontSize: 12, fontWeight: '600' }, recordValue: { color: colors.text, fontSize: 12, lineHeight: 17, marginTop: 3 }, recordSource: { color: colors.quiet, fontSize: 10, lineHeight: 14, marginTop: 3 }, empty: { color: colors.quiet, fontSize: 12, lineHeight: 17, paddingVertical: 7 }, pressed: { opacity: 0.78 },
   explainer: { padding: 15, marginBottom: 26 }, explainerTitle: { color: colors.text, fontSize: 14, fontWeight: '700' }, explainerBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 8 }, explainerFoot: { color: colors.warning, fontSize: 11, lineHeight: 16, marginTop: 9 },

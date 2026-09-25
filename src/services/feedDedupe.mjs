@@ -31,6 +31,27 @@ function hasSharedTopic(left, right) {
   return topicLabels(left.topic).some((topic) => rightTopics.has(normalized(topic)));
 }
 
+/**
+ * Merge a fresh search without losing a person's saved or dismissed reading.
+ * Dismissed items remain available to the Hidden view after another search.
+ * @template {{ id: string, saved: boolean, dismissed: boolean }} T
+ * @param {T[]} current
+ * @param {Array<Omit<T, 'saved' | 'dismissed'>>} incoming
+ * @returns {T[]}
+ */
+export function mergeHealthFeedItems(current, incoming) {
+  const existing = new Map(current.map((item) => [item.id, item]));
+  const next = incoming.map((item) => {
+    const prior = existing.get(item.id);
+    return { ...item, saved: prior?.saved ?? false, dismissed: prior?.dismissed ?? false };
+  });
+
+  for (const item of current) {
+    if ((item.saved || item.dismissed) && !next.some((candidate) => candidate.id === item.id)) next.push(item);
+  }
+  return next;
+}
+
 /** Collapse repeated reading cards for display while retaining every saved source ID. */
 export function groupHealthFeedItems(items) {
   const ordered = [...items].sort((left, right) => String(right.retrievedAt || '').localeCompare(String(left.retrievedAt || '')));

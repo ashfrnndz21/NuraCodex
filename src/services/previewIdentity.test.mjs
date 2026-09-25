@@ -6,8 +6,8 @@ test('preview verifier accepts only reserved fictional email and phone identitie
   const adapter = createPreviewIdentityAdapter();
   assert.equal(adapter.requestCode('email', previewIdentityInstructions.email).mode, 'synthetic_preview');
   assert.equal(adapter.requestCode('phone', previewIdentityInstructions.phone).mode, 'synthetic_preview');
-  assert.throws(() => adapter.requestCode('email', 'person@example.com'), /fictional preview address/);
-  assert.throws(() => adapter.requestCode('phone', '+60123456789'), /fictional preview number/);
+  assert.throws(() => adapter.requestCode('email', 'person@example.com'), /sample preview address/);
+  assert.throws(() => adapter.requestCode('phone', '+60123456789'), /sample preview number/);
 });
 
 test('wrong, expired, missing and replayed preview codes cannot create a session', () => {

@@ -4,6 +4,8 @@ import { createServer } from 'node:http';
 import { getLanguageModelStatus, extractDocumentClaims, extractVideoClaims, searchHealthSources } from './adapters/index.mjs';
 import { runAgent } from './agent/orchestrator.mjs';
 import { sanitizeRunBody } from './agent/context.mjs';
+import { interpretSelfReportRequest } from './agent/selfReport.mjs';
+import { organizeSelfReportLocally } from './agent/localSelfReport.mjs';
 import { addHealthFeedCandidate, uniqueHealthFeedItems } from './agent/feedResults.mjs';
 import { localDemoRepository } from './adapters/localDemoRepository.mjs';
 import { createCandidateClaim, createDocumentContext, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from './contracts.mjs';
@@ -88,7 +90,7 @@ function displayForEvent(type, data) {
     intake_started: 'Preparing the selected source', source_received: 'Source received for this local demo', duplicate_detected: 'An exact duplicate was found',
     extraction_started: 'Reading the selected document', extraction_completed: 'Document extraction completed',
     video_sampling_started: 'Selecting clear moments from the video', video_frames_ready: 'Video moments are ready for review', video_extraction_started: 'Reading visible details in the selected moments',
-    claims_ready_for_review: 'Extracted items are ready for your review', intake_completed: 'The selected source is ready', intake_cancelled: 'File processing stopped', review_completed: 'Your review was saved', trace: 'Nura updated its activity', evidence: 'Nura checked selected evidence', answer: 'Nura prepared an answer',
+    claims_ready_for_review: 'Extracted items are ready for your review', intake_completed: 'The selected source is ready', intake_cancelled: 'File processing stopped', review_completed: 'Your review was saved', self_report_started: 'Nura organized a description locally', self_report_completed: 'Quoted suggestions are ready for review', trace: 'Nura updated its activity', evidence: 'Nura checked selected evidence', answer: 'Nura prepared an answer',
   };
   return labels[type] || 'Nura updated this request';
 }
@@ -185,6 +187,59 @@ async function handleExtraction(request, response) {
   } finally {
     await flush();
     if (!response.writableEnded) response.end();
+  }
+}
+
+async function handleSelfReport(request, response) {
+  if (!DEMO_INTAKE_ENABLED) { json(response, 404, { error: 'not_found' }); return; }
+  if (String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') {
+    json(response, 415, { error: 'unsupported_media_type', message: 'Send one selected description for local review.' });
+    return;
+  }
+  let body;
+  try { body = await readBody(request, 12_000); }
+  catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
+
+  let prepared;
+  try {
+    prepared = await interpretSelfReportRequest(body, { interpret: async ({ text }) => organizeSelfReportLocally(text) });
+  } catch (error) {
+    json(response, 400, { error: 'invalid_self_report', message: error instanceof Error ? error.message : 'This description could not be validated.' });
+    return;
+  }
+
+  const sha256 = createHash('sha256').update(prepared.text, 'utf8').digest('hex');
+  try {
+    const duplicate = await localDemoRepository.findSourceByHash(DEMO_PROFILE_ID, sha256);
+    if (duplicate?.origin === 'user_entered') {
+      const claims = await localDemoRepository.listClaims(duplicate.id);
+      json(response, 200, { mode: 'local_demo_synthetic_only', duplicate: true, source: duplicate, claims });
+      return;
+    }
+
+    const unresolvedNotes = prepared.unknowns.map((item) => ({
+      kind: 'unresolved_self_report', value: item.reason, quote: item.quote, page: null,
+    }));
+    const source = createSourceRecord({
+      displayName: 'Your description', mediaType: 'text/plain', sizeBytes: Buffer.byteLength(prepared.text, 'utf8'),
+      sha256, origin: 'user_entered', state: 'extracting',
+      documentContext: unresolvedNotes.length ? { documentType: 'Self-reported description', notes: unresolvedNotes } : null,
+    });
+    await localDemoRepository.createSource(source);
+    const claims = prepared.claims.map((claim) => createCandidateClaim({
+      sourceId: source.id, kind: claim.kind, label: claim.label, value: claim.value,
+      unit: claim.unit, effectiveAt: claim.effectiveAt, confidence: claim.confidence,
+      sourceLocation: { quote: claim.quote, page: null },
+    })).filter(Boolean);
+    await localDemoRepository.saveCandidateClaims(claims);
+    const nextState = claims.length ? 'candidate_review' : 'extracted_empty';
+    await localDemoRepository.setSourceState(source.id, nextState);
+    const runId = randomUUID();
+    await localDemoRepository.appendRunEvent(createRunEvent({ runId, sequence: 1, type: 'self_report_completed', stage: 'self_report_review', status: 'complete', displayLabel: 'Nura organized this description on the local demo service', refs: [{ kind: 'source', id: source.id }, ...claims.slice(0, 20).map((claim) => ({ kind: 'claim', id: claim.id }))] }));
+    json(response, 200, { mode: 'local_demo_synthetic_only', duplicate: false, source: { ...source, state: nextState }, claims });
+  } catch {
+    // Never return an exception, request body, prompt, or provider payload to the client.
+    json(response, 500, { error: 'self_report_review_failed', message: 'This description could not be organized. Your saved profile was not changed.' });
   }
 }
 
@@ -311,6 +366,12 @@ const server = createServer(async (request, response) => {
   if (request.method === 'POST' && url.pathname === '/v1/intake/extract') {
     if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
     await handleExtraction(request, response);
+    return;
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/intake/self-report') {
+    if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
+    await handleSelfReport(request, response);
     return;
   }
 

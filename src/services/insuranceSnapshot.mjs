@@ -28,13 +28,36 @@ const keyMedicalDetails = [
 ];
 
 const keyDetailFields = [
+  { key: 'insurer', match: /insurance company|insurer/i },
+  { key: 'policy-name', match: /policy name|plan name/i },
+  { key: 'policy-number', match: /policy number|policy no\b/i },
+  { key: 'commencement-date', match: /commencement date|effective date|inception date/i },
+  { key: 'policy-term', match: /policy term/i },
+  { key: 'policy-status', match: /policy status/i },
+  { key: 'life-cover', match: /sum assured|death benefit|life cover/i },
+  { key: 'accidental-death', match: /accidental death/i },
+  { key: 'permanent-disability', match: /permanent disability|total permanent/i },
+  { key: 'critical-illness', match: /critical illness/i },
+  { key: 'other-life-riders', match: /other riders?|other life benefit/i },
   { key: 'annual-medical-limit', match: /annual.{0,24}medical.{0,20}limit|medical.{0,20}annual.{0,20}limit/i },
   { key: 'lifetime-medical-limit', match: /lifetime.{0,24}medical.{0,20}limit|medical.{0,20}lifetime.{0,20}limit/i },
   { key: 'room-board', match: /room\s*(?:&|and)\s*board/i },
   { key: 'cost-share', match: /deductible|co-?insurance|copay|co-pay/i },
   { key: 'outpatient', match: /outpatient/i },
+  { key: 'cancer-dialysis', match: /cancer|dialysis/i },
+  { key: 'pre-post-hospital', match: /pre[- ]?hospital|post[- ]?hospital/i },
+  { key: 'other-medical-benefits', match: /other medical benefits?/i },
   { key: 'premium-amount', match: /annual premium|current premium|original premium|new premium|premium amount|premium per (?:year|month|annum)/i },
-  { key: 'life-cover', match: /sum assured|death benefit|life cover/i },
+  { key: 'payment-frequency', match: /payment frequency|pay frequency/i },
+  { key: 'premiums-paid', match: /premium.{0,20}paid|paid to date/i },
+  { key: 'premium-term', match: /premium.{0,15}payment term|premium term/i },
+  { key: 'remaining-term', match: /remaining.{0,20}premium|remaining.{0,20}term/i },
+  { key: 'projected-premiums', match: /projected premium|total premium/i },
+  { key: 'cash-value', match: /current cash value|cash value/i },
+  { key: 'non-guaranteed-value', match: /non.?guaranteed value/i },
+  { key: 'guaranteed-value', match: /guaranteed value/i },
+  { key: 'surrender-value', match: /surrender value/i },
+  { key: 'maturity-value', match: /maturity value/i },
 ];
 
 function textOf(term) {
@@ -43,7 +66,17 @@ function textOf(term) {
 
 export function classifyInsuranceTerm(term) {
   const text = textOf(term);
-  if (/\b(exclusions?|excluded|not covered|no coverage|ineligible)\b/i.test(text)) return 'explicit_exclusion';
+  const value = String(term?.value ?? '');
+  // A schedule saying that exclusions were not listed is an evidence gap, not
+  // proof that the benefit is excluded (or that no exclusion applies).
+  if (/\b(?:no|none)\s+(?:specific\s+)?exclusions?\s+(?:are\s+)?(?:listed|stated|specified|shown|found|noted|identified|recorded)\b|\bexclusions?\s+(?:are\s+)?not\s+(?:listed|stated|specified|shown|found|noted|identified|recorded)\b/i.test(text)) {
+    return 'needs_clarification';
+  }
+  // Negated exclusion wording must not be surfaced as a confirmed exclusion.
+  const positiveExclusionText = text.replace(/\b(?:not|never)\s+excluded\b|\bno\s+(?:specific\s+)?exclusions?\s+(?:apply|applies)\b/gi, '');
+  if (/\b(?:excluded|excludes|not covered|no coverage|ineligible)\b/i.test(positiveExclusionText)) return 'explicit_exclusion';
+  if (/\bno\s+(?:specific\s+)?exclusions?\s+(?:apply|applies)\b|\b(?:not|never)\s+excluded\b/i.test(value)) return 'stated';
+  if (/\bexclusions?\b/i.test(text)) return 'needs_clarification';
   if (/\b(unclear|ambiguous|not specified|not stated|subject to confirmation|depends on|reasonable and customary|usual and customary|medically necessary|medical necessity|pre[- ]existing|waiting period|prior authorization|prior approval|subject to insurer approval|as determined by the insurer)\b/i.test(text)) return 'needs_clarification';
   return 'stated';
 }

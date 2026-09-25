@@ -79,6 +79,30 @@ export function analyzeIntakeBatch(sources) {
       });
     }
 
+    const differentValues = new Set(group.map((claim) => claim.valueKey));
+    if (differentValues.size > 1) {
+      const uncertainPairs = [];
+      for (let leftIndex = 0; leftIndex < group.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < group.length; rightIndex += 1) {
+          const left = group[leftIndex]; const right = group[rightIndex];
+          if (left.sourceId !== right.sourceId && left.valueKey !== right.valueKey && (!left.eventDate || !right.eventDate)) uncertainPairs.push([left, right]);
+        }
+      }
+      if (uncertainPairs.length) {
+        const involved = [...new Map(uncertainPairs.flat().map((claim) => [claim.id, claim])).values()];
+        findings.push({
+          id: `date_uncertain_difference:${involved.map((claim) => claim.id).sort().join('|')}`,
+          kind: 'date_uncertain_difference',
+          label: involved[0].label,
+          unit: involved[0].unitKey || null,
+          values: [...new Set(involved.map((claim) => claim.valueText))],
+          eventDates: [...new Set(involved.map((claim) => claim.eventDate).filter(Boolean))].sort(),
+          claimIds: involved.map((claim) => claim.id).sort(),
+          sources: [...new Map(involved.map((claim) => [claim.sourceId, { id: claim.sourceId, name: claim.sourceName }])).values()],
+        });
+      }
+    }
+
     const byDate = new Map();
     for (const claim of group) {
       if (!claim.eventDate) continue;

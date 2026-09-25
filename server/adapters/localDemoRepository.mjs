@@ -134,7 +134,7 @@ export class LocalDemoRepository {
           id: randomUUID(), schemaVersion: 1, profileId: claim.profileId, sourceId: claim.sourceId,
           claimId: claim.id, kind: claim.kind, label: claim.label, value: claim.value, unit: claim.unit,
           referenceRange: claim.referenceRange ?? null, method: claim.method ?? null,
-          effectiveAt: claim.effectiveAt, recordedAt: new Date().toISOString(), origin: 'document_extraction',
+          effectiveAt: claim.effectiveAt, recordedAt: new Date().toISOString(), origin: state.sources.find((item) => item.id === claim.sourceId)?.origin === 'user_entered' ? 'user_entered' : 'document_extraction',
           evidenceState: 'user_confirmed', confidence: claim.confidence, sourceLocation: claim.sourceLocation,
           validFrom: claim.effectiveAt || new Date().toISOString(), validUntil: null, version: 1, supersedes: null,
         };

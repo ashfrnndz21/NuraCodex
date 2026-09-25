@@ -30,6 +30,9 @@ function formatDate(value: string) {
   const date = parseHealthDate(value);
   return date ? date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : value;
 }
+function displaySource(value: string) {
+  return value === 'Sample information for demonstration only.' ? 'Example record · synthetic' : value;
+}
 function Arrow() { return <Text style={styles.arrow}>↗</Text>; }
 function recentTone(type: string) {
   const value = type.toLowerCase();
@@ -41,9 +44,8 @@ function recentTone(type: string) {
 }
 
 export default function Home() {
-  const { name, facts, assets, treatments, visits, topics, savedQuestions, storageError, ready, resetDemo } = useNura();
+  const { name, facts, assets, treatments, visits, topics, savedQuestions, storageError, ready } = useNura();
   const [reducedMotion, setReducedMotion] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
   useEffect(() => {
     let active = true;
     AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setReducedMotion(value); });
@@ -55,7 +57,7 @@ export default function Home() {
     ...facts.filter((fact) => !fact.validUntil).map((fact) => ({ id: fact.id, title: fact.label, detail: fact.value, date: fact.date, type: fact.category, source: fact.source, icon: /lab|result|blood/i.test(fact.category) ? '▤' : /care|visit/i.test(fact.category) ? '⌂' : /treatment|medicine/i.test(fact.category) ? '＋' : '✳' })),
     ...treatments.map((item) => ({ id: item.id, title: item.name, detail: [item.dose, item.schedule].filter(Boolean).join(' · ') || 'Dose and timing not provided', date: item.startedOn || item.createdAt, type: item.status === 'current' ? 'Treatment · current' : 'Treatment · past', source: item.source, icon: '✚' })),
     ...visits.map((item) => ({ id: item.id, title: item.purpose || 'Care visit', detail: [item.clinician, item.location].filter(Boolean).join(' · ') || item.status, date: item.appointmentAt || item.createdAt, type: item.status === 'upcoming' ? 'Upcoming care' : 'Visit outcome', source: item.source, icon: '⌂' })),
-    ...assets.map((asset) => ({ id: asset.id, title: asset.name, detail: asset.kind === 'video' ? 'Video saved · review not available yet' : 'File saved · ready to review', date: asset.addedAt, type: asset.kind.toUpperCase(), source: asset.uri.startsWith('demo:') ? 'Sample record' : 'Added by you', icon: asset.kind === 'video' ? '▶' : '▤' })),
+    ...assets.filter((asset) => !asset.serverSourceId || (!facts.some((fact) => fact.sourceId === asset.serverSourceId) && !treatments.some((item) => item.sourceId === asset.serverSourceId))).map((asset) => ({ id: asset.id, title: asset.name, detail: asset.kind === 'video' ? 'Video saved · review not available yet' : 'File saved · ready to review', date: asset.addedAt, type: asset.kind.toUpperCase(), source: asset.uri.startsWith('demo:') ? 'Sample record' : 'Added by you', icon: asset.kind === 'video' ? '▶' : '▤' })),
   ].sort((a, b) => (parseHealthDate(b.date)?.getTime() ?? 0) - (parseHealthDate(a.date)?.getTime() ?? 0)).slice(0, 2), [facts, assets, treatments, visits]);
 
   return <View style={styles.page}>
@@ -81,13 +83,6 @@ export default function Home() {
         </View>
         <View pointerEvents="none" style={styles.heroOrb}><View style={styles.orbHalo} /><Orb size={70} /></View>
       </View>
-
-      {typeof window !== 'undefined' && <View style={styles.demoNotice}>
-        <View style={styles.demoIcon}><Text style={styles.demoIconText}>i</Text></View>
-        <View style={styles.demoCopy}><Text style={styles.demoTitle}>Sample preview</Text><Text style={styles.demoBody}>Changes and uploaded files are saved in this browser until you reset the preview. Please use fictional health and contact details only.</Text>
-          {confirmReset ? <View style={styles.resetConfirm}><Text style={styles.resetPrompt}>Reset this preview? Your changes and added files will be removed and the sample profile restored.</Text><Pressable accessibilityRole="button" accessibilityLabel="Reset preview and restore sample data" onPress={() => { resetDemo(); setConfirmReset(false); }}><Text style={styles.resetAction}>Reset preview</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setConfirmReset(false)}><Text style={styles.resetCancel}>Keep editing</Text></Pressable></View> : <Pressable accessibilityRole="button" accessibilityLabel="Reset preview" onPress={() => setConfirmReset(true)}><Text style={styles.resetLink}>Reset preview</Text></Pressable>}
-        </View>
-      </View>}
 
       <View style={styles.countStrip}>
         <Count value={topics.length} label="FOCUS AREAS" tint="#D9C9E8" ink={colors.violet} />
@@ -120,7 +115,7 @@ export default function Home() {
         return <TapScale key={item.id} reducedMotion={reducedMotion} onPress={() => { const treatment = treatments.find((record) => record.id === item.id); const visit = visits.find((record) => record.id === item.id); router.push(treatment ? { pathname: '/treatment', params: { treatmentId: treatment.id } } : visit ? { pathname: '/visits', params: { visitId: visit.id } } : '/(tabs)/health'); }} label={'Open ' + item.title + ' in history'} style={[styles.recentCard, index > 0 && styles.recentCardNext]}>
         <View style={styles.recentDate}><Text style={styles.recentDateDay}>{parseHealthDate(item.date)?.getDate() ?? '—'}</Text><Text style={styles.recentDateMonth}>{formatDate(item.date).split(' ')[1]?.toUpperCase() ?? ''}</Text></View>
         <View style={[styles.recentNode, { backgroundColor: tone.node, borderColor: tone.line, shadowColor: tone.accent }]}><Text style={styles.recentNodeGlyph}>{item.icon}</Text></View>
-        <View style={styles.recentText}><View style={styles.recentMeta}><Text style={[styles.recentType, { color: tone.accent }]}>{item.type.toUpperCase()}</Text><Text style={styles.recentMetaDot}>·</Text><Text style={styles.recentSource} numberOfLines={1}>{item.source}</Text></View><Text style={styles.recentTitle} numberOfLines={1}>{item.title}</Text><Text style={styles.recentDetail} numberOfLines={1}>{item.detail}</Text></View>
+        <View style={styles.recentText}><View style={styles.recentMeta}><Text style={[styles.recentType, { color: tone.accent }]}>{item.type.toUpperCase()}</Text><Text style={styles.recentMetaDot}>·</Text><Text style={styles.recentSource} numberOfLines={1}>{displaySource(item.source)}</Text></View><Text style={styles.recentTitle} numberOfLines={1}>{item.title}</Text><Text style={styles.recentDetail} numberOfLines={1}>{item.detail}</Text></View>
       </TapScale>;
       })}</View> : <View style={styles.emptyRecord}><Text style={styles.emptyRecordTitle}>Your history starts with one detail.</Text><Text style={styles.emptyRecordBody}>Add a health record or a note when you’re ready. It will appear with its date and source.</Text><Pressable accessibilityRole="button" onPress={() => router.push('/intake')}><Text style={styles.emptyRecordLink}>Add a record  →</Text></Pressable></View>}
 
@@ -154,8 +149,6 @@ const styles = StyleSheet.create({
   heroContent: { flex: 1, paddingRight: 74, zIndex: 1 }, heroKicker: { flexDirection: 'row', alignItems: 'center', gap: 7 }, heroDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#F0C3A7' }, heroKickerText: { color: '#F2D8D0', fontSize: 9, fontWeight: '800', letterSpacing: 1.15 },
   heroTitle: { color: colors.cream, fontSize: 25, lineHeight: 29, fontWeight: '400', letterSpacing: -.8, marginTop: 11 }, heroBody: { color: 'rgba(255,248,240,.82)', fontSize: 12, lineHeight: 17, marginTop: 7, maxWidth: 245 },
   heroAction: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start', paddingVertical: 5, paddingHorizontal: 9, marginTop: 10, borderRadius: 14, backgroundColor: colors.cream }, heroActionText: { color: colors.plum, fontSize: 11, fontWeight: '700' }, arrow: { color: colors.plum, fontSize: 16, lineHeight: 19 }, heroOrb: { position: 'absolute', right: 8, top: 39, width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }, orbHalo: { position: 'absolute', height: 88, width: 88, borderRadius: 44, borderWidth: 1, borderColor: 'rgba(255,248,240,.38)', backgroundColor: 'rgba(255,248,240,.10)' },
-  demoNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 14, backgroundColor: '#F1EDF5', borderWidth: 1, borderColor: '#E4DCEB', marginBottom: 13 },
-  demoIcon: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#DFD4EA', alignItems: 'center', justifyContent: 'center', marginTop: 1 }, demoIconText: { color: '#634C76', fontSize: 10, fontWeight: '700' }, demoCopy: { flex: 1 }, demoTitle: { color: '#4C3C5B', fontSize: 11, fontWeight: '700' }, demoBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 2 }, resetLink: { color: colors.cobalt, fontSize: 10, fontWeight: '700', marginTop: 4 }, resetConfirm: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6 }, resetPrompt: { color: colors.ink, fontSize: 10, flex: 1 }, resetAction: { color: '#A44D48', fontSize: 10, fontWeight: '700' }, resetCancel: { color: colors.muted, fontSize: 10, fontWeight: '600' },
   countStrip: { flexDirection: 'row', alignItems: 'center', borderRadius: 17, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingVertical: 11, marginBottom: 22, ...shadow }, countCell: { flex: 1, alignItems: 'center', gap: 2 }, countValue: { fontSize: 19, fontWeight: '500' }, countLabel: { color: colors.quiet, fontSize: 8, fontWeight: '700', letterSpacing: .45, textAlign: 'center' }, countRule: { height: 2, width: 19, borderRadius: 2, marginTop: 4 }, countDivider: { width: 1, height: 32, backgroundColor: colors.border },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }, eyebrow: { color: colors.violet, fontSize: 9, fontWeight: '800', letterSpacing: 1.25 }, sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: '500', letterSpacing: -.35, marginTop: 4 }, textLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingBottom: 2 }, textLinkText: { color: colors.cobalt, fontSize: 10, fontWeight: '700' },
   domainGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, marginBottom: 23 }, domainCardWrap: { width: '48%' }, domainCard: { width: '100%', minWidth: 0, minHeight: 92, paddingHorizontal: 12, paddingVertical: 11, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'space-between', gap: 8, ...shadow }, domainCardActive: { borderColor: '#D7D2DE', backgroundColor: colors.surface }, domainCardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, domainMark: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, domainDotSmall: { width: 10, height: 10, borderRadius: 5 }, domainText: { minWidth: 0 }, domainTitle: { color: colors.ink, fontSize: 14, lineHeight: 18, fontWeight: '700' }, domainDetail: { color: colors.muted, fontSize: 11, lineHeight: 15, marginTop: 3 }, domainCount: { color: '#777480', fontSize: 12, fontWeight: '700' },

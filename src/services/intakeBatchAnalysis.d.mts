@@ -1,6 +1,6 @@
 export type IntakeBatchFinding = {
   id: string;
-  kind: 'same_date_match' | 'possible_repeat' | 'same_date_difference';
+  kind: 'same_date_match' | 'possible_repeat' | 'same_date_difference' | 'date_uncertain_difference';
   label: string;
   unit: string | null;
   values: string[];

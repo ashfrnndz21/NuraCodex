@@ -53,7 +53,7 @@ const nullableString = (value, limit = 120) => typeof value === 'string' && valu
 
 const CONTEXT_DATE_KINDS = new Set(['report_date', 'collected_at', 'received_at', 'approved_at', 'issued_at', 'effective_period']);
 const CONTEXT_ENTITY_KINDS = new Set(['laboratory', 'provider', 'insurer', 'analyzer', 'technology']);
-const CONTEXT_NOTE_KINDS = new Set(['fasting_guidance', 'clinical_significance', 'clinical_decision_limits', 'remarks', 'sample_notice', 'other']);
+const CONTEXT_NOTE_KINDS = new Set(['fasting_guidance', 'clinical_significance', 'clinical_decision_limits', 'remarks', 'sample_notice', 'unresolved_self_report', 'other']);
 
 function contextItems(items, allowedKinds, maxItems, maxValueLength) {
   if (!Array.isArray(items)) return [];
@@ -79,7 +79,7 @@ export function createDocumentContext(input) {
     : null;
 }
 
-export function createSourceRecord({ profileId = DEMO_PROFILE_ID, displayName, mediaType, sizeBytes, sha256, state = 'selected', duplicateOfSourceId = null, documentContext = null }) {
+export function createSourceRecord({ profileId = DEMO_PROFILE_ID, displayName, mediaType, sizeBytes, sha256, origin = 'document_extraction', state = 'selected', duplicateOfSourceId = null, documentContext = null }) {
   const name = clean(displayName, 180).replace(/[\\/\0-\x1f]/g, '_');
   const mime = clean(mediaType, 100).toLowerCase();
   const hash = clean(sha256, 64).toLowerCase();
@@ -88,7 +88,7 @@ export function createSourceRecord({ profileId = DEMO_PROFILE_ID, displayName, m
   return {
     id: randomUUID(), schemaVersion: CONTRACT_VERSION, profileId: clean(profileId, 80),
     displayName: name, mediaType: mime, sizeBytes, sha256: hash,
-    origin: 'document_extraction', importedAt: new Date().toISOString(), state,
+    origin: origin === 'user_entered' ? 'user_entered' : 'document_extraction', importedAt: new Date().toISOString(), state,
     duplicateOfSourceId: duplicateOfSourceId || null, environment: 'local_demo', storage: 'device_original_only',
     documentContext: createDocumentContext(documentContext),
   };

@@ -44,7 +44,7 @@ export default function SignInScreen() {
       setChallenge(requestCode(channel, destination));
       setCode('');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Check the fictional preview details and try again.');
+      setError(caught instanceof Error ? caught.message : 'Check the sample details shown and try again.');
     }
   }
 
@@ -90,7 +90,7 @@ export default function SignInScreen() {
                 </View>
                 <Text style={styles.fieldLabel}>{channel === 'email' ? 'EMAIL ADDRESS' : 'MOBILE NUMBER'}</Text>
                 <TextInput
-                  accessibilityLabel={channel === 'email' ? 'Fictional preview email address' : 'Fictional preview mobile number'}
+                  accessibilityLabel={channel === 'email' ? 'Sample preview email address' : 'Sample preview mobile number'}
                   value={destination}
                   onChangeText={(value) => { setDestination(value); setError(''); }}
                   placeholder={channel === 'email' ? 'preview@nura.test' : '+1 555 555 0100'}
@@ -104,7 +104,7 @@ export default function SignInScreen() {
                 />
                 <View style={styles.notice}>
                   <Text style={styles.noticeMark}>i</Text>
-                  <Text style={styles.noticeText}>This is a fictional app preview. No email or text is sent, and this does not verify account ownership. Use only the sample details shown here.</Text>
+                  <Text style={styles.noticeText}>This sample sign-in does not send an email or text and does not verify account ownership. Use the sample details shown here.</Text>
                 </View>
                 <Pressable accessibilityRole="button" onPress={sendPreviewCode} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
                   <Text style={styles.primaryText}>CONTINUE</Text><Text style={styles.arrow}>→</Text>

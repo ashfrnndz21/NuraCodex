@@ -14,6 +14,7 @@ import { scopeProfileContext } from '../src/services/agentContextScope.mjs';
 import { registryBriefCitations, registryBriefDisplayText } from '../src/services/registryBrief.mjs';
 import { agentCitationTarget } from '../src/services/agentCitationNavigation.mjs';
 import { resolvePolicyReviewSourceIds, selectPolicyReviewFacts } from '../src/services/policyReviewScope.mjs';
+import { createAgentRunEventGate } from '../src/services/agentRunLifecycle.mjs';
 
 const C = {
   bg: brandScenes.atmosphere.base,
@@ -81,6 +82,8 @@ export default function Ask() {
   const [shareExternalSearch, setShareExternalSearch] = useState(false);
   const [sourceContextSnapshot, setSourceContextSnapshot] = useState<{ key: string; documents: NonNullable<AgentRunInput['context']['documentSources']> }>({ key: '', documents: [] });
   const initialQuestionSet = useRef(false);
+  const activeRunController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
   const context = typeof params.context === 'string' ? params.context : 'your saved health profile';
   const initialQuestion = typeof params.question === 'string' ? params.question : '';
   const coverageQuestion = /\b(insurance|policy|coverage|covered|copay|deductible|benefit|claim)\b/i.test(question);
@@ -166,6 +169,14 @@ export default function Ask() {
     return () => drift.stop();
   }, [ambientShift, reducedMotion]);
   useEffect(() => { if (initialQuestion && !initialQuestionSet.current) { initialQuestionSet.current = true; setQuestion(initialQuestion); } }, [initialQuestion]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      activeRunController.current?.abort();
+      activeRunController.current = null;
+    };
+  }, []);
   function startQuestion() { if (!question.trim() || busy) return; setError(''); setShareExternalSearch(false); setShareTreatments(false); setShareVisits(false); if (policyReviewMode) setSelectedHealthFactIds([]); setConsentOpen(true); }
   function animateSend(toValue: number) {
     if (reducedMotion || busy || !question.trim()) return;
@@ -178,6 +189,9 @@ export default function Ask() {
     setQuestion('');
     setAnswer(null); setSources([]); setTrace([]); setError(''); setProposalSaved(false); setRegistryBriefSaved(false); setRegistryBriefSaveError(''); setBusy(true);
     const runId = Crypto.randomUUID();
+    const controller = new AbortController();
+    const runGate = createAgentRunEventGate();
+    activeRunController.current = controller;
     setActiveRunId(runId);
     const userMessage = { runId, role: 'user' as const, text: cleanQuestion, citations: [], trace: [] };
     addAgentMessage(userMessage);
@@ -189,39 +203,61 @@ export default function Ask() {
     const previous = selectedHistory;
     try {
       await runNuraAgent({ runId, question: cleanQuestion, consentConfirmed: true, history: previous, externalSearchConsent: shareExternalSearch && !coverageQuestion, treatmentContextConsent: shareTreatments, visitContextConsent: shareVisits, sourceContextConsent: sourceContextSelected && linkedDocumentContexts.length > 0, context: { ...selectedContext, treatments: shareTreatments ? scopedContext.treatments : [], visits: shareVisits ? scopedContext.visits : [], documentSources: sourceContextSelected ? linkedDocumentContexts : [] } }, (event: AgentEvent) => {
-        if (event.type === 'trace') {
-          const item = { id: event.id, label: event.label, status: event.status, detail: event.detail };
-          runTrace = [...runTrace.filter((existing) => existing.id !== event.id), item];
+        if (!mounted.current || controller.signal.aborted) return;
+        const gated = runGate.receive(event);
+        if (gated.kind === 'ignored' || gated.kind === 'pending') {
+          if (gated.kind === 'pending') dispatchRunEvent('TEXT_MESSAGE_START');
+          return;
+        }
+        if (gated.kind === 'failed') {
+          finalAnswer = null;
+          setAnswer(null);
+          setSources([]);
+          setError(gated.message);
+          return;
+        }
+        if (gated.kind === 'complete') {
+          finalAnswer = gated.answer;
+          const cited = runSources.filter((source) => finalAnswer?.citations.includes(source.reference));
+          setSources(cited);
+          setAnswer(finalAnswer);
+          addAgentMessage({ runId, role: 'assistant', text: finalAnswer.answer, citations: cited, trace: runTrace.map((item) => ({ ...item, status: 'complete' })), coverageAssessments: finalAnswer.coverageAssessments });
+          dispatchRunEvent('RUN_FINISHED');
+          return;
+        }
+        const progressEvent = gated.event;
+        if (progressEvent.type === 'trace') {
+          const item = { id: progressEvent.id, label: progressEvent.label, status: progressEvent.status, detail: progressEvent.detail };
+          runTrace = [...runTrace.filter((existing) => existing.id !== progressEvent.id), item];
           setTrace(runTrace);
           if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        } else if (event.type === 'evidence') {
-          runSources = event.sources;
-          setSources(event.sources);
-        } else if (event.type === 'answer') {
-          finalAnswer = { answer: event.answer, citations: event.citations, unknowns: event.unknowns, nextSteps: event.nextSteps, coverageAssessments: event.coverageAssessments, memoryProposal: event.memoryProposal };
-          setAnswer(finalAnswer);
-          dispatchRunEvent('TEXT_MESSAGE_START');
-        } else if (event.type === 'run_finished') {
-          if (finalAnswer) {
-            const cited = runSources.filter((source) => finalAnswer?.citations.includes(source.reference));
-            addAgentMessage({ runId, role: 'assistant', text: finalAnswer.answer, citations: cited, trace: runTrace.map((item) => ({ ...item, status: 'complete' })), coverageAssessments: finalAnswer.coverageAssessments });
-          }
-          dispatchRunEvent('RUN_FINISHED');
-        } else if (event.type === 'run_error') {
-          setError(event.message);
-          dispatchRunEvent('RUN_ERROR');
+        } else if (progressEvent.type === 'evidence') {
+          runSources = progressEvent.sources;
+          setSources(progressEvent.sources);
         }
-      });
+      }, controller.signal);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'Nura could not complete this answer.';
-      setError(message);
-      dispatchRunEvent('RUN_ERROR');
+      const message = controller.signal.aborted
+        ? 'This run was stopped. You can try again when you’re ready.'
+        : caught instanceof Error ? caught.message : 'Nura could not complete this answer.';
+      runGate.cancel(message);
+      finalAnswer = null;
+      if (mounted.current) {
+        setAnswer(null);
+        setSources([]);
+        setError(message);
+        setQuestion(cleanQuestion);
+        dispatchRunEvent('RUN_ERROR');
+      }
     } finally {
-      setBusy(false);
-      const status = await getAgentStatus();
-      setService(status);
+      if (activeRunController.current === controller) activeRunController.current = null;
+      if (mounted.current) {
+        setBusy(false);
+        void getAgentStatus().then((status) => { if (mounted.current) setService(status); });
+      }
     }
   }
+  function stopCurrentRun() { activeRunController.current?.abort(); }
   function evidenceTarget(source: AgentSource): AgentCitationTarget {
     return agentCitationTarget(source, { facts, topics, links, treatments, visits, assets }) as AgentCitationTarget;
   }
@@ -271,18 +307,19 @@ export default function Ask() {
       {fileContext && !selectedAsset?.serverSourceId && <View style={s.fileNotice}><Text style={s.fileNoticeTitle}>THIS SOURCE HAS NOT BEEN REVIEWED</Text><Text style={s.fileNoticeBody}>Nura can’t answer from this file yet. Open its review, request extraction and decide which suggested details belong in your record.</Text></View>}
       {fileContext && selectedAsset?.serverSourceId && <View style={s.fileNotice}><Text style={s.fileNoticeTitle}>ASKING ABOUT THIS SAVED SOURCE</Text><Text style={s.fileNoticeBody}>Only details already linked to this report are in scope. The original file stays on your device; you choose whether to share saved report notes for this answer.</Text></View>}
       {!fileContext && agentMessages.length === 0 && !busy && <View style={s.welcome}><Text style={s.welcomeEyebrow}>YOUR RECORDS, IN CONTEXT</Text><Text style={s.welcomeTitle}>Let’s look at the whole picture.</Text><Text style={s.welcomeBody}>Ask about information you’ve saved. Nura will show which records it used and where it could not find an answer.</Text><View style={s.promptRow}><Pressable style={s.prompt} onPress={() => setQuestion('What information is in my health profile?')}><Text style={s.promptText}>What’s in my profile?</Text><Text style={s.promptArrow}>↗</Text></Pressable><Pressable style={s.prompt} onPress={() => setQuestion('What information is missing from my records?')}><Text style={s.promptText}>What’s missing?</Text><Text style={s.promptArrow}>↗</Text></Pressable></View></View>}
-      {agentMessages.map((message) => <View key={message.id} style={[s.message, message.role === 'user' ? s.userMessage : s.assistantMessage]}>
+      {agentMessages.filter((message) => !(answer && activeRunId && message.role === 'assistant' && message.runId === activeRunId)).map((message) => <View key={message.id} style={[s.message, message.role === 'user' ? s.userMessage : s.assistantMessage]}>
         <Text style={[s.messageLabel, message.role === 'user' && s.userMessageLabel]}>{message.role === 'user' ? 'YOU' : 'NURA'}</Text>
         <Text style={[s.messageText, message.role === 'user' && s.userMessageText]}>{message.role === 'assistant' ? registryBriefDisplayText(message.text) : message.text}</Text>
         {message.role === 'assistant' && message.coverageAssessments?.length ? <CoveragePanel assessments={message.coverageAssessments} sources={message.citations} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} /> : null}
         {message.role === 'assistant' && message.trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{message.trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
         {message.role === 'assistant' && message.citations.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES USED</Text>{message.citations.map((citation) => <EvidenceSourceCard key={citation.id} source={citation} target={evidenceTarget(citation)} onPress={() => openEvidenceSource(citation)} />)}</View>}
       </View>)}
-      {busy && <View style={s.liveCard}><View style={s.liveHeader}><Orb size={30} /><View style={{ flex: 1 }}><Text style={s.liveTitle}>{aiState === 'responding' ? 'Nura has an answer' : 'Nura is working with your records'}</Text><Text style={s.liveSub}>Live activity · only actions and evidence</Text></View></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><View style={[s.traceMark, item.status === 'complete' && s.traceMarkDone]}><Text style={[s.traceMarkText, item.status === 'complete' && s.traceMarkTextDone]}>{item.status === 'complete' ? '✓' : '·'}</Text></View><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail && <Text style={s.traceDetail}>{item.detail}</Text>}</View></View>)}</View>}
+      {busy && <View style={s.liveCard}><View style={s.liveHeader}><Orb size={30} /><View style={{ flex: 1 }}><Text style={s.liveTitle}>{aiState === 'responding' ? 'Nura is preparing an answer' : 'Nura is working with your records'}</Text><Text style={s.liveSub}>Live activity · only actions and evidence</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop this Ask Nura run" onPress={stopCurrentRun} style={s.stopRunButton}><Text style={s.stopRunText}>Stop</Text></Pressable></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><View style={[s.traceMark, item.status === 'complete' && s.traceMarkDone]}><Text style={[s.traceMarkText, item.status === 'complete' && s.traceMarkTextDone]}>{item.status === 'complete' ? '✓' : '·'}</Text></View><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail && <Text style={s.traceDetail}>{item.detail}</Text>}</View></View>)}</View>}
       {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><Text style={s.answerText}>{registryBriefDisplayText(answer.answer)}</Text>
         {answer.coverageAssessments !== undefined && <CoveragePanel assessments={answer.coverageAssessments} sources={sources} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} />}
-        {sources.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>EVIDENCE NURA CHECKED</Text>{sources.map((source) => <EvidenceSourceCard key={source.id} source={source} target={evidenceTarget(source)} onPress={() => openEvidenceSource(source)} />)}</View>}
-        {answer.unknowns.length > 0 && <View style={s.unknownBox}><Text style={s.unknownTitle}>{answer.coverageAssessments !== undefined ? 'POLICY DETAIL NOT SHOWN HERE' : 'WHAT YOUR PROFILE DOESN’T SHOW'}</Text>{answer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}</View>}
+        {!busy && trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
+        {sources.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES REVIEWED</Text>{sources.map((source) => <EvidenceSourceCard key={source.id} source={source} target={evidenceTarget(source)} onPress={() => openEvidenceSource(source)} />)}</View>}
+        {answer.unknowns.length > 0 && <View style={s.unknownBox}><Text style={s.unknownTitle}>{answer.coverageAssessments !== undefined ? 'POLICY DETAIL NOT SHOWN HERE' : 'NOT FOUND IN THIS REVIEW'}</Text>{answer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}{answer.coverageAssessments === undefined && <Text style={s.unknownScope}>This reflects only information selected for this answer. Other saved areas, files or records may not have been included.</Text>}</View>}
         {answer.nextSteps.length > 0 && <View style={s.nextBox}><Text style={s.nextTitle}>{answer.coverageAssessments !== undefined ? 'QUESTIONS TO CONFIRM WITH YOUR INSURER' : 'POSSIBLE NEXT STEP'}</Text>{answer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.nextText}>•  {item}</Text>)}</View>}
         {registryBriefMode && !busy && <View style={s.registrySave}><Text style={s.registrySaveTitle}>SAVE TO MEDICAL REGISTRY</Text><Text style={s.registrySaveBody}>This saves the answer, its stated unknowns and only the sources it cited. The summary will be marked out of date if linked records change.</Text>{registryBriefSaveError ? <Text style={s.registrySaveError}>{registryBriefSaveError}</Text> : null}<Pressable accessibilityRole="button" disabled={registryBriefSaved || registryBriefSaving || answer.citations.length === 0} onPress={() => void saveRegistrySummary()} style={[s.registrySaveButton, (registryBriefSaved || registryBriefSaving || answer.citations.length === 0) && { opacity: .5 }]}><Text style={s.registrySaveButtonText}>{registryBriefSaved ? 'SAVED TO MEDICAL REGISTRY' : registryBriefSaving ? 'SAVING ON THIS DEVICE…' : 'SAVE CITED SUMMARY'}</Text></Pressable></View>}
         {answer.memoryProposal && <View style={s.proposal}><Text style={s.proposalTitle}>NURA SUGGESTED A PROFILE UPDATE</Text><Text style={s.proposalText}>{answer.memoryProposal.label}: {answer.memoryProposal.value}</Text>{answer.memoryProposal.reason ? <Text style={s.proposalReason}>{answer.memoryProposal.reason}</Text> : null}<Pressable onPress={acceptMemoryProposal} disabled={proposalSaved} style={[s.proposalButton, proposalSaved && s.proposalSaved]}><Text style={[s.proposalButtonText, proposalSaved && s.proposalSavedText]}>{proposalSaved ? 'ADDED · CONFIRMED BY YOU' : 'REVIEW AND ADD TO MY PROFILE'}</Text></Pressable></View>}
@@ -311,10 +348,11 @@ type AgentCitationTarget = { kind: 'health'; focusId: string } | { kind: 'regist
 function EvidenceSourceCard({ source, target, onPress }: { source: AgentSource; target: AgentCitationTarget; onPress: () => void }) {
   const available = Boolean(target);
   const action = !target ? 'SOURCE UNAVAILABLE' : target.kind === 'external' ? 'OPEN SOURCE ↗' : target.kind === 'registry' ? 'OPEN HEALTH AREA ↗' : 'VIEW IN HISTORY ↗';
-  return <Pressable accessibilityRole="button" accessibilityState={{ disabled: !available }} accessibilityLabel={available ? 'Open cited source ' + source.title : 'Cited source unavailable: ' + source.title} disabled={!available} onPress={onPress} style={[s.citationCard, !available && s.citationCardUnavailable]}>
+  const displayTitle = source.id.startsWith('link:') ? source.title.replace(/Saved item/g, 'an item not included in this review') : source.title;
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled: !available }} accessibilityLabel={available ? 'Open cited source ' + displayTitle : 'Cited source unavailable: ' + displayTitle} disabled={!available} onPress={onPress} style={[s.citationCard, !available && s.citationCardUnavailable]}>
     <Text style={s.citationRef}>{source.reference}</Text>
     <View style={{ flex: 1 }}>
-      <Text style={s.citationTitle}>{source.title}</Text>
+      <Text style={s.citationTitle}>{displayTitle}</Text>
       <Text style={s.citationDetail}>{source.source}{source.date ? ' · ' + source.date : ''}</Text>
       {source.detail ? <Text numberOfLines={2} style={s.citationEvidence}>{source.detail}</Text> : null}
       <Text style={available ? s.citationOpen : s.citationUnavailable}>{action}</Text>
@@ -405,6 +443,8 @@ const s = StyleSheet.create({
 
   liveCard: { backgroundColor: C.surfaceRaised, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(242, 191, 165, 0.34)', padding: 13, marginTop: 12 },
   liveHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 7 },
+  stopRunButton: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255, 249, 246, 0.38)', paddingHorizontal: 12, paddingVertical: 7, backgroundColor: 'rgba(255, 249, 246, 0.10)' },
+  stopRunText: { color: C.ink, fontSize: 9, fontWeight: '700', letterSpacing: .25 },
   liveTitle: { color: C.ink, fontSize: 12, fontWeight: '600' },
   liveSub: { color: C.faint, fontSize: 8, marginTop: 3 },
   traceRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingVertical: 6 },
@@ -421,6 +461,7 @@ const s = StyleSheet.create({
   unknownBox: { backgroundColor: C.amber, padding: 10, borderRadius: 12, marginTop: 11 },
   unknownTitle: { color: C.amberInk, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
   unknownText: { color: C.ink, fontSize: 10, lineHeight: 15, marginTop: 5 },
+  unknownScope: { color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 7 },
   nextBox: { backgroundColor: C.bluePale, padding: 10, borderRadius: 12, marginTop: 9 },
   nextTitle: { color: C.blue, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
   nextText: { color: C.ink, fontSize: 10, lineHeight: 15, marginTop: 5 },

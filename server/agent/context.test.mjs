@@ -100,6 +100,25 @@ test('first profile synthesis retrieves all selected facts and topics rather tha
   assert.equal(evidence.sources().length, 12);
 });
 
+test('dangling relationship endpoints stay in the profile but never become Ask evidence', () => {
+  const links = [
+    { id: 'link-missing-target', from: 'topic:cholesterol', to: 'fact:deleted-record', relationType: 'related_by_me', label: 'Synthetic relationship note', createdAt: '2026-09-25' },
+    { id: 'link-missing-origin', from: 'fact:deleted-record', to: 'topic:cholesterol', relationType: 'related_by_me', label: 'Another synthetic relationship note', createdAt: '2026-09-25' },
+  ];
+  const context = { facts: [], topics: [{ id: 'cholesterol', label: 'Cholesterol' }], links, treatments: [], visits: [], documentSources: [] };
+  const evidence = createEvidenceTools(context);
+
+  const result = evidence.execute('search_profile', { query: 'cholesterol' });
+  const linkSources = evidence.sources().filter((source) => source.id.startsWith('link:'));
+
+  assert.deepEqual(result.results.map((source) => source.id), ['topic:cholesterol']);
+  assert.deepEqual(result.userAuthoredLinks, []);
+  assert.deepEqual(linkSources, []);
+  assert.equal(evidence.execute('get_saved_record', { recordId: 'link:link-missing-target' }).unavailable, true);
+  assert.equal(context.links.length, 2, 'unresolved user-created links remain unchanged in the profile context');
+  assert.deepEqual(context.links, links);
+});
+
 test('profile synthesis reports bounded omissions instead of implying omitted data is unknown', () => {
   const context = {
     facts: Array.from({ length: 40 }, (_, index) => ({

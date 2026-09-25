@@ -157,13 +157,19 @@ export function createEvidenceTools(context) {
       const from = link.from.startsWith('fact:') || link.from.startsWith('topic:') ? link.from : `fact:${link.from}`;
       const to = link.to.startsWith('fact:') || link.to.startsWith('topic:') ? link.to : `fact:${link.to}`;
       return ids.has(from) || ids.has(to);
-    }).map((link) => {
+    }).flatMap((link) => {
       const fromId = link.from.startsWith('fact:') || link.from.startsWith('topic:') ? link.from : `fact:${link.from}`;
       const toId = link.to.startsWith('fact:') || link.to.startsWith('topic:') ? link.to : `fact:${link.to}`;
-      const from = byId.get(fromId)?.title ?? 'Saved item';
-      const to = byId.get(toId)?.title ?? 'Saved item';
+      const fromRecord = byId.get(fromId);
+      const toRecord = byId.get(toId);
+      // A relationship is useful evidence only when both saved endpoints are
+      // present in this consent-scoped context. Keep the user's link in their
+      // profile, but never turn an unresolved endpoint into a citeable record.
+      if (!fromRecord || !toRecord) return [];
+      const from = fromRecord.title;
+      const to = toRecord.title;
       const source = issueReference({ id: `link:${link.id}`, title: `You linked ${from} to ${to}`, detail: `Your recorded association (${link.relationType.replaceAll('_', ' ')}): ${link.label}`, date: link.createdAt, source: 'Linked by you', status: 'user_authored', kind: 'user_link', category: 'Relationship' });
-      return { id: source.id, reference: source.reference, from, to, relationType: link.relationType, label: link.label, authoredBy: 'user', createdAt: link.createdAt };
+      return [{ id: source.id, reference: source.reference, from, to, relationType: link.relationType, label: link.label, authoredBy: 'user', createdAt: link.createdAt }];
     });
     return {
       results,

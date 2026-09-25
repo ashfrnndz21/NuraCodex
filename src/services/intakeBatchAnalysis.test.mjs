@@ -26,6 +26,17 @@ test('same field and date with different values is surfaced as a conflict', () =
   assert.deepEqual(findings[0].values, ['3.4', '4.1']);
 });
 
+test('different values with a missing source date are flagged for clarification, not called a conflict', () => {
+  const findings = analyzeIntakeBatch([
+    source('s1', 'Lab report', claim('c1', 'Total Cholesterol', '122', '2026-01-10', 'user_confirmed', 'mg/dL')),
+    source('s2', 'Follow-up report', claim('c2', 'Total cholesterol', '128', null, 'needs_review', 'mg/dL')),
+  ]);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].kind, 'date_uncertain_difference');
+  assert.deepEqual(findings[0].values, ['122', '128']);
+  assert.deepEqual(findings[0].eventDates, ['2026-01-10']);
+});
+
 test('same result on different or unknown dates is only a possible repeat', () => {
   const findings = analyzeIntakeBatch([
     source('s1', 'Earlier report', claim('c1', 'LDL Cholesterol', '3.4', '2026-01-10')),
@@ -46,10 +57,13 @@ test('different dated results remain a history sequence and rejected claims are 
   assert.deepEqual(findings, []);
 });
 
-test('incomplete dates and decimal-comma values are not misread as exact dates or numbers', () => {
+test('incomplete dates and decimal-comma values stay literal and request clarification', () => {
   const findings = analyzeIntakeBatch([
     source('s1', 'Year-only report', claim('c1', 'LDL Cholesterol', '34', '2026')),
     source('s2', 'Undated report', claim('c2', 'LDL Cholesterol', '3,4', '2026-01')),
   ]);
-  assert.equal(findings.length, 0);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].kind, 'date_uncertain_difference');
+  assert.deepEqual(findings[0].values, ['34', '3,4']);
+  assert.deepEqual(findings[0].eventDates, []);
 });

@@ -9,11 +9,12 @@ import { appendRegistryBrief } from './registryBriefPersistence.mjs';
 import { readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
 import { browserAssetUri, clearBrowserAssets, deleteBrowserAsset, saveBrowserAsset } from './browserAssetStore.mjs';
 import { validatePolicyReplacement } from '../services/policyReplacement.mjs';
+import { mergeHealthFeedItems } from '../services/feedDedupe.mjs';
 import { canonicalSourceFactValue } from '../services/sourceFactNormalization.mjs';
 
 export type HealthTopic = { id: string; label: string };
 export type IntakeAsset = { id: string; name: string; kind: 'image' | 'pdf' | 'video' | 'file'; uri: string; size?: number; mimeType?: string; purpose?: 'medical' | 'insurance'; serverSourceId?: string; possibleRepeat?: boolean; addedAt: string };
-export type HealthIntakeNote = { id: string; text: string; topicId?: string; topicLabel?: string; createdAt: string };
+export type HealthIntakeNote = { id: string; text: string; topicId?: string; topicLabel?: string; createdAt: string; serverSourceId?: string };
 export type HealthFact = { id: string; label: string; value: string; date: string; category: string; source: string; status: 'confirmed' | 'reviewed'; note?: string; sourceRunId?: string; sourceId?: string; sourceClaimId?: string; supersedesId?: string; reviewState?: 'user_confirmed' | 'user_retracted'; validFrom?: string; validUntil?: string | null; confidence?: number | null; permissionScope?: string };
 export type TreatmentStatus = 'current' | 'past';
 export type TreatmentRecord = { id: string; name: string; dose: string; schedule: string; purpose: string; prescriber: string; careLocation: string; pharmacy: string; status: TreatmentStatus; startedOn: string; endedOn?: string; source: string; sourceId?: string; createdAt: string; updatedAt: string };
@@ -56,7 +57,7 @@ type NuraState = {
   topics: HealthTopic[]; assets: IntakeAsset[]; intakeNotes: HealthIntakeNote[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[];
   updateProfile: (patch: Partial<Pick<NuraState, 'name' | 'birthday' | 'country' | 'email' | 'phone'>>) => void;
   commitProfileSetup: () => Promise<void>;
-  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; saveIntakeNote: (note: { id?: string; text: string; topicId?: string; topicLabel?: string }) => Promise<HealthIntakeNote>; commitIntakeNote: (id: string, text?: string) => Promise<HealthFact>; removeIntakeNote: (id: string) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => Promise<void>;
+  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; saveIntakeNote: (note: { id?: string; text: string; topicId?: string; topicLabel?: string }) => Promise<HealthIntakeNote>; linkIntakeNoteSource: (id: string, sourceId: string | null) => Promise<void>; commitIntakeNote: (id: string, text?: string) => Promise<HealthFact>; removeIntakeNote: (id: string) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => Promise<void>;
   reconcileSourceFactDate: (factId: string, sourceId: string, sourceClaimId: string, effectiveAt: string) => boolean;
   reconcileSourceFactValue: (factId: string, sourceId: string, sourceClaimId: string, expectedValue: string, normalizedValue: string) => Promise<boolean>;
   addTreatment: (input: TreatmentInput) => TreatmentRecord | null; updateTreatment: (id: string, patch: Partial<TreatmentInput>) => TreatmentRecord | null; markTreatmentPast: (id: string, endedOn?: string) => TreatmentRecord | null;
@@ -68,7 +69,7 @@ type NuraState = {
 const NuraContext = createContext<NuraState | null>(null);
 const DB_NAME = 'nura-private.db';
 const WEB_DEMO_KEY = 'nura-local-demo-v1';
-const DEMO_NOTE = 'Synthetic demo example · not your health information.';
+const DEMO_NOTE = 'Sample information for demonstration only.';
 const FILES = Platform.OS === 'web' ? null : new Directory(Paths.document, 'nura-health-files');
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 type BrowserDemoSnapshot = { version: 1; demoOnly: true; name: string; birthday: string; country: string; email: string; phone: string; topics: HealthTopic[]; assets: IntakeAsset[]; intakeNotes: HealthIntakeNote[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[] };
@@ -79,20 +80,19 @@ function demoSnapshot(): BrowserDemoSnapshot {
     // available in the demo, but they must never look like the user's choices.
     topics: [],
     intakeNotes: [],
-    assets: [{ id: 'demo-source-lab', name: 'Example blood test.pdf', kind: 'pdf', uri: 'demo://example-blood-test.pdf', mimeType: 'application/pdf', size: 128000, possibleRepeat: false, addedAt: '2026-09-12T09:00:00.000Z' }],
-    facts: [
-      { id: 'demo-fact-lab', label: 'Example blood test', value: 'Five values listed in a sample report', date: '2026-09-12T09:00:00.000Z', category: 'Lab results', source: 'Synthetic demo report · page 2', status: 'reviewed', note: DEMO_NOTE, reviewState: 'user_confirmed', validFrom: '2026-09-12T09:00:00.000Z', confidence: 1, permissionScope: 'demo_only' },
-      { id: 'demo-fact-care', label: 'Example clinic visit', value: 'Follow-up note from a sample visit', date: '2026-09-02T09:00:00.000Z', category: 'Care', source: 'Synthetic demo clinic note', status: 'reviewed', note: DEMO_NOTE, reviewState: 'user_confirmed', validFrom: '2026-09-02T09:00:00.000Z', confidence: 1, permissionScope: 'demo_only' },
-      { id: 'demo-fact-treatment', label: 'Example medicine entry', value: 'A sample medicine note, not a treatment instruction', date: '2026-08-18T09:00:00.000Z', category: 'Treatment', source: 'Synthetic demo medicine list', status: 'reviewed', note: DEMO_NOTE, reviewState: 'user_confirmed', validFrom: '2026-08-18T09:00:00.000Z', confidence: 1, permissionScope: 'demo_only' },
-    ],
-    treatments: [{ id: 'demo-treatment-01', name: 'Sample medicine', dose: 'Example 10 mg', schedule: 'Example · once daily', purpose: 'Sample treatment note', prescriber: 'Sample clinician', careLocation: 'Sample clinic', pharmacy: 'Sample pharmacy', status: 'current', startedOn: '2026-08-18', source: 'Synthetic demo medicine list', createdAt: '2026-08-18T09:00:00.000Z', updatedAt: '2026-08-18T09:00:00.000Z' }],
-    treatmentEvents: [{ id: 'demo-treatment-event-01', treatmentId: 'demo-treatment-01', kind: 'added', summary: 'Sample medicine added', snapshot: { id: 'demo-treatment-01', name: 'Sample medicine', dose: 'Example 10 mg', schedule: 'Example · once daily', purpose: 'Sample treatment note', prescriber: 'Sample clinician', careLocation: 'Sample clinic', pharmacy: 'Sample pharmacy', status: 'current', startedOn: '2026-08-18', source: 'Synthetic demo medicine list', createdAt: '2026-08-18T09:00:00.000Z', updatedAt: '2026-08-18T09:00:00.000Z' }, occurredAt: '2026-08-18T09:00:00.000Z' }],
+    assets: [],
+    // Keep the sample lab report out of the record seed: real extraction
+    // already creates source-linked results, so a generic summary here reads
+    // like a second copy of the same report.
+    facts: [],
+    treatments: [{ id: 'demo-treatment-01', name: 'Sample medicine', dose: 'Example 10 mg', schedule: 'Example · once daily', purpose: 'Sample treatment note', prescriber: 'Sample clinician', careLocation: 'Sample clinic', pharmacy: 'Sample pharmacy', status: 'current', startedOn: '2026-08-18', source: 'Sample medicine list', createdAt: '2026-08-18T09:00:00.000Z', updatedAt: '2026-08-18T09:00:00.000Z' }],
+    treatmentEvents: [{ id: 'demo-treatment-event-01', treatmentId: 'demo-treatment-01', kind: 'added', summary: 'Sample medicine added', snapshot: { id: 'demo-treatment-01', name: 'Sample medicine', dose: 'Example 10 mg', schedule: 'Example · once daily', purpose: 'Sample treatment note', prescriber: 'Sample clinician', careLocation: 'Sample clinic', pharmacy: 'Sample pharmacy', status: 'current', startedOn: '2026-08-18', source: 'Sample medicine list', createdAt: '2026-08-18T09:00:00.000Z', updatedAt: '2026-08-18T09:00:00.000Z' }, occurredAt: '2026-08-18T09:00:00.000Z' }],
     visits: [
-      { id: 'demo-visit-upcoming', appointmentAt: '2026-10-02T09:00:00.000Z', purpose: 'Sample cardiology follow-up', clinician: 'Sample care team', location: 'Sample clinic', status: 'upcoming', briefFactIds: ['demo-fact-lab'], briefAssetIds: ['demo-source-lab'], briefTreatmentIds: [], questions: ['What changed since my last blood test?'], outcome: '', followUp: '', outcomeSourceAssetIds: [], source: DEMO_NOTE, createdAt: '2026-09-20T09:00:00.000Z', updatedAt: '2026-09-20T09:00:00.000Z' },
-      { id: 'demo-visit-completed', appointmentAt: '2026-09-02T09:00:00.000Z', purpose: 'Sample clinic follow-up', clinician: 'Sample clinician', location: 'Sample clinic', status: 'completed', briefFactIds: ['demo-fact-care'], briefAssetIds: [], briefTreatmentIds: [], questions: [], outcome: 'Sample visit note. No clinician instructions were inferred.', followUp: 'Add a follow-up date when you know it.', followUpActions: [{ id: 'demo-follow-up-01', title: 'Sample: schedule the next clinic visit', dueOn: '2026-10-02', status: 'open', source: 'Synthetic demo follow-up · entered by you', sourceAssetIds: [], createdAt: '2026-09-02T10:05:00.000Z', updatedAt: '2026-09-02T10:05:00.000Z' }], outcomeSourceAssetIds: [], source: DEMO_NOTE, createdAt: '2026-09-02T10:00:00.000Z', updatedAt: '2026-09-02T10:00:00.000Z' },
+      { id: 'demo-visit-upcoming', appointmentAt: '2026-10-02T09:00:00.000Z', purpose: 'Sample cardiology follow-up', clinician: 'Sample care team', location: 'Sample clinic', status: 'upcoming', briefFactIds: [], briefAssetIds: [], briefTreatmentIds: [], questions: ['What changed since my last blood test?'], outcome: '', followUp: '', outcomeSourceAssetIds: [], source: DEMO_NOTE, createdAt: '2026-09-20T09:00:00.000Z', updatedAt: '2026-09-20T09:00:00.000Z' },
+      { id: 'demo-visit-completed', appointmentAt: '2026-09-02T09:00:00.000Z', purpose: 'Sample clinic follow-up', clinician: 'Sample clinician', location: 'Sample clinic', status: 'completed', briefFactIds: [], briefAssetIds: [], briefTreatmentIds: [], questions: [], outcome: 'Sample visit note. No clinician instructions were inferred.', followUp: 'Add a follow-up date when you know it.', followUpActions: [{ id: 'demo-follow-up-01', title: 'Sample: schedule the next clinic visit', dueOn: '2026-10-02', status: 'open', source: 'Sample follow-up note', sourceAssetIds: [], createdAt: '2026-09-02T10:05:00.000Z', updatedAt: '2026-09-02T10:05:00.000Z' }], outcomeSourceAssetIds: [], source: DEMO_NOTE, createdAt: '2026-09-02T10:00:00.000Z', updatedAt: '2026-09-02T10:00:00.000Z' },
     ],
     visitEvents: [],
-    links: [{ id: 'demo-link-lab-care', from: 'fact:demo-fact-lab', to: 'fact:demo-fact-care', relationType: 'happened_around', label: 'Sample records to compare', createdAt: '2026-09-12T10:00:00.000Z' }],
+    links: [],
     policyReplacements: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [],
   };
 }
@@ -145,6 +145,8 @@ async function getDatabase() {
     if (!briefColumns.some((column) => column.name === 'unknowns_json')) await db.execAsync("ALTER TABLE registry_briefs ADD COLUMN unknowns_json TEXT NOT NULL DEFAULT '[]'");
     const linkColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(health_links)');
     if (!linkColumns.some((column) => column.name === 'relation_type')) await db.execAsync("ALTER TABLE health_links ADD COLUMN relation_type TEXT NOT NULL DEFAULT 'user_note'");
+    const intakeNoteColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(health_intake_notes)');
+    if (!intakeNoteColumns.some((column) => column.name === 'server_source_id')) await db.execAsync('ALTER TABLE health_intake_notes ADD COLUMN server_source_id TEXT');
     return db;
   })();
   return dbPromise;
@@ -193,7 +195,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
         const loadedVisits = await db.getAllAsync<{ visit_json: string }>('SELECT visit_json FROM care_visits ORDER BY appointment_at DESC');
         const loadedVisitEvents = await db.getAllAsync<{ id: string; visit_id: string; kind: VisitEvent['kind']; summary: string; snapshot_json: string; occurred_at: string }>('SELECT id,visit_id,kind,summary,snapshot_json,occurred_at FROM care_visit_events ORDER BY occurred_at DESC');
         const loadedAssets = await db.getAllAsync<{ id: string; name: string; kind: IntakeAsset['kind']; uri: string; size: number | null; mime_type: string | null; added_at: string; purpose: 'medical' | 'insurance' | null; server_source_id: string | null }>('SELECT id,name,kind,uri,size,mime_type,added_at,purpose,server_source_id FROM assets ORDER BY added_at DESC');
-        const loadedIntakeNotes = await db.getAllAsync<HealthIntakeNote>('SELECT id,text,topic_id AS topicId,topic_label AS topicLabel,created_at AS createdAt FROM health_intake_notes ORDER BY created_at DESC');
+        const loadedIntakeNotes = await db.getAllAsync<HealthIntakeNote>('SELECT id,text,topic_id AS topicId,topic_label AS topicLabel,created_at AS createdAt,server_source_id AS serverSourceId FROM health_intake_notes ORDER BY created_at DESC');
         const loadedLinks = await db.getAllAsync<{ id: string; from_id: string; to_id: string; label: string; relation_type: HealthLinkRelation; created_at: string }>('SELECT id,from_id,to_id,label,relation_type,created_at FROM health_links ORDER BY created_at DESC');
         const loadedPolicyReplacements = await db.getAllAsync<{ id: string; newer_source_id: string; older_source_id: string; created_at: string }>('SELECT id,newer_source_id,older_source_id,created_at FROM policy_replacements ORDER BY created_at DESC');
         const loadedQuestions = await db.getAllAsync<{ question: string }>('SELECT question FROM questions ORDER BY added_at DESC');
@@ -421,11 +423,14 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     if (!text) throw new Error('Write a short description before saving it for review.');
     if (text.length > 2000) throw new Error('Keep your description under 2,000 characters.');
     const previous = input.id ? intakeNotes.find((note) => note.id === input.id) : undefined;
-    const note: HealthIntakeNote = { id: previous?.id ?? input.id ?? newId(), text, topicId: input.topicId?.trim() || undefined, topicLabel: input.topicLabel?.trim() || undefined, createdAt: previous?.createdAt ?? new Date().toISOString() };
+    const topicId = input.topicId?.trim() || undefined;
+    const topicLabel = input.topicLabel?.trim() || undefined;
+    const unchangedSource = previous?.text === text && previous?.topicId === topicId && previous?.topicLabel === topicLabel ? previous.serverSourceId : undefined;
+    const note: HealthIntakeNote = { id: previous?.id ?? input.id ?? newId(), text, topicId, topicLabel, createdAt: previous?.createdAt ?? new Date().toISOString(), serverSourceId: unchangedSource };
     if (Platform.OS !== 'web') {
       try {
         const db = await getDatabase();
-        await db.runAsync('INSERT INTO health_intake_notes (id,text,topic_id,topic_label,created_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET text=excluded.text,topic_id=excluded.topic_id,topic_label=excluded.topic_label', note.id, note.text, note.topicId ?? null, note.topicLabel ?? null, note.createdAt);
+        await db.runAsync('INSERT INTO health_intake_notes (id,text,topic_id,topic_label,created_at,server_source_id) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET text=excluded.text,topic_id=excluded.topic_id,topic_label=excluded.topic_label,server_source_id=excluded.server_source_id', note.id, note.text, note.topicId ?? null, note.topicLabel ?? null, note.createdAt, note.serverSourceId ?? null);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Your note could not be saved on this device.';
         setStorageError(message);
@@ -435,6 +440,15 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     setIntakeNotes((current) => [note, ...current.filter((item) => item.id !== note.id)]);
     return note;
   }, [intakeNotes]);
+  const linkIntakeNoteSource = useCallback(async (id: string, sourceId: string | null) => {
+    const note = intakeNotes.find((item) => item.id === id);
+    if (!note) throw new Error('This description is no longer available. Reopen it and try again.');
+    if (Platform.OS !== 'web') {
+      try { await getDatabase().then((db) => db.runAsync('UPDATE health_intake_notes SET server_source_id=? WHERE id=?', sourceId, id)); }
+      catch (error) { setStorageError(error instanceof Error ? error.message : 'The source link could not be saved on this device.'); throw new Error('The source link could not be saved. Reopen this description and try again.'); }
+    }
+    setIntakeNotes((current) => current.map((item) => item.id === id ? { ...item, serverSourceId: sourceId ?? undefined } : item));
+  }, [intakeNotes]);
   const commitIntakeNote = useCallback(async (id: string, editedText?: string) => {
     if (committingIntakeNotes.current.has(id)) throw new Error('This note is already being saved.');
     const pending = intakeNotes.find((note) => note.id === id);
@@ -442,7 +456,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     if (!pending || !value) throw new Error('This note is no longer available. Reopen the intake and try again.');
     committingIntakeNotes.current.add(id);
     const now = new Date().toISOString();
-    const fact: HealthFact = { id: newId(), label: pending.topicLabel ? `${pending.topicLabel} · your note` : 'Your health note', value, date: now, category: pending.topicLabel ?? 'Self-reported', source: 'Written by you', status: 'reviewed', note: 'Saved in your own words. The timeline date is when you added this note; an event date was not provided. This is not an AI interpretation or diagnosis.', reviewState: 'user_confirmed', validFrom: now, validUntil: null, confidence: null, permissionScope: 'profile_write' };
+    const fact: HealthFact = { id: newId(), label: pending.topicLabel ? `${pending.topicLabel} · your note` : 'Your health note', value, date: now, category: pending.topicLabel ?? 'Self-reported', source: 'Written by you', status: 'reviewed', sourceId: pending.serverSourceId, note: 'Saved in your own words. The timeline date is when you added this note; an event date was not provided. This is a user-written entry, not a clinical conclusion.', reviewState: 'user_confirmed', validFrom: now, validUntil: null, confidence: null, permissionScope: 'profile_write' };
     try {
       if (Platform.OS !== 'web') {
         const db = await getDatabase();
@@ -450,7 +464,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
           const removed = await db.runAsync('DELETE FROM health_intake_notes WHERE id=?', id);
           if (removed.changes !== 1) throw new Error('This note was already saved or removed.');
           await db.runAsync('INSERT INTO health_facts (id,label,value,date,category,source,status,note) VALUES (?,?,?,?,?,?,?,?)', fact.id, fact.label, fact.value, fact.date, fact.category, fact.source, fact.status, fact.note ?? null);
-          await db.runAsync('INSERT INTO memory_provenance (fact_id,source_run_id,review_state,valid_from,valid_until,confidence,permission_scope,source_id,source_claim_id,supersedes_fact_id) VALUES (?,?,?,?,?,?,?,?,?,?)', fact.id, null, 'user_confirmed', now, null, null, 'profile_write', null, null, null);
+          await db.runAsync('INSERT INTO memory_provenance (fact_id,source_run_id,review_state,valid_from,valid_until,confidence,permission_scope,source_id,source_claim_id,supersedes_fact_id) VALUES (?,?,?,?,?,?,?,?,?,?)', fact.id, null, 'user_confirmed', now, null, null, 'profile_write', fact.sourceId ?? null, null, null);
         });
       }
       setFacts((current) => [fact, ...current]);
@@ -570,12 +584,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     return { fileCleanupFailed };
   }, []);
   const mergeFeedItems = useCallback((incoming: Omit<HealthFeedItem, 'saved' | 'dismissed'>[]) => {
-    setFeedItems((current) => {
-      const existing = new Map(current.map((item) => [item.id, item]));
-      const next = incoming.map((item) => { const prior = existing.get(item.id); return { ...item, saved: prior?.saved ?? false, dismissed: prior?.dismissed ?? false }; });
-      for (const item of current) if (item.saved && !next.some((candidate) => candidate.id === item.id)) next.push(item);
-      return next;
-    });
+    setFeedItems((current) => mergeHealthFeedItems(current, incoming));
     if (Platform.OS !== 'web') void getDatabase().then(async (db) => db.withTransactionAsync(async () => {
       for (const item of incoming) await db.runAsync('INSERT INTO health_feed (id,title,detail,url,publisher,topic,retrieved_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,detail=excluded.detail,url=excluded.url,publisher=excluded.publisher,topic=excluded.topic,retrieved_at=excluded.retrieved_at', item.id, item.title, item.detail, item.url, item.publisher, item.topic, item.retrievedAt);
     })).catch((error) => setStorageError(String(error)));
@@ -597,7 +606,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     setName(snapshot.name); setBirthday(snapshot.birthday); setCountry(snapshot.country); setEmail(snapshot.email); setPhone(snapshot.phone);
     setTopics(snapshot.topics); setAssets(snapshot.assets); setIntakeNotes(snapshot.intakeNotes); setFacts(snapshot.facts); setTreatments(snapshot.treatments); setTreatmentEvents(snapshot.treatmentEvents); setVisits(snapshot.visits); setVisitEvents(snapshot.visitEvents); setLinks(snapshot.links); setPolicyReplacements(snapshot.policyReplacements); setFeedItems(snapshot.feedItems); setSavedQuestions(snapshot.savedQuestions); setAgentMessages(snapshot.agentMessages); setRegistryBriefs(snapshot.registryBriefs); setStorageError(null);
   }, []);
-  const value = useMemo<NuraState>(() => ({ ready, storageError, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, saveIntakeNote, commitIntakeNote, removeIntakeNote, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo }), [ready, storageError, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, saveIntakeNote, commitIntakeNote, removeIntakeNote, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo]);
+  const value = useMemo<NuraState>(() => ({ ready, storageError, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, saveIntakeNote, linkIntakeNoteSource, commitIntakeNote, removeIntakeNote, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo }), [ready, storageError, name, birthday, country, email, phone, topics, assets, intakeNotes, facts, treatments, treatmentEvents, visits, visitEvents, links, policyReplacements, feedItems, savedQuestions, agentMessages, registryBriefs, saveRegistryBrief, addAgentMessage, clearAgentMessages, clearAllLocalData, updateProfile, commitProfileSetup, toggleTopic, addFact, correctFact, retractFact, reconcileSourceFactDate, reconcileSourceFactValue, removeFact, addAssets, saveIntakeNote, linkIntakeNoteSource, commitIntakeNote, removeIntakeNote, attachSourceToAsset, addTreatment, updateTreatment, markTreatmentPast, addVisit, updateVisit, addLink, removeLink, addPolicyReplacement, removePolicyReplacement, mergeFeedItems, setFeedSaved, setFeedDismissed, addQuestion, resetDemo]);
   return <NuraContext.Provider value={value}>{children}</NuraContext.Provider>;
 }
 export function useNura() { const state = useContext(NuraContext); if (!state) throw new Error('useNura must be used inside NuraProvider'); return state; }

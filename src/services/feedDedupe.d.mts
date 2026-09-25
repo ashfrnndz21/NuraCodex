@@ -17,3 +17,8 @@ export type GroupedHealthFeedItem<T extends FeedItemForGrouping> = T & {
 };
 
 export declare function groupHealthFeedItems<T extends FeedItemForGrouping>(items: readonly T[]): GroupedHealthFeedItem<T>[];
+
+export declare function mergeHealthFeedItems<T extends FeedItemForGrouping>(
+  current: readonly T[],
+  incoming: readonly Omit<T, 'saved' | 'dismissed'>[],
+): T[];

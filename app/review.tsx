@@ -7,7 +7,7 @@ import { DocumentContextCard } from '../src/components/DocumentContextCard';
 import { useNura } from '../src/state/NuraContext';
 import type { IntakeAsset } from '../src/state/NuraContext';
 import { colors, radius } from '../src/theme';
-import { CandidateClaim, IntakeActivity, LocalSource, correctCandidate, decideCandidate, describeSourceLocation, extractPickedFile, formatVideoTimestamp, getSourceClaims, resolveIntakeMediaType, retractAcceptedCandidate, sourceMatchesAsset } from '../src/services/intakeClient';
+import { CandidateClaim, IntakeActivity, LocalSource, analyzeSelfReport, correctCandidate, decideCandidate, describeSourceLocation, extractPickedFile, formatVideoTimestamp, getSourceClaims, resolveIntakeMediaType, retractAcceptedCandidate, sourceMatchesAsset, sourceMatchesText } from '../src/services/intakeClient';
 import { findMisdatedAcceptedClaims, findMissingAcceptedClaims, findMissingRetractions } from '../src/services/sourceClaimReconciliation.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
 import { processIntakeBatch } from '../src/services/intakeBatch.mjs';
@@ -20,13 +20,14 @@ const supported = (asset: { name: string; mimeType?: string }) => Boolean(resolv
 type BatchSourceReview = { assetId: string; name: string; status: 'loading' | 'verified' | 'mismatch' | 'unavailable'; source?: LocalSource; claims: CandidateClaim[] };
 type StagedReviewDecision = { decision: 'accept' | 'edit' | 'reject'; editedValue?: { label: string; value: string; unit: string } };
 export default function Review() {
-  const params = useLocalSearchParams<{ purpose?: string; assetId?: string; sourceId?: string; claimId?: string; focusClaimId?: string }>();
+  const params = useLocalSearchParams<{ purpose?: string; assetId?: string; sourceId?: string; claimId?: string; focusClaimId?: string; firstRun?: string }>();
   const existingSourceId = typeof params.sourceId === 'string' ? params.sourceId : '';
   const requestedClaimId = typeof params.claimId === 'string' ? params.claimId : '';
   const focusClaimId = typeof params.focusClaimId === 'string' ? params.focusClaimId : '';
   const routeAssetId = typeof params.assetId === 'string' ? params.assetId : '';
   const purpose: 'medical' | 'insurance' = params.purpose === 'insurance' ? 'insurance' : 'medical';
-  const { ready, assets, intakeNotes, facts, addFact, correctFact, retractFact, reconcileSourceFactDate, attachSourceToAsset, saveIntakeNote, commitIntakeNote, removeIntakeNote } = useNura();
+  const firstRun = purpose === 'medical' && params.firstRun === 'true';
+  const { ready, assets, intakeNotes, facts, addFact, correctFact, retractFact, reconcileSourceFactDate, attachSourceToAsset, saveIntakeNote, linkIntakeNoteSource, commitIntakeNote, removeIntakeNote } = useNura();
   const readable = useMemo<IntakeAsset[]>(() => assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && supported(asset) && isReviewableIntakeAsset(asset, purpose)), [assets, purpose]);
   const linkedSourceAssets = useMemo(() => readable.filter((asset) => Boolean(asset.serverSourceId)), [readable]);
   const [selectedId, setSelectedId] = useState(typeof params.assetId === 'string' ? params.assetId : readable[0]?.id ?? '');
@@ -34,6 +35,9 @@ export default function Review() {
   const selectedAssetId = selected?.id ?? '';
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentAssetIds, setConsentAssetIds] = useState<string[]>([]);
+  const [selfReportConsentNoteId, setSelfReportConsentNoteId] = useState<string | null>(null);
+  const [selfReportConsentChecked, setSelfReportConsentChecked] = useState(false);
+  const [organizingNoteId, setOrganizingNoteId] = useState<string | null>(null);
   const [selectionChanged, setSelectionChanged] = useState(false);
   const [fileStates, setFileStates] = useState<Record<string, { status: 'queued' | 'reading' | 'complete' | 'failed' | 'cancelled'; detail?: string }>>({});
   const [busy, setBusy] = useState(false);
@@ -55,6 +59,10 @@ export default function Review() {
   const [discardNoteId, setDiscardNoteId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const sourceNote = existingSourceId ? intakeNotes.find((note) => note.serverSourceId === existingSourceId) : undefined;
+  const sourceFact = existingSourceId ? facts.find((fact) => fact.sourceId === existingSourceId && !fact.validUntil) : undefined;
+  const selfReportConsentNote = selfReportConsentNoteId ? intakeNotes.find((note) => note.id === selfReportConsentNoteId) : undefined;
+  const selfReportTextForSource = sourceNote?.text ?? sourceFact?.value ?? '';
   const sourceToOpen = !selectionChanged && existingSourceId && (!routeAssetId || selected?.id === routeAssetId)
     ? existingSourceId
     : selected?.serverSourceId ?? '';
@@ -73,24 +81,29 @@ export default function Review() {
 
   useEffect(() => {
     if (!sourceToOpen || !ready) return;
-    if (!selected) return;
+    if (!selected && !sourceNote && !sourceFact) return;
     let active = true;
     void getSourceClaims(sourceToOpen).then(async (result) => {
       if (!active) return;
-      const matchesOriginal = await sourceMatchesAsset(selected, result.source);
+      const matchesOriginal = selected
+        ? await sourceMatchesAsset(selected, result.source)
+        : result.source.origin === 'user_entered' && selfReportTextForSource.length > 0
+          ? await sourceMatchesText(selfReportTextForSource, result.source)
+          : false;
       if (!active) return;
       if (!matchesOriginal) {
-        if (selectedAssetId && selected.serverSourceId === result.source.id) await attachSourceToAsset(selectedAssetId, null);
+        if (selectedAssetId && selected?.serverSourceId === result.source.id) await attachSourceToAsset(selectedAssetId, null);
+        if (sourceNote?.serverSourceId === result.source.id) await linkIntakeNoteSource(sourceNote.id, null);
         if (!active) return;
         setSource(null); setClaims([]);
-        setError('These extracted details did not match the saved file, so Nura hid them. Review the original file again to create a correct match.');
+        setError(sourceNote || sourceFact ? 'This description no longer matches its saved source, so Nura hid the suggestions.' : 'These extracted details did not match the saved file, so Nura hid them. Review the original file again to create a correct match.');
         return;
       }
       if (!active) return;
-      if (selectedAssetId && selected.serverSourceId !== result.source.id) await attachSourceToAsset(selectedAssetId, result.source.id);
+      if (selectedAssetId && selected?.serverSourceId !== result.source.id) await attachSourceToAsset(selectedAssetId, result.source.id);
       if (!active) return;
       setSource(result.source); setClaims(result.claims);
-      setNotice('Opened the saved extraction for this file. The original was not sent again.');
+      setNotice(result.source.origin === 'user_entered' ? 'Opened the saved local organization of your description. No provider call was made.' : 'Opened the saved extraction for this file. The original was not sent again.');
       const requestedClaim = result.claims.find((claim) => claim.id === requestedClaimId && claim.evidenceState === 'user_confirmed');
       if (requestedClaim) {
         setDrafts((current) => ({ ...current, [requestedClaim.id]: { label: requestedClaim.label, value: requestedClaim.value, unit: requestedClaim.unit ?? '' } }));
@@ -100,7 +113,7 @@ export default function Review() {
       if (active) setError(caught instanceof Error ? caught.message : 'This source could not be opened.');
     });
     return () => { active = false; };
-  }, [sourceToOpen, requestedClaimId, selected, selectedAssetId, ready, attachSourceToAsset]);
+  }, [sourceToOpen, requestedClaimId, selected, selectedAssetId, ready, sourceNote, sourceFact, selfReportTextForSource, attachSourceToAsset, linkIntakeNoteSource]);
 
   useEffect(() => {
     if (!ready) return;
@@ -334,10 +347,61 @@ export default function Review() {
     if (!note || busy) return;
     setBusy(true); setError('');
     try {
-      await saveIntakeNote({ id: note.id, text: noteDrafts[note.id] ?? note.text, topicId: note.topicId, topicLabel: note.topicLabel });
+      const saved = await saveIntakeNote({ id: note.id, text: noteDrafts[note.id] ?? note.text, topicId: note.topicId, topicLabel: note.topicLabel });
+      if (!saved.serverSourceId) { setSource(null); setClaims([]); setActivity([]); }
+      setNoteDrafts((current) => { const next = { ...current }; delete next[note.id]; return next; });
       setEditingNoteId(null);
       setNotice('Your description is saved for review in your own words.');
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Your note could not be saved.'); }
+    finally { setBusy(false); }
+  }
+
+  function askToOrganizeSelfReport(noteId: string) {
+    if (busy || !intakeNotes.some((note) => note.id === noteId)) return;
+    setError(''); setNotice(''); setSelfReportConsentNoteId(noteId); setSelfReportConsentChecked(false);
+  }
+
+  async function organizeSelfReport(noteId: string) {
+    const note = intakeNotes.find((item) => item.id === noteId);
+    if (!note || busy || selfReportConsentNoteId !== noteId || !selfReportConsentChecked) return;
+    setSelfReportConsentNoteId(null); setSelfReportConsentChecked(false);
+    setBusy(true); setOrganizingNoteId(noteId); setError(''); setNotice(''); setClaims([]); setSource(null);
+    setActivity([{ id: `${noteId}:organizing`, label: 'Organizing your description on this device', status: 'started' }]);
+    try {
+      const result = await analyzeSelfReport({
+        noteId: note.id, text: note.text,
+        topic: note.topicId && note.topicLabel ? { id: note.topicId, label: note.topicLabel } : undefined,
+        consentForThisNote: true, syntheticDemoConfirmed: true,
+      });
+      await linkIntakeNoteSource(note.id, result.source.id);
+      setSource(result.source); setClaims(result.claims);
+      setActivity([
+        { id: `${noteId}:organizing`, label: 'Organized on the local preview service', status: 'complete' },
+        { id: `${noteId}:quotes`, label: `${result.claims.length} quoted suggestion${result.claims.length === 1 ? '' : 's'} checked`, status: 'complete' },
+      ]);
+      const unknownCount = result.source.documentContext?.notes.filter((item) => item.kind === 'unresolved_self_report').length ?? 0;
+      setNotice(result.claims.length
+        ? `${result.claims.length} suggestions are ready to review${unknownCount ? ` · ${unknownCount} passage${unknownCount === 1 ? '' : 's'} remain unclear` : ''}. Nothing is in your record until you approve and save it.`
+        : 'The local preview could not safely structure a detail from this description. It has not added anything to your record.');
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'The local description organizer could not complete this step.';
+      setError(message);
+      setActivity([{ id: `${noteId}:failed`, label: 'Local organization could not be completed', status: 'failed' }]);
+    } finally { setOrganizingNoteId(null); setBusy(false); }
+  }
+
+  async function openSavedSelfReport(note: { id: string; text: string; serverSourceId?: string }) {
+    if (!note.serverSourceId || busy) return;
+    setBusy(true); setError(''); setNotice(''); setClaims([]); setSource(null);
+    try {
+      const result = await getSourceClaims(note.serverSourceId);
+      if (result.source.origin !== 'user_entered' || !(await sourceMatchesText(note.text, result.source))) {
+        await linkIntakeNoteSource(note.id, null);
+        throw new Error('This description no longer matches its saved local source, so Nura hid the suggestions.');
+      }
+      setSource(result.source); setClaims(result.claims);
+      setNotice('Opened the saved local organization. It was not sent to an AI provider or processed again.');
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'This local source could not be opened.'); }
     finally { setBusy(false); }
   }
 
@@ -364,7 +428,28 @@ export default function Review() {
     <Pressable onPress={() => router.back()}><Text style={styles.back}>‹  Back</Text></Pressable>
     <View style={styles.heading}><Orb size={36} state={busy ? 'thinking' : 'idle'} /><View style={{ flex: 1 }}><Label>{purpose === 'insurance' ? 'YOUR POLICY · SOURCE REVIEW' : 'YOUR FILES · SOURCE REVIEW'}</Label><Text style={styles.title}>{purpose === 'insurance' ? 'Review policy terms.' : 'Read, then decide.'}</Text></View></View>
     <Text style={styles.intro}>{purpose === 'insurance' ? 'After you confirm, Nura will highlight stated policy terms and show their source. Use these details to prepare questions; they are not a coverage decision.' : 'Files are read only after you confirm. Review, edit or dismiss each suggestion. Your own description stays labeled as your words and is saved only when you choose.'}</Text>
-    {purpose === 'medical' && intakeNotes.length > 0 && <View style={styles.selfReportSection}><Label>YOUR WORDS · {intakeNotes.length} DESCRIPTION{intakeNotes.length === 1 ? '' : 'S'}</Label>{intakeNotes.map((note) => <Surface key={note.id} style={styles.selfReportCard}><View style={styles.selfReportHeader}><View style={{ flex: 1 }}><Text style={styles.selfReportTitle}>{note.topicLabel ? `${note.topicLabel} · your description` : 'Your health description'}</Text><Text style={styles.selfReportMeta}>Written by you · {new Date(note.createdAt).toLocaleDateString()}</Text></View><Text style={styles.selfReportState}>NEEDS YOUR REVIEW</Text></View>{editingNoteId === note.id ? <TextInput value={noteDrafts[note.id] ?? note.text} onChangeText={(text) => setNoteDrafts((current) => ({ ...current, [note.id]: text }))} multiline maxLength={2000} textAlignVertical="top" accessibilityLabel="Edit your health description" style={styles.selfReportInput} /> : <Text style={styles.selfReportText}>{noteDrafts[note.id] ?? note.text}</Text>}<Text style={styles.selfReportFoot}>Your description stays separate from extracted findings and is labelled as self-reported if you save it.</Text>{discardNoteId === note.id ? <View style={styles.selfReportConfirm}><Text style={styles.selfReportFoot}>Remove this unsaved description from the review queue?</Text><View style={styles.actions}><Pressable disabled={busy} onPress={() => void discardSelfReport(note.id)} style={styles.reject}><Text style={styles.actionText}>{busy ? 'Removing…' : 'Remove draft'}</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(null)} style={styles.edit}><Text style={styles.actionText}>Keep note</Text></Pressable></View></View> : <View style={styles.actions}>{editingNoteId === note.id ? <><Pressable disabled={busy} onPress={() => void saveSelfReportDraft(note.id)} style={styles.edit}><Text style={styles.actionText}>{busy ? 'Saving…' : 'Save changes'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setEditingNoteId(null); setNoteDrafts((current) => { const next = { ...current }; delete next[note.id]; return next; }); }} style={styles.reject}><Text style={styles.actionText}>Cancel</Text></Pressable></> : <><Pressable disabled={busy} onPress={() => addSelfReportToProfile(note.id)} style={styles.accept}><Text style={styles.actionOnText}>{notesToInclude[note.id] ? 'Included · Undo' : 'Include in save'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setNoteDrafts((current) => ({ ...current, [note.id]: note.text })); setEditingNoteId(note.id); }} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(note.id)} style={styles.reject}><Text style={styles.actionText}>Remove</Text></Pressable></>}</View>}</Surface>)}</View>}
+    {firstRun && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Your first health record review</Text><Text style={styles.noticeBody}>This approval covers the listed files only. Your written description remains separate. You can choose a separate local organization step for each description below.</Text></Surface>}
+    {purpose === 'medical' && intakeNotes.length > 0 && <View style={styles.selfReportSection}>
+      <Label>YOUR WORDS · {intakeNotes.length} DESCRIPTION{intakeNotes.length === 1 ? '' : 'S'}</Label>
+      {intakeNotes.map((note) => <Surface key={note.id} style={styles.selfReportCard}>
+        <View style={styles.selfReportHeader}><View style={{ flex: 1 }}><Text style={styles.selfReportTitle}>{note.topicLabel ? `${note.topicLabel} · your description` : 'Your health description'}</Text><Text style={styles.selfReportMeta}>Written by you · {new Date(note.createdAt).toLocaleDateString()}</Text></View><Text style={styles.selfReportState}>{note.serverSourceId ? 'SOURCE LINKED' : 'NEEDS YOUR REVIEW'}</Text></View>
+        {editingNoteId === note.id ? <TextInput value={noteDrafts[note.id] ?? note.text} onChangeText={(text) => setNoteDrafts((current) => ({ ...current, [note.id]: text }))} multiline maxLength={2000} textAlignVertical="top" accessibilityLabel="Edit your health description" style={styles.selfReportInput} /> : <Text style={styles.selfReportText}>{noteDrafts[note.id] ?? note.text}</Text>}
+        <Text style={styles.selfReportFoot}>Your description stays separate from extracted findings and is labelled as self-reported if you save it. The local organizer is a simple preview and does not call an AI provider.</Text>
+        {discardNoteId === note.id ? <View style={styles.selfReportConfirm}><Text style={styles.selfReportFoot}>Remove this unsaved description from the review queue?</Text><View style={styles.actions}><Pressable disabled={busy} onPress={() => void discardSelfReport(note.id)} style={styles.reject}><Text style={styles.actionText}>{busy ? 'Removing…' : 'Remove draft'}</Text></Pressable><Pressable disabled={busy} onPress={() => setDiscardNoteId(null)} style={styles.edit}><Text style={styles.actionText}>Keep note</Text></Pressable></View></View> : <View style={styles.actions}>
+          {editingNoteId === note.id ? <><Pressable disabled={busy} onPress={() => void saveSelfReportDraft(note.id)} style={styles.edit}><Text style={styles.actionText}>{busy ? 'Saving…' : 'Save changes'}</Text></Pressable><Pressable disabled={busy} onPress={() => { setEditingNoteId(null); setNoteDrafts((current) => { const next = { ...current }; delete next[note.id]; return next; }); }} style={styles.reject}><Text style={styles.actionText}>Cancel</Text></Pressable></> : <>
+            <Pressable disabled={busy} onPress={() => addSelfReportToProfile(note.id)} style={styles.accept}><Text style={styles.actionOnText}>{notesToInclude[note.id] ? 'Included · Undo' : 'Include in save'}</Text></Pressable>
+            <Pressable disabled={busy} onPress={() => { setNoteDrafts((current) => ({ ...current, [note.id]: note.text })); setEditingNoteId(note.id); }} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable>
+            <Pressable disabled={busy} onPress={() => setDiscardNoteId(note.id)} style={styles.reject}><Text style={styles.actionText}>Remove</Text></Pressable>
+          </>}
+        </View>}
+        {editingNoteId !== note.id && <View style={styles.selfReportActions}>
+          <Pressable accessibilityRole="button" disabled={busy || Boolean(noteDrafts[note.id])} onPress={() => note.serverSourceId ? void openSavedSelfReport(note) : askToOrganizeSelfReport(note.id)} style={[styles.primarySmall, (busy || Boolean(noteDrafts[note.id])) && styles.disabled]}>
+            <Text style={styles.primarySmallText}>{organizingNoteId === note.id ? 'Organizing locally…' : note.serverSourceId ? 'Open saved suggestions' : 'Organize this description locally'}</Text>
+          </Pressable>
+          <Text style={styles.selfReportFoot}>Uses simple local rules. Nothing is sent to an AI provider. Suggested details remain pending until you approve and save them.</Text>
+        </View>}
+      </Surface>)}
+    </View>}
     {readable.length > 0 ? <View style={styles.files}><Label>{purpose === 'insurance' ? 'POLICY FILES' : 'HEALTH FILES'} · {readable.length}</Label>{readable.map((asset) => { const run = fileStates[asset.id]; const status = run?.status === 'reading' ? 'Reading now' : run?.status === 'complete' || asset.serverSourceId ? 'Ready to review' : run?.status === 'failed' ? 'Needs another try' : run?.status === 'cancelled' ? 'Stopped' : 'Ready'; return <Pressable key={asset.id} disabled={busy} onPress={() => { setSelectionChanged(true); setSelectedId(asset.id); setSource(null); setClaims([]); setActivity([]); setNotice(''); setError(''); }}><Surface style={{ ...styles.file, ...(selected?.id === asset.id ? styles.fileSelected : {}) }}><Text style={styles.fileType}>{asset.kind.toUpperCase()}</Text><View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.fileName}>{asset.name}</Text><Text style={styles.fileSub}>{asset.kind === 'video' ? 'Up to 3 minutes · up to 6 timestamped moments' : asset.size ? `${Math.round(asset.size / 1024)} KB` : 'Ready for explicit review'} · {status}</Text>{run?.detail ? <Text numberOfLines={2} style={styles.fileSub}>{run.detail}</Text> : null}</View><Text style={styles.select}>{selected?.id === asset.id ? 'Selected' : 'Open'}</Text></Surface></Pressable>; })}</View> : null}
     {!readable.length && assets.length > 0 && <Surface style={styles.notice}><Text style={styles.noticeTitle}>{purpose === 'insurance' ? 'Choose a policy PDF or image' : 'Choose a supported health file'}</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'The Insurance Registry reads policy PDFs and images. Video files are not used for policy review.' : 'Nura can review PDFs, JPG, PNG and WebP images, and short MP4, MOV or WebM health videos.'}</Text></Surface>}
     {filesNeedingReview.length > 0 && <Pressable disabled={busy} onPress={() => { setError(''); setConsentOpen(true); setConsentAssetIds(filesNeedingReview.map((asset) => asset.id)); }} style={[styles.primary, busy && styles.disabled]}><View style={{ flex: 1 }}><Text style={styles.primaryText}>{busy ? 'Reviewing files…' : `Review ${filesNeedingReview.length === 1 ? 'file' : `all ${filesNeedingReview.length} files`} with Nura`}</Text><Text style={[styles.fileSub, { color: colors.violet }]}>One approval · each file gets its own source-linked review</Text></View><Text style={styles.arrow}>→</Text></Pressable>}
@@ -376,13 +461,14 @@ export default function Review() {
       {batchComparisonComplete && batchFindings.length === 0 && batchSourceReviews.every((item) => item.status === 'verified') ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>No exact overlaps found</Text><Text style={styles.noticeBody}>No repeated values for the same named detail and date, or same-date differences, were found across these extracted claims. Different wording or missing dates may still need your review.</Text></Surface> : null}
       {batchComparisonComplete && batchFindings.map((finding) => {
         const isConflict = finding.kind === 'same_date_difference';
-        const headline = isConflict ? 'Different values for the same date' : finding.kind === 'same_date_match' ? 'Possible repeat · same value and date' : 'Possible repeat · compare dates';
+        const dateNeedsReview = finding.kind === 'date_uncertain_difference';
+        const headline = isConflict ? 'Different values for the same date' : dateNeedsReview ? 'Different values · date needs checking' : finding.kind === 'same_date_match' ? 'Possible repeat · same value and date' : 'Possible repeat · compare dates';
         const when = finding.eventDates.length ? finding.eventDates.join(', ') : 'date not available';
         const values = finding.values.map((value) => `${value}${finding.unit ? ` ${finding.unit}` : ''}`).join(' / ');
         return <Surface key={finding.id} style={styles.batchFinding}>
-          <Text style={[styles.batchFindingTitle, isConflict && styles.batchConflictTitle]}>{headline}</Text>
+          <Text style={[styles.batchFindingTitle, (isConflict || dateNeedsReview) && styles.batchConflictTitle]}>{headline}</Text>
           <Text style={styles.batchFindingBody}>{finding.label} · {values} · {when}</Text>
-          <Text style={styles.batchFindingBody}>{isConflict ? 'Check the source passages and dates before deciding which value belongs in your history. Both suggestions remain separate.' : 'The same value appears in more than one file. Check the original reports before deciding whether these are the same event.'}</Text>
+          <Text style={styles.batchFindingBody}>{isConflict ? 'Check the source passages and dates before deciding which value belongs in your history. Both suggestions remain separate.' : dateNeedsReview ? 'The same detail has different values, and at least one source has no linked result date. Check the original reports and add a date before deciding whether these are separate results.' : 'The same value appears in more than one file. Check the original reports before deciding whether these are the same event.'}</Text>
           <View style={styles.batchSources}>{finding.sources.map((item) => {
             const asset = batchSourceReviews.find((review) => review.source?.id === item.id);
             return <Pressable key={item.id} disabled={!asset} onPress={() => { if (!asset) return; setSelectionChanged(true); setSelectedId(asset.assetId); setSource(null); setClaims([]); setActivity([]); setError(''); setNotice(`Opened ${asset.name} to compare its original source.`); }} style={styles.batchSourceButton}>
@@ -399,7 +485,23 @@ export default function Review() {
     {notice ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>Review update</Text><Text style={styles.noticeBody}>{notice}</Text></Surface> : null}
     {error ? <Surface style={styles.error}><Text style={styles.noticeTitle}>Could not complete this step</Text><Text style={styles.noticeBody}>{error}</Text></Surface> : null}
     {Boolean(existingSourceId && ready && !selected) && <Surface style={styles.error}><Text style={styles.noticeTitle}>Original file unavailable</Text><Text style={styles.noticeBody}>Nura couldn’t match this extraction to its saved original. The extracted details stay hidden until the original file is available.</Text></Surface>}
-    {source && <Surface style={styles.sourceCard}><Label>YOUR SOURCE</Label><Text style={styles.sourceName}>{source.displayName}</Text><Text style={styles.sourceSub}>Duplicate check complete · {new Date(source.importedAt).toLocaleDateString()}</Text>{claims.some((claim) => claim.evidenceState === 'user_confirmed') && <Text style={styles.sourceSub}>{missingAccepted.length ? `${missingAccepted.length} previously approved ${purpose === 'insurance' ? 'policy term' : 'detail'}${missingAccepted.length === 1 ? ' is' : 's are'} being reconnected to your registry.` : `${claims.filter((claim) => claim.evidenceState === 'user_confirmed').length} previously approved ${purpose === 'insurance' ? 'policy term' : 'detail'}${claims.filter((claim) => claim.evidenceState === 'user_confirmed').length === 1 ? ' is' : 's are'} linked to your registry.`}</Text>}{claims.some((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate') && <Text style={styles.sourceSub}>{claims.filter((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate').length} suggested {purpose === 'insurance' ? 'policy term' : 'detail'}{claims.filter((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate').length === 1 ? ' stays' : 's stay'} separate until you approve them.</Text>}<Text style={styles.sourceSub}>The original file remains saved on this device.</Text><DocumentContextCard context={source.documentContext} compact /></Surface>}
+    {source && <Surface style={styles.sourceCard}>
+      <Label>{source.origin === 'user_entered' ? 'YOUR DESCRIPTION' : 'YOUR SOURCE'}</Label>
+      <Text style={styles.sourceName}>{source.displayName}</Text>
+      <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Local organization · no AI provider was called' : `Duplicate check complete · ${new Date(source.importedAt).toLocaleDateString()}`}</Text>
+      {claims.some((claim) => claim.evidenceState === 'user_confirmed') && <Text style={styles.sourceSub}>{missingAccepted.length ? `${missingAccepted.length} previously approved ${purpose === 'insurance' ? 'policy term' : 'detail'}${missingAccepted.length === 1 ? ' is' : 's are'} being reconnected to your registry.` : `${claims.filter((claim) => claim.evidenceState === 'user_confirmed').length} previously approved ${purpose === 'insurance' ? 'policy term' : 'detail'}${claims.filter((claim) => claim.evidenceState === 'user_confirmed').length === 1 ? ' is' : 's are'} linked to your registry.`}</Text>}
+      {claims.some((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate') && <Text style={styles.sourceSub}>{claims.filter((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate').length} suggested {purpose === 'insurance' ? 'policy term' : 'detail'}{claims.filter((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate').length === 1 ? ' stays' : 's stay'} separate until you approve them.</Text>}
+      <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Your full description stays on this device. The local preview stores source metadata, quoted suggestions, and short quoted passages it could not organize.' : 'The original file remains saved on this device.'}</Text>
+      {source.origin === 'user_entered' ? <View style={styles.unknownPassages}>
+        {(source.documentContext?.notes ?? []).filter((item) => item.kind === 'unresolved_self_report').length > 0 ? <>
+          <Text style={styles.historyTitle}>STILL UNCLEAR · NOT ADDED AS FACTS</Text>
+          {(source.documentContext?.notes ?? []).filter((item) => item.kind === 'unresolved_self_report').map((item, index) => <View key={`${index}:${item.value}`} style={styles.unknownPassage}>
+            <Text style={styles.quote}>“{item.quote ?? item.value}”</Text>
+            <Text style={styles.sourceSub}>{item.value}</Text>
+          </View>)}
+        </> : <Text style={styles.sourceSub}>No passages were marked unclear by the local organizer.</Text>}
+      </View> : <DocumentContextCard context={source.documentContext} compact />}
+    </Surface>}
     {claims.map((claim) => {
       const draft = drafts[claim.id] ?? { label: claim.label, value: claim.value, unit: claim.unit ?? '' };
       const pending = claim.evidenceState === 'needs_review';
@@ -410,7 +512,7 @@ export default function Review() {
         <View style={styles.claimTop}><View style={{ flex: 1 }}><Text style={styles.claimLabel}>{claim.label}</Text><Text style={styles.claimValue}>{formatClaimValue(claim.value, claim.unit)}{claim.effectiveAt ? ` · ${claim.effectiveAt}` : ''}</Text>{(claim.referenceRange || claim.method) && <Text style={styles.claimMeta}>{[claim.referenceRange ? `Reference range ${claim.referenceRange}` : null, claim.method ? `Method ${claim.method}` : null].filter(Boolean).join(' · ')}</Text>}</View><Text style={[styles.state, accepted && styles.stateDone, retracted && styles.stateRemoved]}>{pending ? 'FOR REVIEW' : accepted ? purpose === 'insurance' ? 'IN POLICY RECORD' : 'IN YOUR RECORD' : retracted ? purpose === 'insurance' ? 'REMOVED FROM POLICY' : 'REMOVED FROM PROFILE' : 'DISMISSED'}</Text></View>
         {claim.id === focusClaimId && <Text style={styles.focusNotice}>OPENED FROM POLICY COMPARISON</Text>}
         {claim.sourceLocation.quote ? <Text style={styles.quote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · page ${claim.sourceLocation.page}` : typeof claim.sourceLocation.timestampSeconds === 'number' ? ` · video ${formatVideoTimestamp(claim.sourceLocation.timestampSeconds)}` : ''}</Text> : <Text style={styles.quote}>No source quote was found. Check the original before saving this detail.</Text>}
-        <Text style={styles.confidence}>AI confidence estimate {claim.confidence === null ? 'not available' : `${Math.round(claim.confidence * 100)}%`} · check against the original</Text>
+        <Text style={styles.confidence}>{source?.origin === 'user_entered' ? 'Local rule-based suggestion · check against your exact words' : `AI confidence estimate ${claim.confidence === null ? 'not available' : `${Math.round(claim.confidence * 100)}%`} · check against the original`}</Text>
         {pending && reviewDecisions[claim.id] && <Text style={styles.stagedHint}>{reviewDecisions[claim.id].decision === 'reject' ? 'Marked to dismiss when you save this review.' : 'Marked to add when you save this review. It is not in your registry yet.'}</Text>}
         {retracted && <View style={styles.retractedNote}><Text style={styles.retractedText}>{purpose === 'insurance' ? 'Removed from the Insurance Registry. The original policy file, source quote and review history remain available.' : 'Removed from your active profile. The original file, source quote and review history remain available.'}</Text></View>}
         {claim.originalExtraction && <View style={styles.versionHistory}><Text style={styles.historyTitle}>WHAT NURA FIRST READ</Text><Text style={styles.historyCopy}>{claim.originalExtraction.label}: {formatClaimValue(claim.originalExtraction.value, claim.originalExtraction.unit)} · kept with the source quote</Text></View>}
@@ -423,19 +525,31 @@ export default function Review() {
         {pending && editingId !== claim.id && (purpose !== 'insurance' || claim.kind === 'coverage_term') ? <View style={styles.actions}><Pressable disabled={busy} onPress={() => reviewClaim(claim, 'accept')} style={styles.accept}><Text style={styles.actionOnText}>{reviewDecisions[claim.id]?.decision === 'accept' ? 'Included in save' : purpose === 'insurance' ? 'Include policy term' : 'Include in save'}</Text></Pressable><Pressable disabled={busy} onPress={() => startEdit(claim)} style={styles.edit}><Text style={styles.actionText}>Edit</Text></Pressable><Pressable disabled={busy} onPress={() => reviewClaim(claim, 'reject')} style={styles.reject}><Text style={styles.actionText}>{reviewDecisions[claim.id]?.decision === 'reject' ? 'Dismiss on save' : 'Dismiss'}</Text></Pressable></View> : null}
       </Surface></View>;
     })}
-    {!assets.length && <Surface style={styles.notice}><Text style={styles.noticeTitle}>No file selected</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'Choose a policy PDF or image to review its stated terms.' : 'Choose a PDF, image or short health video to begin a source-linked review.'}</Text></Surface>}
-    <Pressable onPress={() => router.replace(purpose === 'insurance' ? '/insurance' : '/(tabs)/health')} style={styles.secondary}><Text style={styles.secondaryText}>{purpose === 'insurance' ? 'Open Insurance Registry' : 'Open my registry'}</Text><Text style={styles.arrow}>→</Text></Pressable>
-    <Text style={styles.footer}>Preview mode · Use fictional files only. A file is sent to the connected AI service only after you confirm. The service’s privacy practices apply. Please don’t upload real health records.</Text>
+    {!assets.length && !intakeNotes.length && <Surface style={styles.notice}><Text style={styles.noticeTitle}>No file or description selected</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'Choose a policy PDF or image to review its stated terms.' : 'Choose a PDF, image or short health video, or add a short description, to begin a source-linked review.'}</Text></Surface>}
+    <Pressable onPress={() => router.replace(purpose === 'insurance' ? '/insurance' : '/(tabs)/health')} style={styles.secondary}><Text style={styles.secondaryText}>{purpose === 'insurance' ? 'Open Insurance Registry' : firstRun ? 'View your health history' : 'Open my registry'}</Text><Text style={styles.arrow}>→</Text></Pressable>
+    {firstRun && <Pressable accessibilityRole="button" onPress={() => router.push('/profile-summary')} style={styles.firstRunSummary}><Text style={styles.firstRunSummaryText}>Review a profile summary with Nura · optional</Text></Pressable>}
+    <Text style={styles.footer}>Sample workspace · Use sample files only. Nura shares files with the connected AI service only after you approve. Its privacy terms apply; do not upload personal health records here.</Text>
   </ScrollView>
-  {consentOpen && <View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalEyebrow}>ONE APPROVAL · {consentFiles.length} FILE{consentFiles.length === 1 ? '' : 'S'}</Text><Text style={styles.modalTitle}>{purpose === 'insurance' ? 'Review these policy files?' : 'Review these health files?'}</Text><Text style={styles.modalBody}>{consentFiles.map((asset) => `• ${asset.name}`).join('\n')}{consentFiles.some((asset) => asset.kind === 'video') ? '\n\nFor video, Nura selects up to six still images from clips up to three minutes long. Video audio is not analyzed.' : ''}{'\n\nAfter you continue, each listed file is sent to the configured Nura AI service, one at a time. Each keeps its own source and suggestions. Nothing enters your registry unless you approve it. Preview mode · use fictional files only. The service’s privacy practices apply.'}</Text><Pressable onPress={() => void readSelectedBatch()} style={styles.primary}><Text style={styles.primaryText}>Approve and read {consentFiles.length} {consentFiles.length === 1 ? 'file' : 'files'}</Text><Text style={styles.arrow}>→</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={styles.cancel}><Text style={styles.secondaryText}>Not now</Text></Pressable></View></View>}
+  {consentOpen && <View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalEyebrow}>ONE APPROVAL · {consentFiles.length} FILE{consentFiles.length === 1 ? '' : 'S'}</Text><Text style={styles.modalTitle}>{purpose === 'insurance' ? 'Review these policy files?' : 'Review these health files?'}</Text><Text style={styles.modalBody}>{consentFiles.map((asset) => `• ${asset.name}`).join('\n')}{consentFiles.some((asset) => asset.kind === 'video') ? '\n\nFor video, Nura selects up to six still images from clips up to three minutes long. Video audio is not analyzed.' : ''}{'\n\nAfter you approve, each listed file is sent to the configured Nura AI service, one at a time. Each keeps its own source and suggestions. Nothing enters your registry unless you approve it. Sample workspace · use sample files only. The service’s privacy practices apply.'}</Text><Pressable onPress={() => void readSelectedBatch()} style={styles.primary}><Text style={styles.primaryText}>Approve and read {consentFiles.length} {consentFiles.length === 1 ? 'file' : 'files'}</Text><Text style={styles.arrow}>→</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={styles.cancel}><Text style={styles.secondaryText}>Not now</Text></Pressable></View></View>}
+  {selfReportConsentNote && <View style={styles.modalShade}><View style={styles.modal}>
+    <Text style={styles.modalEyebrow}>ONE DESCRIPTION · LOCAL PREVIEW</Text>
+    <Text style={styles.modalTitle}>Organize your words?</Text>
+    <Text style={styles.modalBody}>Nura will send this one description and its selected health area to the local demo service on this device. Simple text rules will look for details that appear clearly in your words; this is not live AI, medical interpretation, or advice. Your full description stays on this device. The demo saves source metadata, short quoted suggestions, and quoted passages it could not organize. Suggestions remain separate until you approve and save them. Use fictional sample information only.</Text>
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selfReportConsentChecked, disabled: busy }} disabled={busy} onPress={() => setSelfReportConsentChecked((checked) => !checked)} style={styles.consentCheckRow}>
+      <View style={[styles.consentBox, selfReportConsentChecked && styles.consentBoxChecked]}><Text style={styles.consentCheckMark}>{selfReportConsentChecked ? '✓' : ''}</Text></View>
+      <Text style={styles.consentCheckText}>I confirm this is fictional sample information and allow Nura to organize this one description on the local preview service.</Text>
+    </Pressable>
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled: !selfReportConsentChecked || busy, busy }} disabled={!selfReportConsentChecked || busy} onPress={() => void organizeSelfReport(selfReportConsentNote.id)} style={[styles.primary, (!selfReportConsentChecked || busy) && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Organizing locally…' : 'Allow and organize this description'}</Text><Text style={styles.arrow}>→</Text></Pressable>
+    <Pressable disabled={busy} onPress={() => { setSelfReportConsentNoteId(null); setSelfReportConsentChecked(false); }} style={styles.cancel}><Text style={styles.secondaryText}>Cancel</Text></Pressable>
+  </View></View>}
   </View>;
 }
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.bg }, content: { padding: 22, paddingTop: 38, paddingBottom: 50, maxWidth: 600, width: '100%', alignSelf: 'center' }, back: { color: colors.muted, fontSize: 15, marginBottom: 22 }, heading: { flexDirection: 'row', alignItems: 'center', gap: 9 }, title: { color: colors.text, fontSize: 27, fontWeight: '300', marginTop: 6 }, intro: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 13, marginBottom: 17 }, files: { marginTop: 3, marginBottom: 12 }, file: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: radius.md, marginTop: 8, gap: 10 }, fileSelected: { borderColor: colors.violet, borderWidth: 1.5 }, fileType: { color: colors.aqua, fontSize: 9, fontWeight: '700', borderColor: colors.border, borderWidth: 1, borderRadius: 9, padding: 8 }, fileName: { color: colors.text, fontSize: 12, fontWeight: '500' }, fileSub: { color: colors.quiet, fontSize: 10, marginTop: 3 }, select: { color: colors.violet, fontSize: 10, fontWeight: '600' }, notice: { marginTop: 12, borderColor: colors.border }, activity: { marginTop: 12, padding: 13 }, activityRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingTop: 9 }, activityMark: { color: colors.quiet, fontSize: 14, width: 18, textAlign: 'center' }, activityDone: { color: '#3B8863' }, activityFailed: { color: '#A55142' }, activityCancelled: { color: colors.muted }, activityText: { color: colors.muted, fontSize: 10, flex: 1 }, noticeTitle: { color: colors.text, fontSize: 13, fontWeight: '600' }, noticeBody: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }, stop: { alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: '#D9D2E2', backgroundColor: '#F8F5FA' }, stopPressed: { opacity: .78, transform: [{ scale: .98 }] }, stopText: { color: colors.violet, fontSize: 9, fontWeight: '700', letterSpacing: .55 }, error: { marginTop: 12, borderColor: '#E8BDB4', backgroundColor: '#FFF5F2' }, primary: { backgroundColor: '#E8E0FF', borderRadius: radius.pill, minHeight: 53, marginTop: 13, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, disabled: { opacity: .6 }, primaryText: { color: colors.ink, fontWeight: '600', fontSize: 13 }, arrow: { color: colors.ink, fontSize: 19 }, sourceCard: { marginTop: 13 }, sourceName: { color: colors.text, fontSize: 15, fontWeight: '600', marginTop: 8 }, sourceSub: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 }, claim: { marginTop: 10, padding: 14 }, claimTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, claimLabel: { color: colors.text, fontSize: 14, fontWeight: '600' }, claimValue: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 4 }, claimMeta: { color: colors.quiet, fontSize: 10, lineHeight: 15, marginTop: 4 }, state: { color: '#8B672E', backgroundColor: '#FFF1D8', overflow: 'hidden', borderRadius: 10, paddingVertical: 5, paddingHorizontal: 7, fontSize: 8, fontWeight: '700' }, stateDone: { color: '#33785A', backgroundColor: '#E1F2E9' }, stateRemoved: { color: '#675478', backgroundColor: '#F0EAF5' }, retractedNote: { marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: '#F5F0F7' }, retractedText: { color: '#675478', fontSize: 10, lineHeight: 15 }, retractConfirm: { marginTop: 10, padding: 11, borderRadius: 12, borderWidth: 1, borderColor: '#E7D9E8', backgroundColor: '#FBF7FC' }, retractConfirmText: { color: colors.muted, fontSize: 11, lineHeight: 16 }, removeConfirm: { flex: 1, borderRadius: 12, backgroundColor: '#F5E8E6', padding: 10, alignItems: 'center' }, removeConfirmText: { color: '#8E473C', fontSize: 11, fontWeight: '600' }, quote: { color: colors.muted, fontSize: 11, lineHeight: 16, fontStyle: 'italic', marginTop: 10 }, confidence: { color: colors.quiet, fontSize: 9, lineHeight: 14, marginTop: 7 }, actions: { flexDirection: 'row', gap: 7, marginTop: 12 }, accept: { flex: 1, borderRadius: 12, backgroundColor: '#DFF2EA', padding: 10, alignItems: 'center' }, edit: { flex: 1, borderRadius: 12, backgroundColor: '#F2EDF5', padding: 10, alignItems: 'center' }, reject: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 10, alignItems: 'center' }, actionOnText: { color: '#327457', fontSize: 11, fontWeight: '600' }, actionText: { color: colors.text, fontSize: 11, fontWeight: '600' }, editFields: { gap: 7, marginTop: 10 }, input: { color: colors.text, fontSize: 12, backgroundColor: '#F7F5F8', borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 9 }, primarySmall: { backgroundColor: colors.violet, borderRadius: 11, padding: 11, alignItems: 'center' }, primarySmallText: { color: '#FFF', fontSize: 11, fontWeight: '600' }, secondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, minHeight: 48, marginTop: 17, paddingHorizontal: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, secondaryText: { color: colors.text, fontWeight: '500', fontSize: 12 }, footer: { color: colors.quiet, fontSize: 9, lineHeight: 14, textAlign: 'center', marginTop: 12 }, modalShade: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end', backgroundColor: 'rgba(20,16,26,.45)' }, modal: { backgroundColor: colors.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 21, paddingTop: 24, paddingBottom: 28 }, modalEyebrow: { color: colors.violet, fontSize: 8, fontWeight: '700', letterSpacing: 1.2 }, modalTitle: { color: colors.text, fontSize: 21, fontWeight: '500', marginTop: 7 }, modalBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 9 }, cancel: { alignItems: 'center', padding: 12, marginTop: 4 },
-  selfReportSection: { marginTop: 12, marginBottom: 10 }, selfReportCard: { marginTop: 9, padding: 13, borderColor: '#CDBDD6', backgroundColor: '#FBF7FB' }, selfReportHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, selfReportTitle: { color: colors.text, fontSize: 13, fontWeight: '600' }, selfReportMeta: { color: colors.quiet, fontSize: 10, marginTop: 4 }, selfReportState: { color: '#8A6AA0', fontSize: 8, fontWeight: '700', letterSpacing: 0.5 }, selfReportText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 12 }, selfReportInput: { minHeight: 100, marginTop: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, padding: 11, fontSize: 12, lineHeight: 18 }, selfReportFoot: { color: colors.quiet, fontSize: 10, lineHeight: 15, marginTop: 9 }, selfReportConfirm: { marginTop: 10, padding: 10, borderRadius: 11, borderWidth: 1, borderColor: '#E7D9E8', backgroundColor: '#FBF7FC' },
+  selfReportSection: { marginTop: 12, marginBottom: 10 }, selfReportCard: { marginTop: 9, padding: 13, borderColor: '#CDBDD6', backgroundColor: '#FBF7FB' }, selfReportHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, selfReportTitle: { color: colors.text, fontSize: 13, fontWeight: '600' }, selfReportMeta: { color: colors.quiet, fontSize: 10, marginTop: 4 }, selfReportState: { color: '#8A6AA0', fontSize: 8, fontWeight: '700', letterSpacing: 0.5 }, selfReportText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 12 }, selfReportInput: { minHeight: 100, marginTop: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, padding: 11, fontSize: 12, lineHeight: 18 }, selfReportFoot: { color: colors.quiet, fontSize: 10, lineHeight: 15, marginTop: 9 }, selfReportConfirm: { marginTop: 10, padding: 10, borderRadius: 11, borderWidth: 1, borderColor: '#E7D9E8', backgroundColor: '#FBF7FC' }, selfReportActions: { marginTop: 5 }, unknownPassages: { marginTop: 12, padding: 10, borderRadius: 11, backgroundColor: '#F7F2F9', borderWidth: 1, borderColor: '#E6DDED' }, unknownPassage: { paddingTop: 7 }, consentCheckRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 17, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, consentBox: { width: 21, height: 21, borderRadius: 6, borderWidth: 1, borderColor: colors.violet, alignItems: 'center', justifyContent: 'center' }, consentBoxChecked: { backgroundColor: colors.violet }, consentCheckMark: { color: '#FFF', fontSize: 14, fontWeight: '700' }, consentCheckText: { color: colors.text, fontSize: 11, lineHeight: 16, flex: 1 },
   versionHistory: { marginTop: 9, padding: 10, borderRadius: 10, backgroundColor: '#F5F0FA', borderWidth: 1, borderColor: '#E6DDED' }, historyTitle: { color: colors.violet, fontSize: 8, fontWeight: '700', letterSpacing: .8 }, historyCopy: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
   focusedClaim: { borderColor: colors.violet, borderWidth: 2, backgroundColor: '#F8F1FA' }, focusNotice: { color: colors.violet, fontSize: 8, fontWeight: '800', letterSpacing: 0.7, marginTop: 9 }, stagedHint: { color: colors.violet, fontSize: 10, lineHeight: 15, marginTop: 6 },
-  batchAnalysis: { marginTop: 16, marginBottom: 8 }, batchIntro: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 7, marginBottom: 3 },
+  batchAnalysis: { marginTop: 16, marginBottom: 8 }, batchIntro: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 7, marginBottom: 3 }, firstRunSummary: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 5 }, firstRunSummaryText: { color: colors.violet, fontSize: 11, fontWeight: '600' },
   batchSave: { marginTop: 14, padding: 14, borderColor: '#CDBDD6', backgroundColor: '#FBF7FC' },
   batchFinding: { marginTop: 9, padding: 13, borderColor: '#D9C7A8', backgroundColor: '#FFFBF3' }, batchFindingTitle: { color: '#8B672E', fontSize: 12, fontWeight: '700' }, batchConflictTitle: { color: '#A34E43' }, batchFindingBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 6 },
   batchSources: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9 }, batchSourceButton: { borderRadius: 99, backgroundColor: colors.surfaceStrong, paddingHorizontal: 10, paddingVertical: 7 }, batchSourceText: { color: colors.violet, fontSize: 9, fontWeight: '600' },

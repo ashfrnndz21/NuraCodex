@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupHealthFeedItems } from './feedDedupe.mjs';
+import { groupHealthFeedItems, mergeHealthFeedItems } from './feedDedupe.mjs';
 
 function item(overrides = {}) {
   return {
@@ -60,4 +60,32 @@ test('marks a grouped entry dismissed only when all matching copies were dismiss
   assert.equal(groups.length, 1);
   assert.equal(groups[0].dismissed, false);
   assert.deepEqual(groups[0].activeIds, ['visible']);
+});
+
+test('keeps dismissed articles in a re-enterable hidden collection after a fresh search', () => {
+  const current = [
+    item({ id: 'hidden', dismissed: true }),
+    item({ id: 'saved', title: 'A saved article', url: 'https://cdc.gov/saved', saved: true }),
+    item({ id: 'stale', title: 'An old result', url: 'https://cdc.gov/stale' }),
+  ];
+  const incoming = [
+    item({ id: 'hidden', title: 'Updated title', retrievedAt: '2026-09-25T10:00:00.000Z' }),
+    item({ id: 'new', title: 'A new result', url: 'https://cdc.gov/new' }),
+  ];
+
+  const merged = mergeHealthFeedItems(current, incoming);
+  assert.deepEqual(merged.map((entry) => entry.id), ['hidden', 'new', 'saved']);
+  assert.equal(merged.find((entry) => entry.id === 'hidden').dismissed, true);
+  assert.equal(merged.find((entry) => entry.id === 'saved').saved, true);
+  assert.equal(merged.find((entry) => entry.id === 'stale'), undefined);
+  assert.equal(groupHealthFeedItems(merged).find((entry) => entry.id === 'hidden').dismissed, true);
+});
+
+test('restoring a hidden source makes it eligible for the For you view again', () => {
+  const restored = mergeHealthFeedItems([item({ id: 'hidden', dismissed: true })], [item({ id: 'hidden', dismissed: false })]);
+  const card = groupHealthFeedItems(restored)[0];
+  assert.equal(card.dismissed, true);
+
+  const afterRestore = restored.map((entry) => entry.id === 'hidden' ? { ...entry, dismissed: false } : entry);
+  assert.equal(groupHealthFeedItems(afterRestore)[0].dismissed, false);
 });

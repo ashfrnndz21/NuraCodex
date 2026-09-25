@@ -549,7 +549,7 @@ export default function ProfileSetup() {
     setError('');
     try {
       await commitProfileSetup();
-      router.push('/profile-summary');
+      router.push({ pathname: '/intake', params: { firstRun: 'true' } });
     } catch {
       setError('Nura couldn’t finish saving this profile on your device. Your details have not been sent. Please retry.');
     } finally {
@@ -705,7 +705,7 @@ export default function ProfileSetup() {
         {Platform.OS === 'web' ? (
           <View style={styles.browserPrivacy}>
             <View style={styles.browserPrivacyMark}><Text style={styles.browserPrivacyMarkText}>i</Text></View>
-            <Text style={styles.browserPrivacyText}>Fictional preview · Please use sample details and files only.</Text>
+            <Text style={styles.browserPrivacyText}>Sample app · Use sample details and files only.</Text>
           </View>
         ) : null}
         {step !== 'welcome' ? (

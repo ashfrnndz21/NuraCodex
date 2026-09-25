@@ -15,8 +15,8 @@ export function createPreviewIdentityAdapter({ now = Date.now } = {}) {
       : channel === 'phone' && normalized.replace(/[\s()-]/g, '') === PREVIEW_PHONE;
     if (!valid) {
       throw new Error(channel === 'email'
-        ? `Use the fictional preview address ${PREVIEW_EMAIL}. No message is sent.`
-        : `Use the fictional preview number +1 555 555 0100. No message is sent.`);
+        ? `Use the sample preview address ${PREVIEW_EMAIL}. No message is sent.`
+        : `Use the sample preview number +1 555 555 0100. No message is sent.`);
     }
     const createdAt = now();
     const challengeId = `preview-${createdAt}-${++sequence}`;

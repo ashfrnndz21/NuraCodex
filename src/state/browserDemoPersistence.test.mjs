@@ -34,6 +34,16 @@ test('browser demo snapshot restores an unsaved health description for review', 
   assert.deepEqual(readBrowserDemoSnapshot(storage, 'nura-demo', fallback).snapshot.intakeNotes, intakeNotes);
 });
 
+test('browser demo snapshot preserves saved and hidden reading across re-entry', () => {
+  const storage = memoryStorage();
+  const feedItems = [
+    { id: 'saved-reading', title: 'Saved source', saved: true, dismissed: false },
+    { id: 'hidden-reading', title: 'Hidden source', saved: false, dismissed: true },
+  ];
+  writeBrowserDemoSnapshot(storage, 'nura-demo', { ...fallback, feedItems });
+  assert.deepEqual(readBrowserDemoSnapshot(storage, 'nura-demo', fallback).snapshot.feedItems, feedItems);
+});
+
 test('an explicitly cleared empty workspace stays empty after refresh', () => {
   const storage = memoryStorage();
   writeBrowserDemoSnapshot(storage, 'nura-demo', fallback);
@@ -66,6 +76,51 @@ test('the untouched legacy sample seed clears its preselected focus bubbles but 
   assert.deepEqual(loaded.snapshot.topics, []);
   assert.deepEqual(loaded.snapshot.assets, nextFallback.assets);
   assert.deepEqual(loaded.snapshot.facts, nextFallback.facts);
+});
+
+test('migrates duplicate example rows without removing user-edited records or processed files', () => {
+  const storage = memoryStorage();
+  const sampleAsset = { id: 'demo-source-lab', name: 'Example blood test.pdf', uri: 'demo://example-blood-test.pdf' };
+  const linkedSampleAsset = { id: 'user-added-file', name: 'Follow-up report.pdf', uri: 'file:///follow-up-report.pdf', serverSourceId: 'saved-source' };
+  const duplicateCareFact = { id: 'demo-fact-care', label: 'Example clinic visit', value: 'Follow-up note from a sample visit', source: 'Synthetic demo clinic note', permissionScope: 'demo_only' };
+  const sampleLabFact = { id: 'demo-fact-lab', label: 'Example blood test', value: 'Five values listed in a sample report', date: '2026-09-12T09:00:00.000Z', category: 'Lab results', source: 'Synthetic demo report · page 2', status: 'reviewed', note: 'Synthetic demo example · not your health information.', reviewState: 'user_confirmed', validFrom: '2026-09-12T09:00:00.000Z', confidence: 1, permissionScope: 'demo_only' };
+  const userEditedFact = { id: 'user-edited-treatment', label: 'Example medicine entry', value: 'My corrected detail', source: 'Synthetic demo medicine list', permissionScope: 'demo_only' };
+  const untouchedDuplicate = { id: 'demo-fact-treatment', label: 'Example medicine entry', value: 'A sample medicine note, not a treatment instruction', source: 'Synthetic demo medicine list', permissionScope: 'demo_only' };
+  const sampleVisit = { id: 'demo-visit-completed', source: 'Synthetic demo example · not your health information.', briefFactIds: ['demo-fact-care'], briefAssetIds: ['demo-source-lab'], outcomeSourceAssetIds: ['demo-source-lab'], followUpActions: [{ id: 'demo-follow-up-01', source: 'Synthetic demo follow-up · entered by you' }] };
+  storage.setItem('nura-demo', JSON.stringify({
+    ...fallback,
+    assets: [sampleAsset, linkedSampleAsset],
+    facts: [duplicateCareFact, sampleLabFact, untouchedDuplicate, userEditedFact],
+    treatments: [{ id: 'demo-treatment-01', source: 'Synthetic demo medicine list' }],
+    treatmentEvents: [{ id: 'demo-treatment-event-01', snapshot: { source: 'Synthetic demo medicine list' } }],
+    visits: [sampleVisit],
+    links: [{ id: 'demo-link-lab-care', from: 'fact:demo-fact-lab', to: 'fact:demo-fact-care' }],
+  }));
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
+  assert.deepEqual(loaded.snapshot.assets, [linkedSampleAsset]);
+  assert.deepEqual(loaded.snapshot.facts, [userEditedFact]);
+  assert.deepEqual(loaded.snapshot.visits[0].briefFactIds, []);
+  assert.deepEqual(loaded.snapshot.visits[0].briefAssetIds, []);
+  assert.deepEqual(loaded.snapshot.visits[0].outcomeSourceAssetIds, []);
+  assert.equal(loaded.snapshot.visits[0].source, 'Sample information for demonstration only.');
+  assert.equal(loaded.snapshot.visits[0].followUpActions[0].source, 'Sample follow-up note');
+  assert.equal(loaded.snapshot.facts.some((fact) => fact.id === 'demo-fact-lab'), false);
+  assert.equal(loaded.snapshot.treatments[0].source, 'Sample medicine list');
+  assert.equal(loaded.snapshot.treatmentEvents[0].snapshot.source, 'Sample medicine list');
+  assert.deepEqual(loaded.snapshot.links, []);
+});
+
+test('legacy sample lab summary is kept when the person edited or linked it', () => {
+  const storage = memoryStorage();
+  const editedLabFact = { id: 'demo-fact-lab', label: 'Example blood test', value: 'My corrected result', date: '2026-09-12T09:00:00.000Z', category: 'Lab results', source: 'Sample lab report', status: 'reviewed', note: 'I edited this example.', reviewState: 'user_confirmed', validFrom: '2026-09-12T09:00:00.000Z', confidence: 1, permissionScope: 'demo_only' };
+  storage.setItem('nura-demo', JSON.stringify({
+    ...fallback,
+    facts: [editedLabFact],
+    links: [{ id: 'mine', from: 'fact:demo-fact-lab', to: 'topic:cholesterol', relationType: 'related_by_me', label: 'Compare these' }],
+  }));
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
+  assert.deepEqual(loaded.snapshot.facts, [editedLabFact]);
+  assert.equal(loaded.snapshot.links[0].id, 'mine');
 });
 
 test('legacy focus selections are preserved when the profile contains user edits', () => {

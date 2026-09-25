@@ -26,6 +26,36 @@ export function validatePolicyReplacement(newerSourceId, olderSourceId, policySo
   return { ok: true, reason: null };
 }
 
+/**
+ * Surface saved links whose accepted terms can no longer be compared. This
+ * describes local record availability only; it does not invalidate a user's
+ * replacement relationship or imply anything about coverage.
+ */
+export function resolvePolicyReplacementLinks(replacements, policies, savedSourceIds) {
+  const currentTermIds = new Set((policies ?? []).filter((policy) => (policy.currentTerms ?? []).length > 0).map((policy) => policy.sourceId));
+  const historyOnlyIds = new Set((policies ?? []).filter((policy) => !(policy.currentTerms ?? []).length && ((policy.previousTerms ?? []).length || (policy.removedTerms ?? []).length)).map((policy) => policy.sourceId));
+  const savedIds = new Set(savedSourceIds ?? []);
+  const statusFor = (sourceId) => {
+    if (currentTermIds.has(sourceId)) return 'current_terms';
+    if (historyOnlyIds.has(sourceId)) return 'history_only';
+    if (savedIds.has(sourceId)) return 'source_saved';
+    return 'source_unavailable';
+  };
+
+  return (replacements ?? []).map((link) => {
+    const newerStatus = statusFor(link.newerSourceId);
+    const olderStatus = statusFor(link.olderSourceId);
+    return {
+      id: link.id,
+      newerSourceId: link.newerSourceId,
+      olderSourceId: link.olderSourceId,
+      newerStatus,
+      olderStatus,
+      status: newerStatus === 'current_terms' && olderStatus === 'current_terms' ? 'ready' : 'needs_review',
+    };
+  });
+}
+
 function normalizedLabel(value) {
   return String(value ?? '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -77,8 +107,8 @@ function quantity(value) {
 
 /** Describe only numeric direction that is explicit in matched, single-entry terms. */
 export function summarizePolicyDifferences(rows) {
-  /** @type {{ sameCount: number; wordingCount: number; oneSidedCount: number; ambiguousCount: number; observations: { label: string; olderValue: string; newerValue: string; kind: 'higher_stated_cost' | 'lower_stated_cost' | 'higher_stated_amount' | 'lower_stated_amount' }[] }} */
-  const summary = { sameCount: 0, wordingCount: 0, oneSidedCount: 0, ambiguousCount: 0, observations: [] };
+  /** @type {{ sameCount: number; wordingCount: number; oneSidedCount: number; ambiguousCount: number; unlinkedCount: number; unlinkedLabels: string[]; observations: { label: string; olderValue: string; newerValue: string; kind: 'higher_stated_cost' | 'lower_stated_cost' | 'higher_stated_amount' | 'lower_stated_amount'; newerEvidence: { sourceId: string; claimId: string }; olderEvidence: { sourceId: string; claimId: string }; newerTerm: object; olderTerm: object }[] }} */
+  const summary = { sameCount: 0, wordingCount: 0, oneSidedCount: 0, ambiguousCount: 0, unlinkedCount: 0, unlinkedLabels: [], observations: [] };
   for (const row of rows ?? []) {
     if (row.status === 'same') { summary.sameCount += 1; continue; }
     if (row.status === 'ambiguous') { summary.ambiguousCount += 1; continue; }
@@ -87,6 +117,19 @@ export function summarizePolicyDifferences(rows) {
 
     const newerTerm = row.newerTerms?.length === 1 ? row.newerTerms[0] : null;
     const olderTerm = row.olderTerms?.length === 1 ? row.olderTerms[0] : null;
+    const newerEvidence = newerTerm?.sourceId && newerTerm?.sourceClaimId
+      ? { sourceId: newerTerm.sourceId, claimId: newerTerm.sourceClaimId }
+      : null;
+    const olderEvidence = olderTerm?.sourceId && olderTerm?.sourceClaimId
+      ? { sourceId: olderTerm.sourceId, claimId: olderTerm.sourceClaimId }
+      : null;
+    // A directional comparison is useful only when both values resolve to reviewed source claims.
+    // Keep unlinked numeric differences visible in the detailed comparison, but don't label a gain/cost.
+    if (!newerEvidence || !olderEvidence) {
+      summary.unlinkedCount += 1;
+      summary.unlinkedLabels.push(row.label);
+      continue;
+    }
     const newer = quantity(newerTerm?.value);
     const older = quantity(olderTerm?.value);
     const direction = /premium|copay|co-pay|deductible|co-?insurance|out[- ]of[- ]pocket|payment/i.test(row.label)
@@ -102,6 +145,10 @@ export function summarizePolicyDifferences(rows) {
       label: row.label,
       olderValue: olderTerm.value,
       newerValue: newerTerm.value,
+      newerEvidence,
+      olderEvidence,
+      newerTerm,
+      olderTerm,
       kind: direction === 'cost'
         ? newer.value > older.value ? 'higher_stated_cost' : 'lower_stated_cost'
         : newer.value > older.value ? 'higher_stated_amount' : 'lower_stated_amount',
