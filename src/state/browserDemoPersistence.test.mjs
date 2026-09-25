@@ -42,6 +42,32 @@ test('older version-one workspaces migrate with an empty policy relationship lis
   assert.equal(loaded.snapshot.name, '');
 });
 
+test('the untouched legacy sample seed clears its preselected focus bubbles but keeps sample records', () => {
+  const storage = memoryStorage();
+  const nextFallback = {
+    ...fallback,
+    assets: [{ id: 'demo-report', name: 'Example report.pdf' }],
+    facts: [{ id: 'demo-lab', label: 'Example blood test' }],
+  };
+  storage.setItem('nura-demo', JSON.stringify({
+    ...nextFallback,
+    topics: [{ id: 'bp-topic', label: 'Blood pressure' }, { id: 'cholesterol', label: 'Cholesterol' }],
+  }));
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', nextFallback);
+  assert.deepEqual(loaded.snapshot.topics, []);
+  assert.deepEqual(loaded.snapshot.assets, nextFallback.assets);
+  assert.deepEqual(loaded.snapshot.facts, nextFallback.facts);
+});
+
+test('legacy focus selections are preserved when the profile contains user edits', () => {
+  const storage = memoryStorage();
+  const selected = [{ id: 'bp-topic', label: 'Blood pressure' }, { id: 'cholesterol', label: 'Cholesterol' }];
+  storage.setItem('nura-demo', JSON.stringify({ ...fallback, name: 'Jordan Sample', topics: selected }));
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
+  assert.deepEqual(loaded.snapshot.topics, selected);
+  assert.equal(loaded.snapshot.name, 'Jordan Sample');
+});
+
 test('a malformed policy relationship field is rejected without rewriting the saved workspace', () => {
   const raw = JSON.stringify({ ...fallback, policyReplacements: 'not-a-list' });
   const storage = memoryStorage({ 'nura-demo': raw });

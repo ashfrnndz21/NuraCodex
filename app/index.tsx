@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
   Animated,
   Easing,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -29,8 +30,7 @@ type FocusArea = {
   ink: string;
   signals: Signal[];
 };
-type OnboardingStep = 'welcome' | 'identity' | 'today' | 'focus';
-type LiveSignal = { label: string; value: string; color: string; complete: boolean };
+type OnboardingStep = 'welcome' | 'identity' | 'focus';
 
 const palette = {
   canvas: brandScenes.atmosphere.base,
@@ -76,8 +76,8 @@ const domains = [
   { number: '06', title: 'Cover', detail: 'Insurance', color: '#E7C27A' },
 ];
 
-const stepOrder: OnboardingStep[] = ['welcome', 'identity', 'today', 'focus'];
-const stepNames = ['WELCOME', 'YOU', 'TODAY', 'FOCUS'];
+const stepOrder: OnboardingStep[] = ['welcome', 'identity', 'focus'];
+const stepNames = ['WELCOME', 'YOU', 'AREAS'];
 
 function ageFromBirthday(value: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
@@ -106,6 +106,7 @@ function PressScale({
   selected,
   onPress,
   style,
+  containerStyle,
   label,
   reducedMotion,
   floatMotion = false,
@@ -115,6 +116,7 @@ function PressScale({
   selected?: boolean;
   onPress: () => void;
   style: any;
+  containerStyle?: any;
   label: string;
   reducedMotion: boolean;
   floatMotion?: boolean;
@@ -139,7 +141,7 @@ function PressScale({
 
   const translateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
   return (
-    <Animated.View style={{ transform: [{ translateY }, { scale }] }}>
+    <Animated.View style={[containerStyle, { transform: [{ translateY }, { scale }] }]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -164,13 +166,19 @@ function MapNode({
   left,
   top,
   count,
+  compact = false,
+  width = 78,
   reducedMotion,
+  onPress,
 }: {
   area: FocusArea;
   left: number;
   top: number;
   count: number;
+  compact?: boolean;
+  width?: number;
   reducedMotion: boolean;
+  onPress: () => void;
 }) {
   const enter = useMemo(() => new Animated.Value(0.72), []);
   useEffect(() => {
@@ -179,13 +187,37 @@ function MapNode({
   }, [enter, reducedMotion]);
 
   return (
-    <Animated.View style={[styles.mapNode, { left, top, opacity: enter, transform: [{ scale: enter }] }]}>
-      <View style={[styles.mapNodeDot, { backgroundColor: area.color, shadowColor: area.color }]}>
-        <Text style={styles.mapNodeGlyph}>{area.label === 'Blood pressure' ? '↕' : area.label === 'Cholesterol' ? '◌' : area.label === 'Sleep' ? '☾' : area.label === 'Heart health' ? '♡' : area.label === 'Blood sugar' ? '⌁' : area.label === 'Medicines' ? '+' : '•'}</Text>
-      </View>
-      <Text numberOfLines={1} style={styles.mapNodeLabel}>{area.label}</Text>
-      {count > 0 ? <Text style={styles.mapNodeMeta}>{count} linked</Text> : null}
+    <Animated.View style={[styles.mapNode, compact && styles.mapNodeCompact, { left, top, width, opacity: enter, transform: [{ scale: enter }] }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={'Open ' + area.label + ' details, ' + count + ' selected'} accessibilityHint="Shows the details connected to this health area" onPress={onPress} style={styles.mapNodeButton}>
+        <View style={[styles.mapNodeDot, compact && styles.mapNodeDotCompact, { backgroundColor: area.color, borderColor: area.pale, shadowColor: area.color }]}>
+          <Text style={[styles.mapNodeGlyph, compact && styles.mapNodeGlyphCompact]}>{area.label === 'Blood pressure' ? '↕' : area.label === 'Cholesterol' ? '◌' : area.label === 'Sleep' ? '☾' : area.label === 'Heart health' ? '♡' : area.label === 'Blood sugar' ? '⌁' : area.label === 'Medicines' ? '+' : '•'}</Text>
+        </View>
+        <Text numberOfLines={compact ? 2 : 1} style={[styles.mapNodeLabel, compact && styles.mapNodeLabelCompact]}>{area.label}</Text>
+        {count > 0 ? <Text style={styles.mapNodeMeta}>{count} detail{count === 1 ? '' : 's'}</Text> : null}
+      </Pressable>
     </Animated.View>
+  );
+}
+
+function ProfileLink({ area, left, top, width, angle, reducedMotion, subtle = false }: {
+  area: FocusArea;
+  left: number;
+  top: number;
+  width: number;
+  angle: string;
+  reducedMotion: boolean;
+  subtle?: boolean;
+}) {
+  const reveal = useMemo(() => new Animated.Value(0), []);
+  useEffect(() => {
+    reveal.setValue(reducedMotion ? 1 : 0);
+    if (!reducedMotion) Animated.timing(reveal, { toValue: 1, delay: 70, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+  }, [reducedMotion, reveal]);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.mapLine, { left, top, width, backgroundColor: area.color + (subtle ? 'A0' : 'C8'), opacity: reveal, transform: [{ rotate: angle }, { scaleX: reveal }] }]}
+    />
   );
 }
 
@@ -197,7 +229,7 @@ function LiveProfileMap({
   treatments,
   assets,
   reducedMotion,
-  signals,
+  onAreaPress,
 }: {
   name: string;
   areas: FocusArea[];
@@ -206,40 +238,48 @@ function LiveProfileMap({
   treatments: { id: string }[];
   assets: { id: string }[];
   reducedMotion: boolean;
-  signals: LiveSignal[];
+  onAreaPress: (area: FocusArea) => void;
 }) {
   const [width, setWidth] = useState(320);
-  const visible = areas.slice(0, 4);
+  const visible = areas;
+  const expanded = visible.length > 4;
+  const columnWidth = width / 3;
   const centerX = width / 2;
-  const centerY = 66;
-  const slots = [
-    { left: 2, top: 4 },
-    { left: width - 82, top: 4 },
-    { left: 2, top: 88 },
-    { left: width - 82, top: 88 },
-  ];
+  const centerY = expanded ? 78 : 82;
+  const left = 2;
+  const right = width - 80;
+  const middle = centerX - 39;
+  const compactRows = Math.ceil(visible.length / 3);
+  const graphHeight = expanded ? 92 + compactRows * 78 : 185;
+  const slots = expanded
+    ? visible.map((_, index) => ({ left: (index % 3) * columnWidth, top: 92 + Math.floor(index / 3) * 78 }))
+    : visible.length < 2
+      ? [{ left: middle, top: 0 }]
+      : visible.length === 2
+        ? [{ left, top: 0 }, { left: right, top: 0 }]
+        : visible.length === 3
+          ? [{ left, top: 0 }, { left: right, top: 0 }, { left: middle, top: 127 }]
+          : [{ left, top: 0 }, { left: right, top: 0 }, { left, top: 127 }, { left: right, top: 127 }];
   const connectors = visible.map((area, index) => {
     const slot = slots[index];
-    const x2 = slot.left + 41;
-    const y2 = slot.top + 20;
+    const nodeWidth = expanded ? columnWidth : 78;
+    const nodeDiameter = expanded ? 36 : 42;
+    const x2 = slot.left + nodeWidth / 2;
+    const y2 = slot.top + nodeDiameter / 2;
     const dx = x2 - centerX;
     const dy = y2 - centerY;
     const length = Math.sqrt(dx * dx + dy * dy);
     const angle = Math.atan2(dy, dx) + 'rad';
     return (
-      <View
+      <ProfileLink
         key={'connection-' + area.id}
-        pointerEvents="none"
-        style={[
-          styles.mapLine,
-          {
-            left: centerX - length / 2,
-            top: centerY,
-            width: length,
-            backgroundColor: area.color + 'B0',
-            transform: [{ rotate: angle }],
-          },
-        ]}
+        area={area}
+        left={centerX - length / 2}
+        top={centerY}
+        width={length}
+        angle={angle}
+        subtle={expanded}
+        reducedMotion={reducedMotion}
       />
     );
   });
@@ -249,35 +289,29 @@ function LiveProfileMap({
     <View style={styles.mapCard}>
       <View style={styles.mapHeading}>
         <View>
-          <Text style={styles.eyebrow}>YOUR 720 PROFILE</Text>
-          <Text style={styles.mapTitle}>A living picture</Text>
+          <Text style={styles.eyebrow}>YOUR HEALTH MAP</Text>
+          <Text style={styles.mapTitle}>Your health, connected</Text>
         </View>
-        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>UPDATING AS YOU ADD</Text></View>
+        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>UPDATES WITH YOU</Text></View>
       </View>
-      <Text style={styles.mapSub}>Your entries take shape here. Focus areas are choices, not diagnoses.</Text>
-      <View style={styles.mapGraph} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+      <Text style={styles.mapSub}>{expanded ? `All ${visible.length} selected areas are shown. The map grows as you add more.` : 'Each area you choose joins your profile as a separate, color-coded connection.'}</Text>
+      <View style={[styles.mapGraph, { height: graphHeight }]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
         {connectors}
         {visible.map((area, index) => {
           const count = topics.filter((topic) => topic.id.startsWith(area.id + '::')).length;
           const slot = slots[index];
-          return <MapNode key={area.id} area={area} left={slot.left} top={slot.top} count={count} reducedMotion={reducedMotion} />;
+          return <MapNode key={area.id} area={area} left={slot.left} top={slot.top} width={expanded ? columnWidth : 78} compact={expanded} count={count} reducedMotion={reducedMotion} onPress={() => onAreaPress(area)} />;
         })}
-        <View style={styles.mapOrbRing}><Orb size={38} state="idle" /></View>
-        <Text numberOfLines={1} style={styles.mapYou}>{name.trim() || 'You'}</Text>
-        {areas.length === 0 ? <Text style={styles.mapEmpty}>Your first connection appears when you choose a focus.</Text> : null}
-        {areas.length > 4 ? <Text style={styles.mapMore}>+{areas.length - 4} more</Text> : null}
+        <View style={[styles.mapOrbRing, expanded && styles.mapOrbRingExpanded]}><Orb size={expanded ? 34 : 40} state="idle" /></View>
+        <Text numberOfLines={1} style={[styles.mapYou, expanded && styles.mapYouExpanded]}>{name.trim() || 'Your profile'}</Text>
+        {areas.length === 0 ? <Text style={styles.mapEmpty}>Choose an area to add your first connection.</Text> : null}
       </View>
-      {signals.length > 0 ? (
-        <View style={styles.liveSignalRow}>
-          {signals.map((signal, index) => <LiveMapSignalChip key={signal.label} signal={signal} index={index} reducedMotion={reducedMotion} />)}
-        </View>
-      ) : null}
       <View style={styles.mapStats}>
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(areas.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>AREAS</Text></View>
+        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(areas.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>AREAS CHOSEN</Text></View>
         <View style={styles.mapStatRule} />
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(detailCount + facts.filter((fact) => !fact.validUntil).length + treatments.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>DETAILS</Text></View>
+        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(detailCount).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>DETAILS CHOSEN</Text></View>
         <View style={styles.mapStatRule} />
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(assets.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>RECORDS</Text></View>
+        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(assets.length + facts.filter((fact) => !fact.validUntil).length + treatments.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>SAVED ITEMS</Text></View>
       </View>
     </View>
   );
@@ -287,21 +321,23 @@ function FocusBubble({
   area,
   diameter,
   selected,
-  label,
   index,
+  open,
   reducedMotion,
   onPress,
 }: {
   area: FocusArea;
   diameter: number;
   selected: boolean;
-  label: string;
   index: number;
+  open: boolean;
   reducedMotion: boolean;
   onPress: () => void;
 }) {
   const scale = useMemo(() => new Animated.Value(1), []);
   const drift = useMemo(() => new Animated.Value(0), []);
+  const selectedProgress = useMemo(() => new Animated.Value(0), []);
+  const activeProgress = useMemo(() => new Animated.Value(0), []);
   useEffect(() => {
     if (reducedMotion) {
       drift.setValue(0);
@@ -315,14 +351,31 @@ function FocusBubble({
     loop.start();
     return () => loop.stop();
   }, [drift, index, reducedMotion]);
+  useEffect(() => {
+    if (reducedMotion) selectedProgress.setValue(selected ? 1 : 0);
+    else Animated.spring(selectedProgress, { toValue: selected ? 1 : 0, speed: 22, bounciness: 5, useNativeDriver: true }).start();
+  }, [reducedMotion, selected, selectedProgress]);
+  useEffect(() => {
+    if (reducedMotion) activeProgress.setValue(open ? 1 : 0);
+    else Animated.spring(activeProgress, { toValue: open ? 1 : 0, speed: 24, bounciness: 3, useNativeDriver: true }).start();
+  }, [activeProgress, open, reducedMotion]);
   const y = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
-  const colors: [string, string] = selected ? [area.color, area.ink] : ['rgba(255,255,255,.13)', 'rgba(205,183,228,.10)'];
+  const haloOpacity = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.8] });
+  const haloScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [0.84, 1.08] });
+  const activeHaloOpacity = activeProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.9] });
+  const activeHaloScale = activeProgress.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.17] });
+  const selectedScale = selectedProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
+  const bubbleScale = Animated.multiply(scale, selectedScale);
+  const colors: [string, string] = selected ? [area.color + 'E8', area.ink] : [area.color + '55', 'rgba(255,255,255,.12)'];
+  const glyph = area.id === 'bp-topic' ? '↕' : area.id === 'cholesterol' ? '◌' : area.id === 'sleep' ? '☾' : area.id === 'heart' ? '♡' : area.id === 'sugar' ? '⌁' : area.id === 'medicines' ? '+' : area.id === 'family' ? '⌂' : area.id === 'joints' ? '↗' : '＋';
 
   return (
-    <Animated.View style={[styles.focusBubblePosition, { width: diameter, height: diameter, transform: [{ translateY: y }, { scale }] }]}>
+      <Animated.View style={[styles.focusBubblePosition, { width: diameter, height: diameter, transform: [{ translateY: y }, { scale: bubbleScale }] }]}>
+      <Animated.View pointerEvents="none" style={[styles.focusBubbleHalo, { borderColor: area.color, opacity: haloOpacity, transform: [{ scale: haloScale }] }]} />
+      <Animated.View pointerEvents="none" style={[styles.focusBubbleActiveHalo, { borderColor: area.pale, opacity: activeHaloOpacity, transform: [{ scale: activeHaloScale }] }]} />
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={label + (selected ? ', selected' : '')}
+        accessibilityLabel={area.label + (selected ? ', selected' : ', not selected') + (open ? ', details open' : '')}
         accessibilityState={{ selected }}
         onPress={onPress}
         onPressIn={() => {
@@ -343,120 +396,17 @@ function FocusBubble({
               width: diameter,
               height: diameter,
               borderRadius: diameter / 2,
-              borderColor: selected ? area.pale : 'rgba(255,255,255,.28)',
+              borderColor: selected ? area.pale : area.color + 'B0',
               shadowColor: area.color,
-              shadowOpacity: selected ? 0.46 : 0.14,
+              shadowOpacity: selected ? 0.42 : 0.16,
             },
           ]}
         >
-          <Text numberOfLines={3} style={[styles.focusBubbleText, selected && styles.focusBubbleTextSelected]}>{label}</Text>
-          {selected ? <Text style={styles.focusCheck}>✓</Text> : null}
+          <Text style={[styles.focusBubbleGlyph, { color: selected ? '#FFFFFF' : area.pale }]}>{glyph}</Text>
+          <Text numberOfLines={3} style={[styles.focusBubbleText, selected && styles.focusBubbleTextSelected]}>{area.label}</Text>
+          {selected ? <View style={[styles.focusCheckBadge, { backgroundColor: area.pale }]}><Text style={[styles.focusCheck, { color: area.ink }]}>✓</Text></View> : null}
         </LinearGradient>
       </Pressable>
-    </Animated.View>
-  );
-}
-
-function useLiveSignalMotion(signal: LiveSignal, index: number, reducedMotion: boolean) {
-  const enterOpacity = useMemo(() => new Animated.Value(0), []);
-  const enterY = useMemo(() => new Animated.Value(5), []);
-  const scale = useMemo(() => new Animated.Value(1), []);
-  const glow = useMemo(() => new Animated.Value(0), []);
-  const valueOpacity = useMemo(() => new Animated.Value(1), []);
-  const valueY = useMemo(() => new Animated.Value(0), []);
-  const previous = useRef({ complete: signal.complete, value: signal.value });
-
-  useEffect(() => {
-    if (reducedMotion) {
-      enterOpacity.setValue(1);
-      enterY.setValue(0);
-      return;
-    }
-    enterOpacity.setValue(0);
-    enterY.setValue(5);
-    const entrance = Animated.parallel([
-      Animated.timing(enterOpacity, { toValue: 1, delay: index * motion.stagger.dense, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(enterY, { toValue: 0, delay: index * motion.stagger.dense, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-    ]);
-    entrance.start();
-    return () => entrance.stop();
-  }, [enterOpacity, enterY, index, reducedMotion]);
-
-  useEffect(() => {
-    const before = previous.current;
-    const valueChanged = before.value !== signal.value;
-    const meaningfulUpdate = signal.complete && (!before.complete || (valueChanged && signal.label !== 'YOU' && signal.label !== 'TODAY'));
-    previous.current = { complete: signal.complete, value: signal.value };
-    if (!meaningfulUpdate) return;
-    if (reducedMotion) {
-      scale.setValue(1);
-      glow.setValue(0);
-      valueOpacity.setValue(1);
-      valueY.setValue(0);
-      return;
-    }
-
-    glow.setValue(0.2);
-    scale.setValue(1);
-    valueOpacity.setValue(0.42);
-    valueY.setValue(3);
-    Animated.parallel([
-      Animated.sequence([
-        Animated.spring(scale, { toValue: 1.035, speed: 28, bounciness: 3, useNativeDriver: true }),
-        Animated.spring(scale, { toValue: 1, speed: 30, bounciness: 2, useNativeDriver: true }),
-      ]),
-      Animated.timing(glow, { toValue: 0, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.parallel([
-        Animated.timing(valueOpacity, { toValue: 1, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-        Animated.timing(valueY, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      ]),
-    ]).start();
-  }, [glow, reducedMotion, scale, signal.complete, signal.label, signal.value, valueOpacity, valueY]);
-
-  return {
-    container: { opacity: enterOpacity, transform: [{ translateY: enterY }, { scale }] },
-    glow: { opacity: glow },
-    value: { opacity: valueOpacity, transform: [{ translateY: valueY }] },
-  };
-}
-
-function LiveMapSignalChip({ signal, index, reducedMotion }: { signal: LiveSignal; index: number; reducedMotion: boolean }) {
-  const animated = useLiveSignalMotion(signal, index, reducedMotion);
-  return (
-    <Animated.View style={[styles.liveSignal, signal.complete && { borderColor: signal.color + '99', backgroundColor: signal.color + '1A' }, animated.container]}>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.liveSignalGlow, { backgroundColor: signal.color }, animated.glow]} />
-      <View style={[styles.liveSignalDot, { backgroundColor: signal.complete ? signal.color : 'rgba(255,255,255,.24)' }]} />
-      <Text style={styles.liveSignalLabel}>{signal.label}</Text>
-      <Animated.Text numberOfLines={1} style={[styles.liveSignalValue, signal.complete && styles.liveSignalValueComplete, animated.value]}>{signal.value}</Animated.Text>
-    </Animated.View>
-  );
-}
-
-function IdentityLiveStrip({ signals, reducedMotion }: { signals: LiveSignal[]; reducedMotion: boolean }) {
-  return (
-    <View style={styles.identityRibbon} accessibilityLabel="Your live profile preview">
-      <View style={styles.ribbonHeading}>
-        <View style={styles.ribbonOrb}><Orb size={17} state="idle" /></View>
-        <Text style={styles.ribbonTitle}>YOUR PROFILE TAKES SHAPE</Text>
-        <View style={styles.ribbonLive}><View style={styles.ribbonLiveDot} /><Text style={styles.ribbonLiveText}>LIVE</Text></View>
-      </View>
-      <View style={styles.ribbonSignals}>
-        {signals.map((signal, index) => <IdentitySignalChip key={signal.label} signal={signal} index={index} reducedMotion={reducedMotion} />)}
-      </View>
-    </View>
-  );
-}
-
-function IdentitySignalChip({ signal, index, reducedMotion }: { signal: LiveSignal; index: number; reducedMotion: boolean }) {
-  const animated = useLiveSignalMotion(signal, index, reducedMotion);
-  return (
-    <Animated.View style={[styles.ribbonSignal, { borderColor: signal.color + (signal.complete ? '9A' : '44') }, animated.container]}>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.ribbonSignalGlow, { backgroundColor: signal.color }, animated.glow]} />
-      <View style={[styles.ribbonSignalDot, { backgroundColor: signal.complete ? signal.color : 'rgba(255,255,255,.28)' }]} />
-      <View style={styles.ribbonSignalCopy}>
-        <Text style={styles.ribbonSignalLabel}>{signal.label}</Text>
-        <Animated.Text numberOfLines={1} style={[styles.ribbonSignalValue, signal.complete && styles.ribbonSignalValueComplete, animated.value]}>{signal.complete ? signal.value : 'Add later'}</Animated.Text>
-      </View>
     </Animated.View>
   );
 }
@@ -514,6 +464,8 @@ export default function ProfileSetup() {
   const [customArea, setCustomArea] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
+  const [optionalDetailsOpen, setOptionalDetailsOpen] = useState(false);
+  const [optionalDetailsMounted, setOptionalDetailsMounted] = useState(false);
   const [customCountry, setCustomCountry] = useState('');
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -522,8 +474,12 @@ export default function ProfileSetup() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [cloudWidth, setCloudWidth] = useState(315);
   const cloudScale = Math.min(cloudWidth / 315, 1);
+  const cloudOffset = Math.max(0, (cloudWidth - 315 * cloudScale) / 2);
   const panelOpacity = useMemo(() => new Animated.Value(1), []);
   const panelX = useMemo(() => new Animated.Value(0), []);
+  const panelScale = useMemo(() => new Animated.Value(1), []);
+  const optionalDetailsOpacity = useMemo(() => new Animated.Value(0), []);
+  const optionalDetailsY = useMemo(() => new Animated.Value(7), []);
   const sceneIndex = stepOrder.indexOf(step);
 
   useEffect(() => {
@@ -533,17 +489,37 @@ export default function ProfileSetup() {
     return () => { active = false; subscription.remove(); };
   }, []);
 
+  useEffect(() => {
+    if (!optionalDetailsMounted) return;
+    const targetOpacity = optionalDetailsOpen ? 1 : 0;
+    const targetY = optionalDetailsOpen ? 0 : 7;
+    if (reducedMotion) {
+      optionalDetailsOpacity.setValue(targetOpacity);
+      optionalDetailsY.setValue(targetY);
+      return;
+    }
+    optionalDetailsOpacity.setValue(optionalDetailsOpen ? 0 : 1);
+    optionalDetailsY.setValue(optionalDetailsOpen ? 7 : 0);
+    const animation = Animated.parallel([
+      Animated.timing(optionalDetailsOpacity, { toValue: targetOpacity, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(optionalDetailsY, { toValue: targetY, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+    ]);
+    animation.start(({ finished }) => { if (finished && !optionalDetailsOpen) setOptionalDetailsMounted(false); });
+    return () => animation.stop();
+  }, [optionalDetailsMounted, optionalDetailsOpen, optionalDetailsOpacity, optionalDetailsY, reducedMotion]);
+
+  function toggleOptionalDetails() {
+    const next = !optionalDetailsOpen;
+    setOptionalDetailsOpen(next);
+    if (next) setOptionalDetailsMounted(true);
+    else if (reducedMotion) setOptionalDetailsMounted(false);
+  }
+
   const selectedAreas = useMemo(() => focusAreas.filter((area) => topics.some((topic) => topic.id === area.id)), [topics]);
   const currentFacts = useMemo(() => facts.filter((fact) => !fact.validUntil), [facts]);
   const activeArea = focusAreas.find((area) => area.id === activeAreaId) ?? null;
   const countryIsCustom = country === 'Other' || (!!country && !countries.includes(country));
   const age = ageFromBirthday(birthday);
-  const liveSignals: LiveSignal[] = [
-    { label: 'YOU', value: name.trim() || 'Add your name', color: palette.peach, complete: !!name.trim() },
-    { label: 'COUNTRY', value: country || 'Add later', color: palette.peach, complete: !!country && country !== 'Other' },
-    { label: 'AGE', value: age === null ? 'Add later' : age + ' years', color: palette.blue, complete: age !== null },
-    { label: 'TODAY', value: [height.trim() ? height.trim() + ' cm' : '', weight.trim() ? weight.trim() + ' kg' : ''].filter(Boolean).join(' · ') || 'Add later', color: palette.mint, complete: !!height.trim() || !!weight.trim() },
-  ];
 
   function transitionTo(next: OnboardingStep) {
     if (moving || next === step) return;
@@ -552,38 +528,45 @@ export default function ProfileSetup() {
       setStep(next);
       panelOpacity.setValue(1);
       panelX.setValue(0);
+      panelScale.setValue(1);
       setError('');
       return;
     }
     setMoving(true);
     Animated.parallel([
       Animated.timing(panelOpacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(panelX, { toValue: -direction * 18, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(panelX, { toValue: -direction * 24, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(panelScale, { toValue: 0.985, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
     ]).start(({ finished }) => {
       if (!finished) { setMoving(false); return; }
       setStep(next);
-      panelX.setValue(direction * 18);
+      panelX.setValue(direction * 28);
+      panelScale.setValue(0.985);
       setError('');
       Animated.parallel([
-        Animated.timing(panelOpacity, { toValue: 1, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-        Animated.timing(panelX, { toValue: 0, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+        Animated.timing(panelOpacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+        Animated.timing(panelX, { toValue: 0, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+        Animated.spring(panelScale, { toValue: 1, speed: 20, bounciness: 3, useNativeDriver: true }),
       ]).start(() => setMoving(false));
     });
   }
 
   function selectArea(area: FocusArea) {
     const exists = topics.some((topic) => topic.id === area.id);
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (!exists) toggleTopic(topicFor(area));
     setActiveAreaId((current) => current === area.id ? null : area.id);
   }
 
   function removeArea(area: FocusArea) {
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     topics.filter((topic) => topic.id.startsWith(area.id + '::')).forEach((topic) => toggleTopic(topic));
     toggleTopic(topicFor(area));
     if (activeAreaId === area.id) setActiveAreaId(null);
   }
 
   function toggleDetail(area: FocusArea, signal: Signal) {
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     toggleTopic(detailFor(area, signal));
   }
 
@@ -605,28 +588,14 @@ export default function ProfileSetup() {
   }
 
   function continueIdentity() {
-    if (!name.trim()) {
-      setError('Add the name you want Nura to use before continuing.');
-      return;
-    }
+    saveMeasurement('Height', height, 'cm');
+    saveMeasurement('Weight', weight, 'kg');
     setError('');
-    transitionTo('today');
-  }
-
-  function continueToday(save: boolean) {
-    if (save) {
-      saveMeasurement('Height', height, 'cm');
-      saveMeasurement('Weight', weight, 'kg');
-    }
     transitionTo('focus');
   }
 
   async function continueFocus() {
     if (savingProfile) return;
-    if (selectedAreas.length === 0) {
-      setError('Choose a health area or select “Something else” to add your own.');
-      return;
-    }
     setSavingProfile(true);
     setError('');
     try {
@@ -639,7 +608,7 @@ export default function ProfileSetup() {
     }
   }
 
-  const profileMap = (signals: LiveSignal[] = []) => (
+  const profileMap = () => (
     <LiveProfileMap
       name={name}
       areas={selectedAreas}
@@ -648,7 +617,7 @@ export default function ProfileSetup() {
       treatments={treatments}
       assets={assets}
       reducedMotion={reducedMotion}
-      signals={signals}
+      onAreaPress={(area) => setActiveAreaId(area.id)}
     />
   );
 
@@ -665,9 +634,9 @@ export default function ProfileSetup() {
       return (
         <View style={styles.welcomeScene}>
           <View style={styles.welcomeOrb}><Orb size={124} state="idle" /></View>
-          <Text style={styles.welcomeEyebrow}>THE 720 HEALTH PROFILE</Text>
-          <Text style={styles.welcomeTitle}>Your health, in one living picture.</Text>
-          <Text style={styles.welcomeBody}>A personal record that connects today’s details, your history, care, treatment, daily life and insurance — at your pace.</Text>
+          <Text style={styles.welcomeEyebrow}>START WITH WHAT MATTERS</Text>
+          <Text style={styles.welcomeTitle}>A clearer view of your health.</Text>
+          <Text style={styles.welcomeBody}>Bring your health details, records and care into one connected view. Add only what you want, whenever you’re ready.</Text>
           <View style={styles.journeyPreview}>
             {domains.map((domain, index) => (
               <View key={domain.number} style={styles.journeyItem}>
@@ -677,7 +646,7 @@ export default function ProfileSetup() {
               </View>
             ))}
           </View>
-          <Text style={styles.welcomePrivacy}>You choose what to add. Nura keeps focus areas, records and confirmed details distinct.</Text>
+          <Text style={styles.welcomePrivacy}>Your focus areas are choices. Health details remain connected to their source.</Text>
           <Pressable accessibilityRole="button" onPress={() => transitionTo('identity')} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
             <Text style={styles.primaryButtonText}>START MY PROFILE</Text><Text style={styles.primaryArrow}>→</Text>
           </Pressable>
@@ -688,84 +657,57 @@ export default function ProfileSetup() {
     if (step === 'identity') {
       return (
         <View>
-          {stepIntro('01  ·  THE PERSON BEHIND THE PROFILE', 'Let’s start with you.', 'A few details help Nura keep this profile organized. Contact details are not included in health questions.')}
+          {stepIntro('01  ·  YOUR PROFILE', 'Start with what you’re comfortable sharing.', 'A name helps personalize your profile. The rest can wait until it is useful.')}
           <View style={styles.identityCard}>
             <View style={styles.cardHeadingRow}>
               <View style={styles.cardIcon}><Text style={styles.cardIconText}>01</Text></View>
-              <View style={{ flex: 1 }}><Text style={styles.cardOverline}>YOUR DETAILS</Text><Text style={styles.cardTitle}>What should Nura know?</Text></View>
-              <Text style={styles.optionalLabel}>EDITABLE</Text>
+              <View style={{ flex: 1 }}><Text style={styles.cardOverline}>PROFILE DETAILS</Text><Text style={styles.cardTitle}>How should we label this profile?</Text></View>
+              <Text style={styles.optionalLabel}>OPTIONAL</Text>
             </View>
-            <Text style={styles.fieldLabel}>NAME</Text>
-            <TextInput value={name} onChangeText={(value) => updateProfile({ name: value })} placeholder="What should Nura call you?" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Your name" autoComplete="name" returnKeyType="next" />
-            <Text style={styles.fieldLabel}>COUNTRY</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel={country ? 'Country: ' + country + '. Change country' : 'Select your country'} onPress={() => setCountryPickerOpen(true)} style={styles.countryButton}>
-              <Text style={[styles.countryButtonText, !country && styles.countryPlaceholder]}>{countryIsCustom ? customCountry || (country === 'Other' ? 'Enter your country' : country) : country || 'Select your country'}</Text><Text style={styles.countryChevron}>⌄</Text>
+            <Text style={styles.fieldLabel}>NAME <Text style={styles.optionalInline}>· OPTIONAL</Text></Text>
+            <TextInput value={name} onChangeText={(value) => updateProfile({ name: value })} placeholder="Name for this profile" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Name for this profile" autoComplete="name" returnKeyType="done" />
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: optionalDetailsOpen }} onPress={toggleOptionalDetails} style={styles.optionalDetailsButton}>
+              <View style={{ flex: 1 }}><Text style={styles.optionalDetailsTitle}>{optionalDetailsOpen ? 'Hide optional details' : 'Add optional details'}</Text><Text style={styles.optionalDetailsHint}>Country, birth date, contact and measurements</Text></View>
+              <Text style={styles.optionalDetailsMark}>{optionalDetailsOpen ? '−' : '+'}</Text>
             </Pressable>
-            {countryIsCustom ? <TextInput value={customCountry} onChangeText={(value) => { setCustomCountry(value); updateProfile({ country: value }); }} placeholder="Enter country name" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.customCountryInput]} accessibilityLabel="Enter another country" /> : null}
-            <Text style={styles.fieldLabel}>BIRTHDAY <Text style={styles.optionalInline}>· OPTIONAL</Text></Text>
-            <TextInput value={birthday} onChangeText={(value) => updateProfile({ birthday: value })} placeholder="YYYY-MM-DD" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Birthday" keyboardType="numbers-and-punctuation" maxLength={10} />
-            {age !== null ? <View style={styles.ageReadout}><View style={[styles.liveSignalDot, { backgroundColor: palette.blue }]} /><Text style={styles.ageReadoutText}>{age} years old · calculated from the birthday you entered</Text></View> : null}
-            <Text style={styles.fieldLabel}>CONTACT <Text style={styles.optionalInline}>· OPTIONAL</Text></Text>
-            <View style={styles.contactFields}>
-              <TextInput value={phone} onChangeText={(value) => updateProfile({ phone: value })} placeholder="Phone number" placeholderTextColor="#8D8792" keyboardType="phone-pad" style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Phone number" autoComplete="tel" />
-              <TextInput value={email} onChangeText={(value) => updateProfile({ email: value })} placeholder="Email address" placeholderTextColor="#8D8792" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Email address" autoComplete="email" returnKeyType="done" />
-            </View>
-            <Text style={styles.fieldHelper}>The live profile preview updates as you type. You can add, correct or remove these details later.</Text>
+            {optionalDetailsMounted ? (
+              <Animated.View style={[styles.optionalDetailsPanel, { opacity: optionalDetailsOpacity, transform: [{ translateY: optionalDetailsY }] }]}>
+                <Text style={styles.fieldLabel}>COUNTRY</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={country ? 'Country: ' + country + '. Change country' : 'Select your country'} onPress={() => setCountryPickerOpen(true)} style={styles.countryButton}>
+                  <Text style={[styles.countryButtonText, !country && styles.countryPlaceholder]}>{countryIsCustom ? customCountry || (country === 'Other' ? 'Enter your country' : country) : country || 'Select your country'}</Text><Text style={styles.countryChevron}>⌄</Text>
+                </Pressable>
+                {countryIsCustom ? <TextInput value={customCountry} onChangeText={(value) => { setCustomCountry(value); updateProfile({ country: value }); }} placeholder="Enter country name" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.customCountryInput]} accessibilityLabel="Enter another country" /> : null}
+                <Text style={styles.fieldLabel}>BIRTH DATE</Text>
+                <TextInput value={birthday} onChangeText={(value) => updateProfile({ birthday: value })} placeholder="YYYY-MM-DD" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Birth date" keyboardType="numbers-and-punctuation" maxLength={10} />
+                {age !== null ? <View style={styles.ageReadout}><View style={[styles.liveSignalDot, { backgroundColor: palette.blue }]} /><Text style={styles.ageReadoutText}>{age} years old · calculated from the date you entered</Text></View> : null}
+                <Text style={styles.fieldLabel}>CONTACT</Text>
+                <View style={styles.contactFields}>
+                  <TextInput value={phone} onChangeText={(value) => updateProfile({ phone: value })} placeholder="Phone number" placeholderTextColor="#8D8792" keyboardType="phone-pad" style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Phone number" autoComplete="tel" />
+                  <TextInput value={email} onChangeText={(value) => updateProfile({ email: value })} placeholder="Email address" placeholderTextColor="#8D8792" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Email address" autoComplete="email" returnKeyType="done" />
+                </View>
+                <Text style={styles.fieldLabel}>MEASUREMENTS</Text>
+                <View style={styles.contactFields}>
+                  <View style={styles.measureInputRow}><TextInput value={height} onChangeText={setHeight} placeholder="Height · e.g. 168" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Height in centimetres" keyboardType="decimal-pad" /><Text style={styles.unitLabel}>cm</Text></View>
+                  <View style={styles.measureInputRow}><TextInput value={weight} onChangeText={setWeight} placeholder="Weight · e.g. 62" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Weight in kilograms" keyboardType="decimal-pad" /><Text style={styles.unitLabel}>kg</Text></View>
+                </View>
+                <Text style={styles.fieldHelper}>Measurements are saved as self-reported details. Every field here is optional.</Text>
+              </Animated.View>
+            ) : null}
+            <Text style={styles.fieldHelper}>You can edit these details later. Nothing here is required to continue.</Text>
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
           <Pressable accessibilityRole="button" onPress={continueIdentity} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
-            <Text style={styles.primaryButtonText}>CONTINUE TO TODAY</Text><Text style={styles.primaryArrow}>→</Text>
+            <Text style={styles.primaryButtonText}>CONTINUE TO HEALTH AREAS</Text><Text style={styles.primaryArrow}>→</Text>
           </Pressable>
-        </View>
-      );
-    }
-
-    if (step === 'today') {
-      return (
-        <View>
-          {stepIntro('02  ·  TODAY', 'What do you know about your body today?', 'Add current measurements if you have them. They’re dated as self-reported and never treated as a diagnosis.')}
-          <View style={styles.measureCard}>
-            <View style={styles.cardHeadingRow}>
-              <View style={[styles.cardIcon, styles.measureIcon]}><Text style={styles.cardIconText}>↕</Text></View>
-              <View style={{ flex: 1 }}><Text style={styles.cardOverline}>OPTIONAL BIOMETRICS</Text><Text style={styles.cardTitle}>Measurements you provide</Text></View>
-              <Text style={styles.optionalLabel}>SKIP ANY</Text>
-            </View>
-            <Text style={styles.fieldLabel}>HEIGHT</Text>
-            <View style={styles.measureInputRow}>
-              <TextInput value={height} onChangeText={setHeight} placeholder="e.g. 168" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Height" keyboardType="decimal-pad" />
-              <Text style={styles.unitLabel}>cm</Text>
-            </View>
-            <Text style={styles.fieldLabel}>WEIGHT</Text>
-            <View style={styles.measureInputRow}>
-              <TextInput value={weight} onChangeText={setWeight} placeholder="e.g. 62" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Weight" keyboardType="decimal-pad" />
-              <Text style={styles.unitLabel}>kg</Text>
-            </View>
-            <View style={styles.metricPreview}>
-              <View style={styles.metricPreviewOrb}><Orb size={31} state="idle" /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.metricPreviewTitle}>{name.trim() || 'Your profile'}{age !== null ? ', ' + age : ''}</Text>
-                <Text style={styles.metricPreviewMeta}>{height.trim() || 'Height'} cm  ·  {weight.trim() || 'Weight'} kg</Text>
-              </View>
-              <View style={styles.metricLive}><View style={[styles.liveSignalDot, { backgroundColor: palette.mint }]} /><Text style={styles.metricLiveText}>LIVE</Text></View>
-            </View>
-            <Text style={styles.fieldHelper}>These values appear in your profile only after you save them. You can leave both blank.</Text>
-          </View>
-          {profileMap(liveSignals)}
-          {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
-          <Pressable accessibilityRole="button" onPress={() => continueToday(true)} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
-            <Text style={styles.primaryButtonText}>{height.trim() || weight.trim() ? 'SAVE & CONTINUE TO YOUR HEALTH AREAS' : 'CONTINUE TO YOUR HEALTH AREAS'}</Text><Text style={styles.primaryArrow}>→</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" onPress={() => continueToday(false)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>SKIP MEASUREMENTS</Text></Pressable>
         </View>
       );
     }
 
     return (
       <View>
-        {stepIntro('03  ·  YOUR HISTORY AND FOCUS', 'What is part of your health?', 'Tap a bubble to select it. Tap a selected area to reveal related details. These are your choices, not diagnoses.')}
-        {profileMap(liveSignals)}
+        {stepIntro('02  ·  YOUR HEALTH AREAS', 'What would you like to keep track of?', 'Choose any areas that matter to you. These are focus choices, not diagnoses.')}
         <View style={styles.focusHeading}>
-          <View><Text style={styles.cardOverline}>YOUR FOCUS AREAS</Text><Text style={styles.focusTitle}>What’s on your mind?</Text></View>
+          <View><Text style={styles.cardOverline}>CHOOSE YOUR AREAS</Text><Text style={styles.focusTitle}>Tap an area to connect it and see optional details.</Text></View>
           <Text style={styles.focusCount}>{String(selectedAreas.length).padStart(2, '0')} SELECTED</Text>
         </View>
         <View style={styles.focusCloud} onLayout={(event) => setCloudWidth(event.nativeEvent.layout.width)}>
@@ -774,13 +716,13 @@ export default function ProfileSetup() {
             const selected = selectedAreas.some((item) => item.id === area.id);
             const open = activeAreaId === area.id;
             return (
-              <View key={area.id} style={{ position: 'absolute', left: position.x * cloudScale, top: position.y * cloudScale }}>
+              <View key={area.id} style={{ position: 'absolute', left: cloudOffset + position.x * cloudScale, top: position.y * cloudScale }}>
                 <FocusBubble
                   area={area}
                   diameter={position.size * cloudScale}
                   selected={selected}
-                  label={(selected ? 'Selected ' : 'Select ') + area.label + (open ? ', details open' : '')}
                   index={index}
+                  open={open}
                   reducedMotion={reducedMotion}
                   onPress={() => selectArea(area)}
                 />
@@ -788,38 +730,12 @@ export default function ProfileSetup() {
             );
           })}
         </View>
-        {selectedAreas.length > 0 ? (
-          <View style={styles.selectedSection}>
-            <Text style={styles.selectedOverline}>IN YOUR PROFILE · TAP × TO REMOVE</Text>
-            <View style={styles.selectedRow}>
-              {selectedAreas.map((area) => (
-                <Pressable key={area.id} accessibilityRole="button" accessibilityLabel={'Remove ' + area.label + ' and its unanswered details'} onPress={() => removeArea(area)} style={[styles.selectedToken, { borderColor: area.color + 'AA' }]}>
-                  <View style={[styles.selectedTokenDot, { backgroundColor: area.color }]} />
-                  <Text style={styles.selectedTokenText}>{area.label}</Text><Text style={styles.removeMark}>×</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : null}
-        {activeArea ? <FollowupBubbles area={activeArea} topics={topics} reducedMotion={reducedMotion} onToggle={toggleDetail} customArea={customArea} setCustomArea={setCustomArea} onAddCustom={addCustom} /> : null}
-        <View style={styles.domainHeading}><View><Text style={styles.cardOverline}>YOUR 720 PROFILE</Text><Text style={styles.domainTitle}>Six parts. One connected story.</Text></View><Text style={styles.domainTotal}>720</Text></View>
-        <View style={styles.domainGrid}>
-          {domains.map((domain, index) => {
-            const count = index === 0 ? currentFacts.filter((fact) => /biometric|vital/i.test(fact.category)).length : index === 1 ? topics.length : index === 2 ? assets.length : index === 3 ? treatments.length : 0;
-            return (
-              <View key={domain.number} style={styles.domainCard}>
-                <View style={[styles.domainOrb, { backgroundColor: domain.color }]}><Text style={styles.domainOrbText}>{domain.number}</Text></View>
-                <View style={{ flex: 1 }}><Text style={styles.domainName}>{domain.title}</Text><Text style={styles.domainDetail}>{domain.detail}</Text></View>
-                <Text style={styles.domainCount}>{String(count).padStart(2, '0')}</Text>
-              </View>
-            );
-          })}
-        </View>
+        {profileMap()}
         {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: savingProfile, busy: savingProfile }} disabled={savingProfile} onPress={continueFocus} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed, savingProfile && styles.buttonDisabled]}>
-          <Text style={styles.primaryButtonText}>{savingProfile ? 'SAVING YOUR PROFILE…' : 'REVIEW MY FIRST UNDERSTANDING'}</Text>{savingProfile ? <ActivityIndicator color="#2A203B" size="small" /> : <Text style={styles.primaryArrow}>→</Text>}
+          <Text style={styles.primaryButtonText}>{savingProfile ? 'SAVING YOUR PROFILE…' : 'REVIEW MY PROFILE'}</Text>{savingProfile ? <ActivityIndicator color="#2A203B" size="small" /> : <Text style={styles.primaryArrow}>→</Text>}
         </Pressable>
-        <Text style={styles.focusNext}>NURA WILL SHOW WHAT IT KNOWS, WHAT IT DOESN’T, AND WHERE EACH DETAIL CAME FROM.</Text>
+        <Text style={styles.focusNext}>You can change these choices later. Nura keeps selected topics separate from confirmed health details.</Text>
       </View>
     );
   })();
@@ -834,10 +750,10 @@ export default function ProfileSetup() {
         <View style={styles.topbar}>
           <View style={styles.brand}>
             <View style={styles.brandOrb}><Orb size={23} state="idle" /></View>
-            <View><Text style={styles.brandName}>nura</Text><Text style={styles.brandTag}>YOUR HEALTH, UNDERSTOOD</Text></View>
+            <View><Text style={styles.brandName}>nura</Text><Text style={styles.brandTag}>HEALTH, IN CONTEXT</Text></View>
           </View>
           <View style={styles.topActions}>
-            <Text style={styles.private}>PRIVATE BY DESIGN</Text>
+            <Text style={styles.private}>YOUR CHOICES, YOUR PACE</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Open Nura Home" onPress={() => router.replace('/(tabs)/home')} style={({ pressed }) => [styles.homeLink, pressed && styles.homeLinkPressed]}>
               <Text style={styles.homeLinkText}>OPEN HOME  ↗</Text>
             </Pressable>
@@ -846,30 +762,30 @@ export default function ProfileSetup() {
         {Platform.OS === 'web' ? (
           <View style={styles.browserPrivacy}>
             <View style={styles.browserPrivacyMark}><Text style={styles.browserPrivacyMarkText}>i</Text></View>
-            <Text style={styles.browserPrivacyText}>Preview mode keeps fictional sample information in this browser, even after refresh, until you clear it. This isn’t a personal Nura account. Please use fictional details and files only.</Text>
+            <Text style={styles.browserPrivacyText}>Fictional preview · Please use sample details and files only.</Text>
           </View>
         ) : null}
         {step !== 'welcome' ? (
           <View style={styles.progressWrap}>
-            <View style={styles.progressTop}><Text style={styles.progressLabel}>BUILDING YOUR PROFILE</Text><Text style={styles.progressCount}>{String(sceneIndex).padStart(2, '0')} / 03</Text></View>
+            <View style={styles.progressTop}><Text style={styles.progressLabel}>PROFILE SETUP</Text><Text style={styles.progressCount}>{String(sceneIndex).padStart(2, '0')} / 02</Text></View>
             <View style={styles.progressRail}>{stepOrder.slice(1).map((item, index) => <View key={item} style={[styles.progressSegment, index < sceneIndex && styles.progressSegmentDone, index === sceneIndex - 1 && styles.progressSegmentCurrent]} />)}</View>
             <View style={styles.progressNames}>{stepNames.slice(1).map((item, index) => <Text key={item} style={[styles.progressName, index === sceneIndex - 1 && styles.progressNameActive]}>{item}</Text>)}</View>
           </View>
         ) : null}
-        {step === 'identity' ? <IdentityLiveStrip signals={liveSignals} reducedMotion={reducedMotion} /> : null}
-        <Animated.View pointerEvents={savingProfile ? 'none' : 'auto'} style={[styles.sceneFrame, { opacity: panelOpacity, transform: [{ translateX: panelX }] }]}> 
+        <Animated.View pointerEvents={savingProfile ? 'none' : 'auto'} style={[styles.sceneFrame, { opacity: panelOpacity, transform: [{ translateX: panelX }, { scale: panelScale }] }]}>
           <ScrollView key={step} contentContainerStyle={styles.sceneContent} keyboardShouldPersistTaps="handled">
             {step === 'welcome' ? currentContent : (
               <View>
                 <View style={styles.sceneBackRow}>
                   <Pressable accessibilityRole="button" onPress={() => transitionTo(stepOrder[sceneIndex - 1])} style={styles.backButton}><Text style={styles.backButtonText}>‹  BACK</Text></Pressable>
-                  <Text style={styles.sceneCount}>{String(sceneIndex).padStart(2, '0')} OF 03</Text>
+                  <Text style={styles.sceneCount}>{String(sceneIndex).padStart(2, '0')} OF 02</Text>
                 </View>
                 {currentContent}
               </View>
             )}
           </ScrollView>
         </Animated.View>
+        {activeArea ? <FollowupBubbles area={activeArea} areas={selectedAreas} topics={topics} reducedMotion={reducedMotion} onSwitchArea={(area) => setActiveAreaId(area.id)} onToggle={toggleDetail} onRemove={removeArea} onClose={() => setActiveAreaId(null)} customArea={customArea} setCustomArea={setCustomArea} onAddCustom={addCustom} /> : null}
         <CountryPicker
           key={countryPickerOpen ? 'open' : 'closed'}
           visible={countryPickerOpen}
@@ -889,73 +805,120 @@ export default function ProfileSetup() {
 
 function FollowupBubbles({
   area,
+  areas,
   topics,
   reducedMotion,
+  onSwitchArea,
   onToggle,
+  onRemove,
+  onClose,
   customArea,
   setCustomArea,
   onAddCustom,
 }: {
   area: FocusArea;
+  areas: FocusArea[];
   topics: HealthTopic[];
   reducedMotion: boolean;
+  onSwitchArea: (area: FocusArea) => void;
   onToggle: (area: FocusArea, signal: Signal) => void;
+  onRemove: (area: FocusArea) => void;
+  onClose: () => void;
   customArea: string;
   setCustomArea: (value: string) => void;
   onAddCustom: () => void;
 }) {
-  const opacity = useMemo(() => new Animated.Value(reducedMotion ? 1 : 0), [reducedMotion]);
-  const y = useMemo(() => new Animated.Value(reducedMotion ? 0 : 10), [reducedMotion]);
+  const opacity = useMemo(() => new Animated.Value(0), []);
+  const y = useMemo(() => new Animated.Value(24), []);
   useEffect(() => {
     opacity.setValue(reducedMotion ? 1 : 0);
-    y.setValue(reducedMotion ? 0 : 10);
-    if (!reducedMotion) Animated.parallel([
+    y.setValue(reducedMotion ? 0 : 24);
+    if (reducedMotion) return;
+    Animated.parallel([
       Animated.timing(opacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(y, { toValue: 0, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.spring(y, { toValue: 0, speed: 22, bounciness: 4, useNativeDriver: true }),
     ]).start();
   }, [area.id, opacity, reducedMotion, y]);
 
+  function closeSheet() {
+    if (reducedMotion) { onClose(); return; }
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(y, { toValue: 18, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+    ]).start(({ finished }) => { if (finished) onClose(); });
+  }
+
   return (
-    <Animated.View style={[styles.followupCard, { opacity, transform: [{ translateY: y }] }]}>
-      <View style={styles.followupHeading}>
-        <View style={[styles.followupIcon, { backgroundColor: area.pale }]}><Text style={[styles.followupGlyph, { color: area.ink }]}>↳</Text></View>
-        <View style={{ flex: 1 }}><Text style={styles.followupOverline}>CONNECTED TO</Text><Text style={styles.followupTitle}>{area.label}</Text></View>
-        <Text style={styles.followupMeta}>{String(topics.filter((topic) => topic.id.startsWith(area.id + '::')).length).padStart(2, '0')} ADDED</Text>
-      </View>
-      <Text style={styles.followupHint}>Choose related details if you want. Removing this focus later clears its unanswered choices.</Text>
-      <View style={styles.detailBubbleRow}>
-        {area.signals.map((signal, index) => {
-          const selected = topics.some((topic) => topic.id === area.id + '::' + signal.id);
-          return (
-            <PressScale key={signal.id} selected={selected} reducedMotion={reducedMotion} floatMotion floatDelay={index * 80} label={(selected ? 'Remove ' : 'Add ') + signal.label} onPress={() => onToggle(area, signal)} style={styles.detailBubbleTouch}>
-              <LinearGradient colors={selected ? [area.color, area.ink] : ['rgba(255,255,255,.12)', 'rgba(255,255,255,.05)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.detailBubble, { borderColor: selected ? area.pale : 'rgba(255,255,255,.24)' }]}>
-                <Text style={styles.detailBubbleText}>{selected ? '✓ ' : ''}{signal.label}</Text>
-              </LinearGradient>
-            </PressScale>
-          );
-        })}
-      </View>
-      {area.id === 'other' ? (
-        <View style={styles.customAreaRow}>
-          <TextInput value={customArea} onChangeText={setCustomArea} onSubmitEditing={onAddCustom} placeholder="Add your own words" placeholderTextColor="rgba(255,249,244,.48)" style={[styles.fieldInput, styles.customAreaInput]} returnKeyType="done" />
-          <Pressable accessibilityRole="button" onPress={onAddCustom} style={styles.customAreaAdd}><Text style={styles.customAreaAddText}>ADD</Text></Pressable>
-        </View>
-      ) : null}
-    </Animated.View>
+    <View style={styles.focusSheetShade}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close health area details" onPress={closeSheet} style={StyleSheet.absoluteFill} />
+      <Animated.View style={[styles.focusSheet, { opacity, transform: [{ translateY: y }] }]}>
+          <View style={[styles.focusSheetAccent, { backgroundColor: area.color }]} />
+          <View style={styles.sheetHandle} />
+          <View style={styles.followupHeading}>
+            <View style={[styles.followupIcon, { backgroundColor: area.pale }]}><Text style={[styles.followupGlyph, { color: area.ink }]}>{area.id === 'bp-topic' ? '↕' : area.id === 'cholesterol' ? '◌' : area.id === 'sleep' ? '☾' : area.id === 'heart' ? '♡' : area.id === 'sugar' ? '⌁' : area.id === 'medicines' ? '+' : '•'}</Text></View>
+            <View style={{ flex: 1 }}><Text style={styles.followupOverline}>DETAILS FOR THIS AREA</Text><Text style={styles.followupTitle}>{area.label}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel={'Remove ' + area.label + ' from your profile'} onPress={() => onRemove(area)} style={styles.followupRemove}><Text style={styles.followupRemoveText}>REMOVE</Text></Pressable>
+          </View>
+          <Text style={styles.followupHint}>{area.id === 'other' ? 'Add a name for this area in your own words.' : 'These choices connect to ' + area.label + ' only. Your other areas keep their own details.'}</Text>
+          {areas.length > 1 ? (
+            <View style={styles.detailAreaSwitcherWrap}>
+              <Text style={styles.detailAreaSwitcherLabel}>SWITCH HEALTH AREA</Text>
+              <View style={styles.detailAreaSwitcher}>
+                {areas.map((selectedArea) => {
+                  const current = selectedArea.id === area.id;
+                  const detailCount = topics.filter((topic) => topic.id.startsWith(selectedArea.id + '::')).length;
+                  return (
+                    <PressScale
+                      key={selectedArea.id}
+                      selected={current}
+                      reducedMotion={reducedMotion}
+                      label={'Show ' + selectedArea.label + ' details' + (detailCount ? ', ' + detailCount + ' selected' : '')}
+                      onPress={() => onSwitchArea(selectedArea)}
+                      containerStyle={styles.detailAreaChipSlot}
+                      style={[styles.detailAreaChip, { borderColor: selectedArea.color + 'B0', backgroundColor: current ? selectedArea.color + '48' : 'rgba(255,255,255,.06)' }]}
+                    >
+                      <View style={[styles.detailAreaChipDot, { backgroundColor: selectedArea.color }]} />
+                      <Text numberOfLines={1} style={styles.detailAreaChipText}>{selectedArea.label}</Text>
+                      {detailCount > 0 ? <Text style={styles.detailAreaChipCount}>{detailCount}</Text> : null}
+                    </PressScale>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+          <View style={styles.detailBubbleRow}>
+            {area.signals.filter((signal) => area.id !== 'other' || signal.id !== 'other-note').map((signal) => {
+              const selected = topics.some((topic) => topic.id === area.id + '::' + signal.id);
+              return (
+                <PressScale key={signal.id} selected={selected} reducedMotion={reducedMotion} label={(selected ? 'Remove ' : 'Add ') + signal.label} onPress={() => onToggle(area, signal)} containerStyle={styles.detailChoiceSlot} style={[styles.detailChoice, selected && { backgroundColor: area.color + 'B8', borderColor: area.pale }]}>
+                  <View style={[styles.detailChoiceMark, { backgroundColor: selected ? area.pale : area.color + '45' }]}><Text style={[styles.detailChoiceMarkText, { color: selected ? area.ink : area.pale }]}>{selected ? '✓' : '+'}</Text></View>
+                  <Text style={styles.detailChoiceText}>{signal.label}</Text>
+                </PressScale>
+              );
+            })}
+          </View>
+          {area.id === 'other' ? (
+            <View style={styles.customAreaRow}>
+              <TextInput value={customArea} onChangeText={setCustomArea} onSubmitEditing={onAddCustom} placeholder="Add your own words" placeholderTextColor="rgba(255,249,244,.48)" style={[styles.fieldInput, styles.customAreaInput]} returnKeyType="done" />
+              <Pressable accessibilityRole="button" onPress={onAddCustom} style={styles.customAreaAdd}><Text style={styles.customAreaAddText}>ADD</Text></Pressable>
+            </View>
+          ) : null}
+          <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.focusSheetDone}><Text style={styles.focusSheetDoneText}>DONE</Text></Pressable>
+      </Animated.View>
+    </View>
   );
 }
 
 const focusPositions = [
-  { x: 0, y: 0, size: 102 },
-  { x: 112, y: 0, size: 92 },
-  { x: 215, y: 8, size: 82 },
-  { x: 27, y: 104, size: 80 },
-  { x: 121, y: 99, size: 86 },
-  { x: 222, y: 103, size: 90 },
-  { x: 0, y: 190, size: 92 },
-  { x: 100, y: 190, size: 76 },
-  { x: 187, y: 190, size: 92 },
-  { x: 120, y: 273, size: 72 },
+  { x: 0, y: 0, size: 94 },
+  { x: 108, y: 5, size: 86 },
+  { x: 209, y: 0, size: 82 },
+  { x: 10, y: 97, size: 84 },
+  { x: 112, y: 101, size: 90 },
+  { x: 218, y: 99, size: 80 },
+  { x: 0, y: 193, size: 86 },
+  { x: 105, y: 190, size: 92 },
+  { x: 213, y: 195, size: 84 },
 ];
 
 const styles = StyleSheet.create({
@@ -989,21 +952,6 @@ const styles = StyleSheet.create({
   progressNames: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
   progressName: { color: 'rgba(255,249,244,.45)', fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   progressNameActive: { color: '#F8DECC' },
-  identityRibbon: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,.18)', backgroundColor: 'rgba(255,255,255,.07)', marginBottom: 8 },
-  ribbonHeading: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  ribbonOrb: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  ribbonTitle: { flex: 1, color: 'rgba(255,249,244,.68)', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  ribbonLive: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(169,211,174,.12)' },
-  ribbonLiveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: palette.mint },
-  ribbonLiveText: { color: '#D9EADB', fontSize: 9, fontWeight: '800', letterSpacing: .7 },
-  ribbonSignals: { flexDirection: 'row', gap: 5 },
-  ribbonSignal: { flex: 1, minWidth: 0, minHeight: 34, borderRadius: 10, borderWidth: 1, backgroundColor: 'rgba(255,255,255,.035)', paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', gap: 4, overflow: 'hidden' },
-  ribbonSignalGlow: { borderRadius: 9 },
-  ribbonSignalDot: { width: 6, height: 6, borderRadius: 4 },
-  ribbonSignalCopy: { flex: 1, minWidth: 0 },
-  ribbonSignalLabel: { color: 'rgba(255,249,244,.50)', fontSize: 8, fontWeight: '800', letterSpacing: .6 },
-  ribbonSignalValue: { color: 'rgba(255,249,244,.48)', fontSize: 9, marginTop: 2 },
-  ribbonSignalValueComplete: { color: palette.ink, fontWeight: '700' },
   sceneFrame: { flex: 1, minHeight: 0 },
   sceneContent: { paddingBottom: 26, flexGrow: 1 },
   sceneBackRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
@@ -1050,86 +998,85 @@ const styles = StyleSheet.create({
   mapHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eyebrow: { color: 'rgba(255,249,244,.64)', fontSize: 10, fontWeight: '700', letterSpacing: 1.3 },
   mapTitle: { color: palette.ink, fontSize: 14, fontWeight: '600', marginTop: 3 },
-  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(169,211,174,.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,.18)' },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: palette.mint },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(199,168,229,.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,.18)' },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: palette.lilac },
   liveBadgeText: { color: '#E8E1EA', fontSize: 9, fontWeight: '700', letterSpacing: 0.6 },
-  mapSub: { color: palette.muted, fontSize: 9, lineHeight: 13, marginTop: 4 },
-  mapGraph: { height: 151, marginTop: 7, position: 'relative', overflow: 'hidden' },
+  mapSub: { color: palette.muted, fontSize: 10, lineHeight: 14, marginTop: 4 },
+  mapGraph: { height: 185, marginTop: 7, position: 'relative', overflow: 'hidden' },
   mapLine: { position: 'absolute', height: 1.4, borderRadius: 2, transformOrigin: 'center' } as any,
   mapNode: { position: 'absolute', width: 78, alignItems: 'center', zIndex: 2 },
-  mapNodeDot: { width: 34, height: 34, borderRadius: 18, borderWidth: 2, borderColor: '#FBF6F0', alignItems: 'center', justifyContent: 'center', shadowOpacity: .4, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  mapNodeCompact: { alignItems: 'center' },
+  mapNodeButton: { width: '100%', alignItems: 'center' },
+  mapNodeDot: { width: 42, height: 42, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center', shadowOpacity: .4, shadowRadius: 9, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  mapNodeDotCompact: { width: 36, height: 36, borderRadius: 19 },
   mapNodeGlyph: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  mapNodeGlyphCompact: { fontSize: 15 },
   mapNodeLabel: { color: palette.ink, fontSize: 10, fontWeight: '600', marginTop: 2, maxWidth: 80, textAlign: 'center' },
+  mapNodeLabelCompact: { color: palette.ink, fontSize: 8.5, lineHeight: 10, maxWidth: '100%', minHeight: 20 },
   mapNodeMeta: { color: 'rgba(255,249,244,.58)', fontSize: 9, marginTop: 1 },
-  mapOrbRing: { position: 'absolute', width: 48, height: 48, borderRadius: 25, left: '50%', marginLeft: -24, top: 41, alignItems: 'center', justifyContent: 'center', zIndex: 4, backgroundColor: 'rgba(255,255,255,.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,.25)', shadowColor: palette.lilac, shadowOpacity: .38, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } },
-  mapYou: { position: 'absolute', top: 93, left: '50%', width: 104, marginLeft: -52, textAlign: 'center', color: palette.ink, fontSize: 10, fontWeight: '700', zIndex: 4 },
-  mapEmpty: { position: 'absolute', left: 4, right: 4, bottom: 1, color: 'rgba(255,249,244,.45)', textAlign: 'center', fontSize: 8 },
-  mapMore: { position: 'absolute', right: 1, bottom: 1, color: 'rgba(255,249,244,.55)', fontSize: 7 },
-  liveSignalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 8 },
-  liveSignal: { minHeight: 27, borderWidth: 1, borderColor: 'rgba(255,255,255,.13)', borderRadius: 14, backgroundColor: 'rgba(255,255,255,.045)', paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', gap: 4, overflow: 'hidden' },
-  liveSignalGlow: { borderRadius: 13 },
+  mapOrbRing: { position: 'absolute', width: 56, height: 56, borderRadius: 29, left: '50%', marginLeft: -28, top: 54, alignItems: 'center', justifyContent: 'center', zIndex: 4, backgroundColor: 'rgba(255,255,255,.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,.32)', shadowColor: palette.lilac, shadowOpacity: .42, shadowRadius: 13, shadowOffset: { width: 0, height: 3 } },
+  mapOrbRingExpanded: { top: 0 },
+  mapYou: { position: 'absolute', top: 111, left: '50%', width: 112, marginLeft: -56, textAlign: 'center', color: palette.ink, fontSize: 10, fontWeight: '700', zIndex: 4 },
+  mapYouExpanded: { top: 60 },
+  mapEmpty: { position: 'absolute', left: 4, right: 4, bottom: 1, color: 'rgba(255,249,244,.62)', textAlign: 'center', fontSize: 9 },
   liveSignalDot: { width: 6, height: 6, borderRadius: 3 },
-  liveSignalLabel: { color: 'rgba(255,249,244,.50)', fontSize: 9, fontWeight: '700', letterSpacing: .45 },
-  liveSignalValue: { color: 'rgba(255,249,244,.43)', fontSize: 10, maxWidth: 94 },
-  liveSignalValueComplete: { color: palette.ink, fontWeight: '600' },
   mapStats: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.16)', minHeight: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
   mapStat: { alignItems: 'center', flex: 1 },
   mapStatNumber: { color: palette.ink, fontSize: 15, fontWeight: '400' },
   mapStatLabel: { color: 'rgba(255,249,244,.48)', fontSize: 9, letterSpacing: .75, marginTop: 1 },
   mapStatRule: { width: 1, height: 25, backgroundColor: 'rgba(255,255,255,.16)' },
-  measureCard: { padding: 15, borderRadius: 21, borderWidth: 1, borderColor: 'rgba(140,201,245,.34)', backgroundColor: 'rgba(255,255,255,.075)', marginBottom: 12 },
   measureInputRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   measureInput: { flex: 1 },
   unitLabel: { color: '#B7DFFF', fontSize: 13, fontWeight: '700', width: 34 },
-  metricPreview: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 15, paddingHorizontal: 10, paddingVertical: 8, marginTop: 11, backgroundColor: 'rgba(140,201,245,.11)', borderWidth: 1, borderColor: 'rgba(140,201,245,.2)' },
-  metricPreviewOrb: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
-  metricPreviewTitle: { color: palette.ink, fontSize: 10, fontWeight: '600' },
-  metricPreviewMeta: { color: 'rgba(255,249,244,.65)', fontSize: 10, marginTop: 2 },
-  metricLive: { alignItems: 'center', gap: 3, paddingHorizontal: 5 },
-  metricLiveText: { color: palette.mint, fontSize: 9, fontWeight: '800', letterSpacing: .8 },
-  selectedSection: { marginTop: 7, marginBottom: 10 },
-  selectedOverline: { color: 'rgba(255,249,244,.53)', fontSize: 10, fontWeight: '700', letterSpacing: .9, marginBottom: 6 },
-  selectedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  selectedToken: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, backgroundColor: 'rgba(255,255,255,.08)' },
-  selectedTokenDot: { width: 7, height: 7, borderRadius: 4 },
-  selectedTokenText: { color: palette.ink, fontSize: 9, fontWeight: '600' },
-  removeMark: { color: '#F3C9B7', fontSize: 17, marginLeft: 1 },
   followupCard: { padding: 13, borderRadius: 19, borderWidth: 1, borderColor: 'rgba(255,255,255,.20)', backgroundColor: 'rgba(38,27,50,.58)', marginTop: 8, marginBottom: 12, overflow: 'hidden' },
   followupHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   followupIcon: { width: 28, height: 28, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   followupGlyph: { fontSize: 17, fontWeight: '500' },
   followupOverline: { color: 'rgba(255,249,244,.55)', fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   followupTitle: { color: palette.ink, fontSize: 14, marginTop: 2, fontWeight: '600' },
-  followupMeta: { color: palette.peach, fontSize: 10, fontWeight: '700', letterSpacing: .7 },
   followupHint: { color: palette.muted, fontSize: 9, lineHeight: 14, marginTop: 7 },
-  detailBubbleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9, justifyContent: 'center' },
-  detailBubbleTouch: { width: 74, height: 74, borderRadius: 38 },
-  detailBubble: { flex: 1, borderWidth: 1, borderRadius: 38, alignItems: 'center', justifyContent: 'center', padding: 7 },
-  detailBubbleText: { color: palette.ink, fontSize: 10, lineHeight: 11, fontWeight: '600', textAlign: 'center' },
+  detailAreaSwitcherWrap: { marginTop: 12 },
+  detailAreaSwitcherLabel: { color: 'rgba(255,249,244,.52)', fontSize: 8, fontWeight: '700', letterSpacing: .9, marginBottom: 6 },
+  detailAreaSwitcher: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, paddingRight: 2, paddingVertical: 2 },
+  detailAreaChipSlot: { flexShrink: 0 },
+  detailAreaChip: { minHeight: 34, maxWidth: 180, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, borderRadius: 17, borderWidth: 1 },
+  detailAreaChipDot: { width: 7, height: 7, borderRadius: 4 },
+  detailAreaChipText: { color: palette.ink, fontSize: 9, fontWeight: '600', maxWidth: 126 },
+  detailAreaChipCount: { minWidth: 15, textAlign: 'center', color: 'rgba(255,249,244,.72)', fontSize: 8, fontWeight: '700' },
+  focusSheetShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 1000, elevation: 1000, backgroundColor: 'rgba(14,10,20,.62)', justifyContent: 'flex-end', paddingTop: 36 },
+  focusSheet: { width: '100%', maxWidth: 520, maxHeight: '84%', alignSelf: 'center', backgroundColor: '#35263F', borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, borderColor: 'rgba(255,255,255,.24)', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 18, overflow: 'hidden' },
+  focusSheetAccent: { height: 3, position: 'absolute', left: 0, right: 0, top: 0, opacity: .95 },
+  detailBubbleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, justifyContent: 'space-between' },
+  detailChoiceSlot: { width: '48%' },
+  detailChoice: { width: '100%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,.24)', backgroundColor: 'rgba(255,255,255,.075)', paddingHorizontal: 9, paddingVertical: 8 },
+  detailChoiceMark: { width: 24, height: 24, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  detailChoiceMarkText: { fontSize: 15, fontWeight: '700', lineHeight: 18 },
+  detailChoiceText: { flex: 1, color: palette.ink, fontSize: 11, lineHeight: 14, fontWeight: '600' },
   customAreaRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   customAreaInput: { flex: 1 },
   customAreaAdd: { minWidth: 65, borderRadius: 13, backgroundColor: palette.cream, alignItems: 'center', justifyContent: 'center' },
   customAreaAddText: { color: '#30223B', fontSize: 10, fontWeight: '800', letterSpacing: .6 },
   focusHeading: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 8, marginBottom: 5 },
-  focusTitle: { color: palette.ink, fontSize: 21, fontWeight: '400', marginTop: 4 },
+  focusTitle: { color: palette.ink, fontSize: 12, lineHeight: 15, fontWeight: '500', marginTop: 4 },
   focusCount: { color: '#F2D4C1', fontSize: 10, fontWeight: '700', letterSpacing: .7, paddingBottom: 4 },
-  focusCloud: { width: '100%', height: 352, position: 'relative', overflow: 'visible', marginTop: 5, marginBottom: 11 },
+  focusCloud: { width: '100%', height: 296, position: 'relative', overflow: 'visible', marginTop: 7, marginBottom: 11 },
   focusBubblePosition: { position: 'absolute', zIndex: 2 },
   focusBubbleTouch: { flex: 1, borderRadius: 999, overflow: 'visible' },
   focusBubble: { borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, overflow: 'hidden', shadowOffset: { width: 0, height: 5 }, shadowRadius: 10, elevation: 3 },
-  focusBubbleText: { color: palette.ink, fontSize: 10, lineHeight: 13, fontWeight: '500', textAlign: 'center' },
+  focusBubbleHalo: { position: 'absolute', top: -5, left: -5, right: -5, bottom: -5, borderRadius: 999, borderWidth: 1.4 },
+  focusBubbleActiveHalo: { position: 'absolute', top: -8, left: -8, right: -8, bottom: -8, borderRadius: 999, borderWidth: 2 },
+  focusBubbleGlyph: { fontSize: 16, lineHeight: 19, fontWeight: '600', marginBottom: 1 },
+  focusBubbleText: { color: palette.ink, fontSize: 10.5, lineHeight: 13, fontWeight: '500', textAlign: 'center' },
   focusBubbleTextSelected: { color: '#FFFFFF', fontWeight: '700' },
-  focusCheck: { position: 'absolute', top: 9, right: 13, color: '#FFFFFF', fontSize: 9, fontWeight: '800' },
-  domainHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, marginBottom: 7 },
-  domainTitle: { color: palette.ink, fontSize: 15, fontWeight: '600', marginTop: 3 },
-  domainTotal: { color: '#E9C5B2', fontSize: 22, fontWeight: '300', letterSpacing: 1 },
-  domainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 13 },
-  domainCard: { width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 14, paddingHorizontal: 7, borderWidth: 1, borderColor: 'rgba(255,255,255,.15)', backgroundColor: 'rgba(255,255,255,.065)' },
-  domainOrb: { width: 21, height: 21, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  domainOrbText: { color: '#30223B', fontSize: 8, fontWeight: '900' },
-  domainName: { color: palette.ink, fontSize: 10, fontWeight: '700' },
-  domainDetail: { color: 'rgba(255,249,244,.56)', fontSize: 9, marginTop: 2 },
-  domainCount: { color: palette.cream, fontSize: 9, fontWeight: '700' },
+  focusCheckBadge: { position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  focusCheck: { color: '#30223B', fontSize: 9, fontWeight: '900', textAlign: 'center' },
+  optionalDetailsButton: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.15)', paddingTop: 12, marginTop: 13 },
+  optionalDetailsTitle: { color: '#F3D8C9', fontSize: 11, fontWeight: '700' },
+  optionalDetailsHint: { color: 'rgba(255,249,244,.54)', fontSize: 9, marginTop: 3 },
+  optionalDetailsMark: { color: palette.cream, fontSize: 23, fontWeight: '300', paddingHorizontal: 8 },
+  optionalDetailsPanel: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.12)', marginTop: 11, paddingTop: 2 },
+  followupRemove: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,.17)' },
+  followupRemoveText: { color: '#F1D3C4', fontSize: 8, fontWeight: '800', letterSpacing: .7 },
   inlineError: { color: '#FFE1CF', backgroundColor: 'rgba(188,77,71,.18)', borderWidth: 1, borderColor: 'rgba(243,181,98,.45)', borderRadius: 12, padding: 10, marginBottom: 9, fontSize: 10, lineHeight: 15 },
   primaryButton: { minHeight: 56, borderRadius: 30, backgroundColor: palette.cream, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, shadowColor: '#120D1B', shadowOpacity: .14, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } },
   buttonPressed: { opacity: .9, transform: [{ scale: motion.pressScale }] },
@@ -1159,4 +1106,6 @@ const styles = StyleSheet.create({
   otherCountryText: { color: '#51485A', fontSize: 11, fontWeight: '600' },
   sheetDone: { minHeight: 46, borderRadius: 23, backgroundColor: '#382846', alignItems: 'center', justifyContent: 'center', marginTop: 9 },
   sheetDoneText: { color: '#FFF9F4', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  focusSheetDone: { minHeight: 46, borderRadius: 23, backgroundColor: palette.cream, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  focusSheetDoneText: { color: '#30223B', fontSize: 10, fontWeight: '800', letterSpacing: .8 },
 });

@@ -58,10 +58,9 @@ type BrowserDemoSnapshot = { version: 1; demoOnly: true; name: string; birthday:
 function demoSnapshot(): BrowserDemoSnapshot {
   return {
     version: 1, demoOnly: true, name: '', birthday: '', country: '', email: '', phone: '',
-    // Keep sample topics on the same canonical IDs as onboarding so the live
-    // profile map can represent the seeded demo facts instead of showing an
-    // empty map beside non-zero detail and record counts.
-    topics: [{ id: 'bp-topic', label: 'Blood pressure' }, { id: 'cholesterol', label: 'Cholesterol' }],
+    // A new profile starts with no selected health areas. Sample records remain
+    // available in the demo, but they must never look like the user's choices.
+    topics: [],
     assets: [{ id: 'demo-source-lab', name: 'Example blood test.pdf', kind: 'pdf', uri: 'demo://example-blood-test.pdf', mimeType: 'application/pdf', size: 128000, possibleRepeat: false, addedAt: '2026-09-12T09:00:00.000Z' }],
     facts: [
       { id: 'demo-fact-lab', label: 'Example blood test', value: 'Five values listed in a sample report', date: '2026-09-12T09:00:00.000Z', category: 'Lab results', source: 'Synthetic demo report · page 2', status: 'reviewed', note: DEMO_NOTE, reviewState: 'user_confirmed', validFrom: '2026-09-12T09:00:00.000Z', confidence: 1, permissionScope: 'demo_only' },

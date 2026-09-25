@@ -445,3 +445,12 @@ The user should review a stable story slice, not act as the team's error detecto
 - Tightened the missing-detail matcher so an annual visit cap cannot satisfy the separate annual/lifetime medical-limit fields; a focused regression test covers both cases.
 - A synthetic two-policy browser preview confirmed the new cards render with accepted sample terms, missing details, explicit exclusions, source actions and the existing change summary. This checks the browser accessibility tree and source actions; it does not pass the entire insurance-story acceptance journey or native visual review.
 - `npm run typecheck`, changed-file ESLint, `git diff --check` and `npm run test:repo` pass; repository tests are **119/119**. Full ESLint has zero errors and one pre-existing unused-variable warning. Insurance Story 3 remains partial; package acceptance remains **0/11 stories, 0/8 production gates, 0/19 overall**.
+
+### Adaptive onboarding map and scoped-area navigation — 25 September 2026
+
+- Removed the four-area display cap from the profile map. One to four selected health areas retain the roomy constellation; five through all nine available areas use a compact three-column network. Every chosen area remains visible, color-coded, connected to the profile node and independently tappable.
+- The detail sheet identifies the active area and states that its choices apply to that area only. The selected-area controls wrap into multiple rows, so the active chip and all other selected areas stay visible together instead of being hidden offscreen.
+- Rechecked the isolated fictional onboarding preview with five and all nine areas selected. The selected count and map count matched; each selected area opened its own scoped sheet. The preview used a separate nura.localhost origin; temporary synthetic choices were cleared and the user's saved origin was not changed.
+- Latest verification: npm run typecheck, npm run lint -- --no-cache, npm run test:repo (121/121 tests), and git diff --check passed. These are internal checks, not story acceptance.
+- No user story or production gate is accepted by this change. Totals remain 0/11 stories, 0/8 gates, 0/19 overall. Native-device/reduced-motion acceptance and the complete profile journey remain open.
+- Next: continue the G0 mobile visual audit, with active-area visibility, narrow-screen layout, and reduced-motion behavior included.
