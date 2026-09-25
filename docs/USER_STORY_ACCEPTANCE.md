@@ -24,9 +24,11 @@ This snapshot is based on the app code reviewed on 2026-09-24.
 
 ### 1. Create a living 720 health profile
 
-The person can set up an identity lightly, then build a useful health picture at their own pace. As they enter details or select health topics, the mobile screen responds immediately and visibly. Topic selections can reveal relevant follow-up topics; deselection removes the associated selection cleanly. The app shows the profile forming without implying that an unconfirmed selection is a diagnosis.
+The normal app journey begins with verified email or mobile one-time-code sign-in; no health details are requested before verification. The person chooses the profile owner, enters a required profile name and only the additional demographics needed for a stated purpose, then chooses any number of health topics or skips directly to adding records. A topic or detail choice is a tracking preference, not a diagnosis, document or confirmed fact.
 
-The first profile synthesis explains, in concise language, what the app has learned and where it came from. The person can correct, remove, or add details, then ask Nura to re-contextualize the profile. Each edit is saved as a stateful fact with its source, time, confidence, and validity where applicable.
+The person can add multiple health sources and a plain-language self-report in one batch. After explicit processing consent, Nura runs real extraction, duplicate, date, topic-suggestion and conflict checks and shows operational milestones from the service. It produces source-linked candidate claims, not memory writes. The person reviews each clear or uncertain item, edits or rejects mistakes, confirms identity and source relationships, and saves the approved facts as versioned profile memory. The timeline uses event dates and preserves original sources, unknowns and corrections. Insurance is offered only after this health-profile save, through its separate policy intake and review.
+
+Completion requires verified sign-in/recovery; owner isolation; a required name; accurate multi-select behavior above four topics; skip-to-upload; multi-file plus self-report batch; honest processing/error states; evidence-level review; approved-only memory writes; restart/re-entry; and a coherent month/year timeline. Full date of birth, body measurements or other sensitive demographics must not be mandatory unless a specific feature justifies and explains the need.
 
 ### 2. Maintain a Medical Registry as a personal health wiki
 

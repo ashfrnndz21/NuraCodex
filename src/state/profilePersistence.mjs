@@ -51,3 +51,37 @@ export async function persistProfileSetup(database, snapshot) {
     }
   });
 }
+
+export async function loadProfileSetup(database) {
+  const profile = await database.getFirstAsync(
+    'SELECT name,birthday,country,email,phone FROM profile WHERE id=1',
+  );
+  const topics = await database.getAllAsync('SELECT id,label FROM topics ORDER BY rowid');
+  const rows = await database.getAllAsync(
+    'SELECT f.id,f.label,f.value,f.date,f.category,f.source,f.status,f.note,m.source_run_id,m.review_state,m.valid_from,m.valid_until,m.confidence,m.permission_scope,m.source_id,m.source_claim_id,m.supersedes_fact_id FROM health_facts f LEFT JOIN memory_provenance m ON m.fact_id=f.id ORDER BY f.rowid DESC',
+  );
+
+  return {
+    profile: profile ?? null,
+    topics,
+    facts: rows.map((fact) => ({
+      id: fact.id,
+      label: fact.label,
+      value: fact.value,
+      date: fact.date,
+      category: fact.category,
+      source: fact.source,
+      status: fact.status,
+      note: fact.note ?? undefined,
+      sourceRunId: fact.source_run_id ?? undefined,
+      sourceId: fact.source_id ?? undefined,
+      sourceClaimId: fact.source_claim_id ?? undefined,
+      supersedesId: fact.supersedes_fact_id ?? undefined,
+      reviewState: fact.review_state ?? undefined,
+      validFrom: fact.valid_from ?? undefined,
+      validUntil: fact.valid_until,
+      confidence: fact.confidence,
+      permissionScope: fact.permission_scope ?? undefined,
+    })),
+  };
+}

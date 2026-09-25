@@ -113,59 +113,128 @@ Display only operational milestones that the app or agent service actually repor
 
 ## 5. Story 1 — Create a living 720 profile
 
-**Goal:** identity and health-focus setup feels light, visual, and editable, while the profile genuinely accumulates state. A selected topic is the user's chosen focus, not a diagnosis.
+**Goal:** the first run starts with a real account, then turns the person’s own details, chosen topics, notes and records into a reviewed, source-linked profile. A selected topic is a tracking preference, not a diagnosis or a medical record.
 
-### 1A. Welcome / choose who the profile is for
+**First-run sequence:** sign in → identify who the profile is for → add the minimum profile details → choose health topics → add historical sources and/or a plain-language note in one intake → review real AI results → save approved information → see the dated timeline → add insurance now or later.
 
-**Hierarchy:** Nura orb + short welcome → one-line purpose (“A clearer picture of your health, at your pace”) → action **For me** → secondary **I’m helping someone** → short privacy/context note.
+Do not force a person to complete every topic before uploading. The topic cloud guides organization; it is not a gate. Uploaded documents may suggest topics, but the person confirms every connection.
 
-**Components:** compact orb, editorial title, large primary action, secondary action, brief “why build this” disclosure.
+### 1A. Sign in or create an account
 
-**Interactions/states:** tap choice uses tactile press and a small selected confirmation; self continues to identity. Caregiver choice begins a separate-person setup and must not merge that person's data into the user's. A future account/sign-in step can be introduced without interrupting the design story; clearly distinguish local demo state from a real account.
+**Hierarchy:** Nura identity/orb → “Sign in or create your account” → choose email or mobile number → enter destination → request one-time verification code → terms/privacy links.
 
-**Motion:** orb's gradient is present but restrained; title/card settles once. Selected option compresses and transitions to the next scene with a short directional transition, not a hard jump.
+**Components:** email/mobile switch, country calling-code selector, destination field, primary “Send code” action, concise account/privacy note.
 
-**Acceptance:** the user can explain what the profile is for, can choose the active person, and can skip or revisit optional details.
+**Interactions/states:** the app always opens here for a normal account journey. No profile or health information is collected before the account session is verified. An existing session can restore securely without replaying onboarding. A demo credential, if used in a development build, is clearly marked synthetic and is not represented as production sign-in.
 
-### 1B. Identity and first details
+**Motion:** field focus and method switch are immediate and restrained. The send button shows progress only while a real request is in flight. A successful response moves the same scene into code entry; a verified session transitions into profile setup. Invalid, expired, resent, offline and rate-limited states stay on this screen with clear recovery. Never simulate a successful TAC.
 
-**Hierarchy:** progress context (e.g., “The person behind the profile”) → required name-or-nickname field → optional country, birthday and contact details → optional current height/weight/biometrics → concise explanation of why each item helps → continue.
+**Acceptance:** a real email or mobile verification is required before creating or loading a health profile; recovery and expired-code states work; no sensitive content is sent in the verification request.
 
-The profile needs a display name to stay recognizable across the app; this is not a legal-name requirement. Country, birthday, contact details and biometrics remain optional. Avoid labeling the name field optional or preselecting health areas in a genuinely new profile.
+### 1B. Verify the one-time code
 
-**Components:** inline text fields, country picker sheet, birthday picker, contact-method selection, small live profile map anchored beside or below form, privacy note.
+**Hierarchy:** masked destination → six-digit code entry → resend countdown / change destination → verify.
 
-**Interactions/states:** field focus is obvious; validate on blur/continue, not every keystroke. Country selection opens searchable sheet. When name/birthday/biometric details become valid, the profile identity node and relevant demographic details update. Optional information remains optional. Show keyboard-safe CTA and preserve scroll position.
+**Components:** accessible code field, paste/autofill support, resend control, edit-destination action, status text.
 
-**Motion:** on valid save, add one labeled signal to the map and draw a short line from identity; no decorative live graph while the user types invalid partial values. Animate new elements once, reduced-motion falls back to highlight/outline.
+**Interactions/states:** verify only after a complete code. Resend replaces the prior code according to the identity provider contract. Errors retain the destination, clear invalid digits and explain retry. App restart follows the identity provider’s session policy.
 
-**Acceptance:** a name or nickname is required and accepted without a legal identity; country, contact and birthday are handled clearly; edits persist; incomplete optional fields are not treated as zero or healthy.
+**Motion:** code focus advances naturally; successful verification uses one short transition into the profile-owner screen. Error uses a brief inline state change, not a shake-only signal. Reduced motion removes travel while preserving focus and status.
 
-### 1C. “What is part of your health?” focus cloud
+**Acceptance:** codes cannot be reused or bypassed; resend and expiry are enforced server-side; no account or health profile can be opened before verification.
 
-**Hierarchy:** compact prompt and selected count → free-floating but stable word-cloud bubbles of major areas (e.g. blood pressure, cholesterol, sleep, heart, sugar, medicines, family history, joints, other) → selected areas → contextual “why this helps” → Continue / tell me in my own words.
+### 1C. Choose the person, then add the profile essentials
 
-**Components:** size-varied focus bubbles, accessible selected state, dynamic dependent-choice cloud or anchored branch card, “something else” text entry, removable selected chips, small profile map.
+**Hierarchy:** active profile owner → default **For me** → separate **Someone I care for** route → required profile name → demographics with a clear reason and progressive disclosure → continue.
 
-**Interactions/states:** tap selects/deselects; selecting cholesterol reveals related choices (lipid panel, LDL/HDL, medicine, routines) without navigating away. Selection creates a profile topic only after app state confirms it. Bubble size must not imply diagnosis severity. Removing a parent removes only its dependent unanswered choices; if durable facts exist under it, ask before removal. “Why?” opens a short explanation sheet.
+**Components:** “For me” owner card; distinct care-recipient card; required name field; country/region when needed; optional, purpose-explained date-of-birth/age and measurements; privacy note.
 
-**Motion:** immediate pressed scale, selected fill/outline, branch appears from the parent with restrained stagger; map node and typed edge update on persisted event; collapse follows parent removal. Do not permanently drift bubbles under text; if idle drift is used, keep it barely perceptible and stop offscreen/reduced-motion.
+**Interactions/states:** the active person is established before any records are attached. A caregiver route requires a separately authenticated, authorized person profile; never create a pretend-secure dependent profile. The profile name is required and must not be labelled optional. Ask for exact identity details only when needed to verify a document belongs to this person. Country/region is collected before country-specific insurance interpretation. Do not require height, weight, sex or full birth date merely to pass onboarding; request them when a feature has a clear need and explain it.
 
-**Acceptance:** selection is immediately understandable; follow-ups are contextual; no selection is represented as a confirmed medical condition.
+**Motion:** choosing the owner anchors the identity node; the name appears there after save. No health nodes are preselected. Input changes update only the visible field until the user commits.
 
-### 1D. First understanding / profile synthesis
+**Acceptance:** the app keeps every person’s identity separate; required name is clear; optional demographics remain blank rather than being inferred; the profile owner is visible through every later stage.
 
-**Hierarchy:** “Here’s what Nura has from you” → concise synthesis grouped into what user entered / focus topics / saved sources / unknown domains → source/status labels → edit, remove, add more, rephrase/correct → confirm starting profile.
+### 1D. Choose health topics in the word cloud
 
-**Components:** synthesis card, evidence/status chips, inline edit or source sheet, profile map, prominent **Looks right / Save this starting point** and **Edit something**.
+**Hierarchy:** “What would you like Nura to keep track of?” → multi-select topic word cloud → live selected count → continue or skip and add later.
 
-**Interactions/states:** generated summary is derived from saved inputs only. User edit creates a new version or corrected fact, never silently overwrites. “Add more” returns to relevant scene. Confirm commits initial profile state. Model unavailable uses a transparent structured summary; it must not fake an LLM answer.
+**Components:** responsive topic nodes for blood pressure, cholesterol, sleep, heart health, blood sugar, medicines, family history, joints and movement, and something else; a selected-topics summary; a live profile visualization containing only selected topics.
 
-**Motion:** summary sections reveal gently; tap an item expands in place to source and exact value. On confirmation, selected map nodes settle and Home appears with a short continuation transition.
+**Interactions/states:** selecting any number of topics updates the count and summary; there is no four-topic cap. The cloud wraps/reflows on small screens and remains scrollable. A selected node opens its own contextual detail step. Users can skip this step and upload records first. Topic size never implies disease severity, and empty map space never implies a healthy result.
 
-**Acceptance:** user can understand what is known, what is not known, where it came from, and correct it before accepting.
+**Motion:** each chosen node receives the agreed color/outline and a short anchored connection to the profile orb after state commits. The count changes with the selection. More than four selections reflow without shrinking labels or hiding items. Reduced motion uses an immediate highlight and count update.
 
----
+**Acceptance:** selected topics are visibly preferences only; selection count is accurate for 0–all topics; no topic is preselected; deselecting one topic never deletes facts or files.
+
+### 1E. Add useful details without mistaking them for records
+
+**Hierarchy:** selected topic name → “What would be useful for Nura to know?” → topic-appropriate detail choices → add a short note or continue.
+
+**Components:** detail choices grouped under the selected topic; “I have a result/report,” “I want to track a change,” “I take/use something,” “I have a question,” and “Other” as appropriate; plain-language note action.
+
+**Interactions/states:** detail choices help organize the later intake; they do not claim a diagnosis and do not launch a scan/report upload by themselves. A chip labelled “X-ray or scan” is not an upload action. Real files enter through the single, explicit intake screen in 1F. One chosen topic’s details cannot overwrite another topic’s details.
+
+**Motion:** the detail panel expands from the selected word-cloud node and retains the other selected topics in view. Switching topics changes the anchored panel in place. No pile of overlapping sheets.
+
+**Acceptance:** every topic/detail choice has a clear meaning; no selection is displayed as extracted, confirmed or current medical evidence.
+
+### 1F. Add records and your own description in one health intake
+
+**Hierarchy:** “Add to your health profile” → add multiple PDFs/images and supported media → add a written description or manual detail → optionally tag items to selected topics → inspect batch → choose **Review and process** or save for later.
+
+**Components:** multi-file intake tray with thumbnails/names; add-files action; plain-language note editor; optional topic tags; remove/reorder controls; processing-use disclosure and consent; one batch action.
+
+**Interactions/states:** this is the one initial health-record collection point. The user can add several files and their own description together, then start one reviewable batch. AI-suggested topic tags remain suggestions until confirmed. Upload date is distinct from the date inside a report. Insurance policies use the separate Insurance Registry and do not enter the medical-record batch. Files remain visible if processing is deferred or fails.
+
+**Motion:** each source joins the tray as it is selected; selected topics can be shown as optional tags. Starting processing changes the tray into a run-status view only after consent and a real service response. Removing a queued file updates the pending batch before submission.
+
+**Acceptance:** multiple sources and a self-reported note can be submitted together; each has owner, source and date context; cancellation/failure does not silently drop a file; no file is sent to a model before explicit processing consent.
+
+### 1G. Watch actual processing, not a fake thinking animation
+
+**Hierarchy:** batch title and progress state → per-source status → completed operational milestones → pause/cancel/retry when supported.
+
+**Components:** source rows and states such as received, duplicate check, reading pages/images, extracting dated details, suggesting topic links, checking conflicts, ready for review; a clear error/retry state.
+
+**Interactions/states:** a server-side orchestrator runs the necessary bounded extractors and validation tools for this batch. It may process independent files concurrently, but reports each source separately. It retains page/image/time evidence and candidate confidence. It distinguishes report date from upload date, detects possible duplicates and conflicting values, and marks unreadable or unidentified material for attention. Only real service events update the display; no private chain-of-thought is shown.
+
+**Motion:** a source row changes state when its corresponding event arrives. The orb and progress indicator reflect the live run state. Completed rows settle; unresolved rows remain visibly amber. Cancellation and provider failure stop the run and preserve its recoverable state. Reduced motion removes shimmer and travel without hiding status.
+
+**Acceptance:** every visible milestone maps to a real event; errors, cancellation, duplicate and conflict states are honest; no result is invented when extraction fails.
+
+### 1H. Review claims, clarify uncertainty, then save
+
+**Hierarchy:** “Ready to review” grouped by source → extracted or user-entered candidate details → exact source passage/page/date → edit, confirm, reject or mark unclear → “Save reviewed details”.
+
+**Components:** source preview and candidate rows; distinct “From your document,” “You told Nura,” and “Nura’s suggestion” labels; “Ready,” “Needs your input,” and “Could not read” groups; exact quote/page/region; per-item edit/accept/reject/clarify actions.
+
+**Interactions/states:** the user can accept clear items, edit values/dates, reject mistakes, resolve identity mismatch and leave unknown items pending. “Not found” is not converted into a negative fact. A suggested relationship between two records requires explicit confirmation. Bulk acceptance may apply only to clearly displayed, non-conflicting items; uncertain or conflicting claims always need an individual decision.
+
+**Motion:** opening a candidate keeps the source card anchored while the exact evidence expands. An accepted item changes status only after persistence succeeds. Errors keep edits in place and offer retry. Do not animate an unreviewed claim into the confirmed profile.
+
+**Acceptance:** every accepted assertion retains source or self-reported origin, event date (or explicit unknown), recorded time, review status and version; rejected/pending candidates stay out of confirmed memory and default Ask context.
+
+### 1I. Save the profile and show its history
+
+**Hierarchy:** reviewed-item counts → concise “what is now in your profile” → unresolved items → **Save profile** → health timeline grouped by event month/year → continue to insurance setup or finish later.
+
+**Components:** accepted/pending counts; selected-topic summary; source-backed event preview; **Save profile** action; timeline handoff; **Set up insurance** and **Later** choices.
+
+**Interactions/states:** the save action commits only user-approved or explicitly user-entered facts into versioned memory. The app reports exactly what was saved and what remains to review. Timeline order uses the record’s event date, not upload time; uncertain dates are labelled. Initial setup can be resumed without processing the same evidence again. New files later run incrementally and deduplicate against the existing registry.
+
+**Motion:** only after the save event succeeds do accepted items settle into the profile map and appear on the month/year timeline. A source-selected node can open its record card and original document. The insurance invitation follows as a separate next step; it can be deferred without blocking the health profile.
+
+**Acceptance:** a saved profile survives supported restarts; source-linked facts and correction history remain; unresolved items remain visibly pending; insurance is offered after the health registry is saved.
+
+## Setup decisions that keep this journey coherent
+
+- **Do not force all demographics up front.** Require the profile name and verified account; collect only information needed for correct record ownership or a specific feature. Explain and request additional demographics when they become useful.
+- **Do not conflate four different things:** topic preference, self-reported health detail, source evidence, and AI suggestion. Label each and keep separate review states.
+- **Do not make topic selection a prerequisite for upload.** It is helpful organization, not a diagnosis or intake gate.
+- **Keep health records and insurance policies in separate batches.** They have different evidence schemas, decisions, and review controls.
+- **Use one review queue and one explicit save point.** Do not make the person re-enter the same history in profile setup, upload, timeline, and Ask.
+- **Treat insurance conclusions as evidence checks, not health-risk scores or coverage guarantees.** Distinguish covered, explicitly excluded, not found, unclear, waiting period, and limit; cite exact policy text and only compare with confirmed health context after consent.
 
 ## 6. Story 2 — Build a Medical Registry / health wiki
 

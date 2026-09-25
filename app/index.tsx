@@ -291,12 +291,12 @@ function LiveProfileMap({
     <View style={styles.mapCard}>
       <View style={styles.mapHeading}>
         <View>
-          <Text style={styles.eyebrow}>YOUR HEALTH MAP</Text>
-          <Text style={styles.mapTitle}>Your health, connected</Text>
+          <Text style={styles.eyebrow}>YOUR TRACKING PROFILE</Text>
+          <Text style={styles.mapTitle}>Areas you chose</Text>
         </View>
-        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>LIVE PROFILE</Text></View>
+        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>YOUR CHOICES</Text></View>
       </View>
-      <Text style={styles.mapSub}>{expanded ? `All ${visible.length} selected areas are shown. The map grows as you add more.` : 'Each area you choose connects to your profile. Tap a node to add details.'}</Text>
+      <Text style={styles.mapSub}>{expanded ? `All ${visible.length} areas you chose to track are shown. These choices do not confirm a diagnosis or add records.` : 'These are tracking interests, not diagnoses or records. Tap an area to choose what you want to follow.'}</Text>
       <View style={[styles.mapGraph, { height: graphHeight }]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
         {connectors}
         {visible.map((area, index) => {
@@ -306,7 +306,7 @@ function LiveProfileMap({
         })}
         <View style={[styles.mapOrbRing, expanded && styles.mapOrbRingExpanded]}><Orb size={expanded ? 34 : 40} state="idle" /></View>
         <Text numberOfLines={1} style={[styles.mapYou, expanded && styles.mapYouExpanded]}>{name.trim() || 'Your profile'}</Text>
-        {areas.length === 0 ? <Text style={styles.mapEmpty}>Choose an area to add your first connection.</Text> : null}
+        {areas.length === 0 ? <Text style={styles.mapEmpty}>Choose an area you would like to follow.</Text> : null}
       </View>
       <View style={styles.mapStats}>
         <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(areas.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>AREAS</Text></View>
@@ -661,7 +661,7 @@ export default function ProfileSetup() {
             <Text style={styles.cardOverline}>CHOOSE HEALTH AREAS</Text>
             <Text style={styles.focusCount}>{String(selectedAreas.length).padStart(2, '0')} SELECTED</Text>
           </View>
-          <Text style={styles.focusHelper}>Choose any areas to add or remove them from your map. Tap a connected node above to add optional details.</Text>
+          <Text style={styles.focusHelper}>Choose areas you want to follow. This doesn’t add a diagnosis or record. After you review your profile, you can add past reports.</Text>
           <View style={styles.focusChoices}>
             {focusAreas.map((area) => (
               <FocusAreaChoice
@@ -799,10 +799,10 @@ function FollowupBubbles({
           <View style={styles.sheetHandle} />
           <View style={styles.followupHeading}>
             <View style={[styles.followupIcon, { backgroundColor: area.pale }]}><Text style={[styles.followupGlyph, { color: area.ink }]}>{area.id === 'bp-topic' ? '↕' : area.id === 'cholesterol' ? '◌' : area.id === 'sleep' ? '☾' : area.id === 'heart' ? '♡' : area.id === 'sugar' ? '⌁' : area.id === 'medicines' ? '+' : '•'}</Text></View>
-            <View style={{ flex: 1 }}><Text style={styles.followupOverline}>DETAILS FOR THIS AREA</Text><Text style={styles.followupTitle}>{area.label}</Text></View>
+            <View style={{ flex: 1 }}><Text style={styles.followupOverline}>TRACKING PREFERENCES</Text><Text style={styles.followupTitle}>{area.label}</Text></View>
             <Pressable accessibilityRole="button" accessibilityLabel={'Remove ' + area.label + ' from your profile'} onPress={() => onRemove(area)} style={styles.followupRemove}><Text style={styles.followupRemoveText}>REMOVE</Text></Pressable>
           </View>
-          <Text style={styles.followupHint}>{area.id === 'other' ? 'Add a name for this area in your own words.' : 'These choices connect to ' + area.label + ' only. Your other areas keep their own details.'}</Text>
+          <Text style={styles.followupHint}>{area.id === 'other' ? 'Name a topic you would like to follow. This does not add a diagnosis or record.' : 'Choose what you would like to track under ' + area.label + '. These are preferences, not medical records.'}</Text>
           {areas.length > 1 ? (
             <View style={styles.detailAreaSwitcherWrap}>
               <Text style={styles.detailAreaSwitcherLabel}>SWITCH HEALTH AREA</Text>
