@@ -639,3 +639,10 @@ The user should review a stable story slice, not act as the team's error detecto
 - **Connectivity:** continue local work and verification offline. Push, remote provider checks and deployment checks are deferred until connectivity returns; no work is paused.
 
 - **Git checkpoint:** committed and pushed to `origin/main` as `fd4e038`; subsequent local work should continue from that commit.
+
+
+### M1 first-run probe — 26 September 2026, 10:32 +08
+
+- A temporary `127.0.0.1:8094` preview opened the profile step with a restored sample session and prefilled `Jordan Sample` / `Malaysia`; the form therefore showed its existing-profile name wording. This is not evidence of a fresh sign-in or clean first-run journey. The source of that restored browser state was not established.
+- No profile values were edited, no file was uploaded, and no reset or deletion was performed. The temporary tab was closed. The user's original preview remains unchanged.
+- **M1 acceptance remains blocked on a clean synthetic test session:** establish a separate synthetic identity/storage context without clearing or overwriting the existing browser workspace, then run the complete path. Do not infer first-run behavior from the restored profile.
