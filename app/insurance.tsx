@@ -7,7 +7,7 @@ import { HealthFact, IntakeAsset, useNura } from '../src/state/NuraContext';
 import { groupInsurancePolicyTerms } from '../src/services/insurancePolicyHistory.mjs';
 import { buildInsuranceSnapshot, clarificationQuestion, interpretInsuranceTerm } from '../src/services/insuranceSnapshot.mjs';
 import { comparePolicyDocuments, resolvePolicyReplacementLinks, summarizePolicyDifferences } from '../src/services/policyReplacement.mjs';
-import { policyTermEvidenceTarget } from '../src/services/policyTermEvidence.mjs';
+import { policySourceAsset, policyTermEvidenceAction, policyTermEvidenceTarget } from '../src/services/policyTermEvidence.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
 import { getSourceClaims } from '../src/services/intakeClient';
 import { isPolicyClarificationSourceCurrent } from '../src/services/policyClarification.mjs';
@@ -58,9 +58,7 @@ type PolicyLinkResolution = {
 };
 
 function evidenceActionLabel(term: HealthFact, assets: IntakeAsset[]) {
-  if (policyTermEvidenceTarget(term, assets)) return 'VIEW SOURCE QUOTE';
-  if (term.sourceId && assets.some((asset) => asset.purpose === 'insurance' && asset.serverSourceId === term.sourceId)) return 'OPEN ORIGINAL SOURCE';
-  return null;
+  return policyTermEvidenceAction(term, assets).label;
 }
 
 function TermEntry({ term, kind, value, evidenceLabel, onViewSource }: { term: HealthFact; kind: 'current' | 'previous' | 'removed'; value?: string; evidenceLabel?: string | null; onViewSource?: () => void }) {
@@ -172,7 +170,7 @@ export default function InsuranceRegistry() {
   }
 
   function openPolicySource(sourceId: string) {
-    const asset = assets.find((item) => item.serverSourceId === sourceId);
+    const asset = policySourceAsset(sourceId, assets);
     if (!asset) return;
     router.push({ pathname: '/review', params: { purpose: 'insurance', assetId: asset.id } });
   }
@@ -370,7 +368,7 @@ export default function InsuranceRegistry() {
       <View style={styles.policyHead}><View style={styles.policyMark}><Text style={styles.policyMarkText}>▤</Text></View><View style={{ flex: 1 }}><Text style={styles.policyEyebrow}>POLICY SOURCE</Text><Text style={styles.policyName}>{policy.sourceName}</Text></View><Text style={styles.sourceLinked}>LINKED</Text></View>
       <View style={styles.sourceBand}><Text style={styles.sourceBandIcon}>⌑</Text><Text style={styles.sourceBandText}>Source file · {policy.currentTerms.length} current entr{policy.currentTerms.length === 1 ? 'y' : 'ies'} · {policy.previousTerms.length} earlier · {policy.removedTerms.length} removed</Text></View>
       {replacementError?.sourceId === policy.sourceId && <Text accessibilityRole="alert" style={styles.replacementError}>{replacementError.message}</Text>}
-      {assets.find((asset) => asset.serverSourceId === policy.sourceId) && <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/review', params: { purpose: 'insurance', assetId: assets.find((asset) => asset.serverSourceId === policy.sourceId)?.id } })} style={styles.sourceAction}><Text style={styles.sourceActionText}>OPEN ORIGINAL SOURCE AND REVIEW  ↗</Text></Pressable>}
+      {sourceAssetById.get(policy.sourceId) && <Pressable accessibilityRole="button" onPress={() => openPolicySource(policy.sourceId)} style={styles.sourceAction}><Text style={styles.sourceActionText}>OPEN ORIGINAL SOURCE AND REVIEW  ↗</Text></Pressable>}
       {snapshot.keyDetails.length > 0 && <View style={styles.keyDetailsCard}>
         <View style={styles.keyDetailsHeading}><Text style={styles.keyDetailsEyebrow}>AT A GLANCE · APPROVED TERMS</Text><Text style={styles.keyDetailsCount}>{snapshot.keyDetails.length}</Text></View>
         {(expandedKeyDetails === policy.sourceId ? snapshot.keyDetails : snapshot.keyDetails.slice(0, 4)).map(({ key, label, term }) => {
@@ -478,12 +476,15 @@ export default function InsuranceRegistry() {
             const isNumericChange = comparisonSummary.observations.some((item) => item.label === row.label);
             const sourceLinkNeeded = comparisonSummary.unlinkedLabels.includes(row.label);
             const statusLabel = row.status === 'different' ? isNumericChange ? 'SOURCE-LINKED NUMERIC VALUE CHANGED' : sourceLinkNeeded ? 'SAVED VALUES DIFFER · SOURCE CHECK NEEDED' : 'SAVED TERMS DIFFER · REVIEW QUOTES' : row.status === 'same' ? 'SAME SAVED VALUE' : row.status === 'ambiguous' ? 'MULTIPLE MATCHING ENTRIES · REVIEW' : row.status === 'only_newer' ? 'NO ACCEPTED ENTRY IN EARLIER RECORD' : 'NO ACCEPTED ENTRY IN NEWER RECORD';
-            const evidenceValues = (terms: typeof row.newerTerms) => terms.length ? terms.map((term) => <View key={term.id} style={styles.comparisonEvidenceTerm}>
-              <Text style={styles.comparisonValue}>{displayTermValue(term)}</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel={`View source quote for ${term.label} from ${term.source}`} onPress={() => openPolicyTermEvidence(term)} style={styles.evidenceButton}>
-                <Text style={styles.evidenceButtonText}>VIEW SOURCE QUOTE  ↗</Text>
-              </Pressable>
-            </View>) : <Text style={styles.comparisonValue}>No accepted entry with this label in this document.</Text>;
+            const evidenceValues = (terms: typeof row.newerTerms) => terms.length ? terms.map((term) => {
+              const evidenceAction = policyTermEvidenceAction(term, assets);
+              return <View key={term.id} style={styles.comparisonEvidenceTerm}>
+                <Text style={styles.comparisonValue}>{displayTermValue(term)}</Text>
+                {evidenceAction.kind !== 'unavailable' ? <Pressable accessibilityRole="button" accessibilityLabel={`${evidenceAction.label} for ${term.label} from ${term.source}`} onPress={() => openPolicyTermEvidence(term)} style={styles.evidenceButton}>
+                  <Text style={styles.evidenceButtonText}>{evidenceAction.label}  ↗</Text>
+                </Pressable> : <Text style={styles.quoteMissing}>No saved source link is available for this entry.</Text>}
+              </View>;
+            }) : <Text style={styles.comparisonValue}>No accepted entry with this label in this document.</Text>;
             return <View key={row.key} style={[styles.comparisonRow, row.status === 'different' && styles.comparisonDifferent]}>
               <View style={styles.comparisonTitleRow}><Text style={styles.comparisonTermLabel}>{row.label}</Text><Text style={[styles.comparisonStatus, row.status === 'different' && styles.comparisonStatusDifferent]}>{statusLabel}</Text></View>
               <Text style={styles.comparisonSideLabel}>THIS DOCUMENT · {policy.sourceName}</Text>{evidenceValues(row.newerTerms)}

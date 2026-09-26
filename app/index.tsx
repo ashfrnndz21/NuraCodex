@@ -600,16 +600,22 @@ export default function ProfileSetup() {
     if (step === 'identity') {
       return (
         <View>
-          {stepIntro('01  ·  YOUR PROFILE', 'The person behind the profile.', 'Choose a display name and country to set up your health profile. Your country sets local context for care and insurance details. Birth date is optional and only used to calculate the age shown here.')}
+          {stepIntro(
+            '01  ·  YOUR PROFILE',
+            'The person behind the profile.',
+            existingProfileAtLoad
+              ? 'Review or update these details for this health profile. Your records stay connected to this profile.'
+              : 'Add a display name and choose a country to set up your health profile. Country helps localize care and insurance details. Birth date is optional and only used to calculate the age shown here.',
+          )}
           <View style={styles.identityCard}>
             <View style={styles.cardHeadingRow}>
               <View style={styles.cardIcon}><Text style={styles.cardIconText}>01</Text></View>
               <View style={{ flex: 1 }}><Text style={styles.cardOverline}>PROFILE DETAILS</Text><Text style={styles.cardTitle}>Set up your health profile</Text></View>
             </View>
-            <Text style={styles.fieldLabel}>DISPLAY NAME · {existingProfileAtLoad ? 'OPTIONAL FOR EXISTING PROFILES' : 'REQUIRED'}</Text>
+            <Text style={styles.fieldLabel}>DISPLAY NAME</Text>
             <TextInput value={name} onChangeText={(value) => { updateProfile({ name: value }); setError(''); }} placeholder="Name or nickname" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Profile display name" autoComplete="name" returnKeyType="done" />
-            <Text style={styles.fieldHelper}>A name or nickname is enough; you don’t need to use a legal name.</Text>
-            <Text style={styles.fieldLabel}>COUNTRY · REQUIRED FOR NEW PROFILES</Text>
+            <Text style={styles.fieldHelper}>{existingProfileAtLoad ? 'You can update this name at any time.' : 'Use a name or nickname for this profile. A legal name is not required.'}</Text>
+            <Text style={styles.fieldLabel}>COUNTRY</Text>
             <Pressable accessibilityRole="button" accessibilityLabel={country ? 'Country: ' + country + '. Change country' : 'Select your country'} onPress={() => setCountryPickerOpen(true)} style={styles.countryButton}>
               <Text style={[styles.countryButtonText, !country && styles.countryPlaceholder]}>{countryIsCustom ? customCountry || (country === 'Other' ? 'Enter your country' : country) : country || 'Select your country'}</Text><Text style={styles.countryChevron}>⌄</Text>
             </Pressable>

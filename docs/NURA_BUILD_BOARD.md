@@ -6,6 +6,52 @@
 
 **Integration owner:** the primary Codex build owner. The design and intelligence tracks may work in parallel, but only the integration owner marks a story connected after its screen, state, service, event, motion and acceptance check agree.
 
+## Executive progress and delivery plan — 26 September 2026
+
+**Strict acceptance:** **0/19 packages (0%)** — **0/11 user stories** and **0/8 production gates** are fully accepted. This does not mean no implementation exists: ten stories have partial implementation, M10 is not built, P1 is only a synthetic sign-in rehearsal, P2–P6 have partial foundations, and P7–P8 have not started. A package only moves the score after its whole journey/gate, recovery cases, visual and motion checks, and evidence pass.
+
+| Package | Status today | Next exit evidence |
+|---|---|---|
+| **M1 · Profile and first history** | In progress; event-date integrity now verified in browser; full journey remains open. | One clean synthetic run from sign-in through multiple files plus a note, consent, accept/edit/reject/unclear/date review, one save, source-linked history and re-entry; then native, reduced-motion and identity-isolation checks. |
+| **M2 · Medical Registry** | Partial: source-linked records, topic pages, corrections and cited summaries exist. | Complete intake-to-wiki journey, evidence changes, source navigation, correction/version and recovery checks. |
+| **M3 · Insurance Registry** | Partial: policy review/comparison exists. This update adds evidence-accurate source actions. | Complete two-policy upload/review/compare/Ask journey with exclusions, unclear terms, unknowns, conflict handling and exact source evidence. |
+| **M4 · Explore** | Partial: consented article search, save/hide and compact sourced details exist. | Complete persistence/recovery, video and publication metadata, ranking and provider checks. |
+| **M5 · Ask Nura** | Partial connected demo: consented context, operational events, citations, unknowns and approved memory proposals exist. | Finish bounded tool coverage, cancellation/error journey, grounding/security evaluation and durable consent history. |
+| **M6 · Treatment** | Partial local registry and Ask opt-in. | Complete source/version journey and end-to-end review/re-entry. |
+| **M7 · Visits and care** | Partial visit brief, outcome, follow-up actions and Ask opt-in. | Complete sharing/export/reminder and recovery journey. |
+| **M8 · Timeline and connections** | Partial: source-event deduplication, readable dates and correction navigation exist. | Complete evidence-backed links, mobile navigation/filter/zoom and re-entry acceptance. |
+| **M9 · Symptom support** | Partial bounded flow and deterministic urgent path. | Complete safety evaluation, localization, clinical review and failure/urgent scenarios. |
+| **M10 · Family and caregivers** | Not started. | Separate profiles, scoped consent/grants, revocation, audit and cross-person isolation. |
+| **M11 · Privacy controls** | Partial inventory and local deletion controls. | Consent ledger, export/correction, propagated deletion and lifecycle verification. |
+| **P1 · Identity/isolation** | Preview rehearsal only; not passed. | Real verified email/mobile code, recovery, server-side owner checks, family grants and isolation tests. |
+| **P2 · Consent/privacy** | Partial. | Purpose/version ledger, withdrawal, inventory, export and deletion proof. |
+| **P3 · Storage/sync** | Partial local persistence only. | Encrypted production storage, sync, recovery, conflict and deletion drills. |
+| **P4 · Multimodal pipeline** | Partial local PDF/image/video paths; cross-file UI acceptance and audio pipeline remain open. | Consent-bound format coverage, source locations, duplicate/conflict handling, retry/cancel and no unreviewed writes. |
+| **P5 · Agent safety/reliability** | Partial local orchestration and urgent path. | Server policy, injection defense, cancellation, evaluations, grounding and safety governance. |
+| **P6 · Providers/discovery** | Partial allowlisted search. | Provider reliability, dates/video metadata, privacy controls, limits and outage behavior. |
+| **P7 · Operations/security** | Not started. | Hosted controls, secret rotation, monitoring, abuse response, restore and incident drills. |
+| **P8 · Release/accessibility/governance** | Not started. | Device/accessibility matrix, reduced-motion review, clinical/legal/privacy sign-off, release/rollback evidence. |
+
+### Proposed D0 visual decision for approval
+
+Replace the profile-summary orbit with a 720 health overview built around evidence, not decoration:
+
+1. **Your health profile:** one calm header with the profile name and a timestamp/status derived from saved data.
+2. **Areas you follow:** selectable topic chips/cards, clearly labeled as interests. Selecting one opens its own detail view with “Add a record” and “Describe this in your words.”
+3. **From your records:** dated cards that show the captured item, source document and state such as needs review, confirmed, corrected or date not stated. Keep these distinct from topic selections.
+4. **Needs your review:** only real pending suggestions from processing, each opening its exact source evidence.
+5. **Connections:** a separate view for links the person explicitly created. No lines run through the center orb and no visual implies diagnosis or causation.
+
+Motion follows the action: a topic chip expands into its details, a chosen file moves into real processing activity, extracted items appear as reviewable suggestions, and the confirmed item becomes a source-linked timeline event after save. Use the shared motion tokens and preserve the same states in reduced-motion mode. Show the orb only in Nura-led setup/Ask or when it reflects a real operation. The screen must pass at 360, 390 and 430 pt widths and at standard/reduced motion. **No redesign is in the app until this visual direction is approved.**
+
+**Current build target:** complete M1's first-history journey and the previously requested profile-overview decision. The last verified date branch showed an explicitly blank event date as “Date not stated” without substituting the report date. A redesigned profile overview is **not** implemented; the decision is still pending. The proposed bounded design direction is an evidence-first 720 overview: separate chosen tracking interests from reviewed records, show source/date/review state on evidence, and show only explicit user-created links. The current orbit/rays are not accepted as a finished representation.
+
+**Since the prior checkpoint:** M3's linked-policy comparison now offers “View source quote” only when an exact quote is available, “Open original source” when only the document link exists, and a plain unavailable-evidence message otherwise. Source fallback is constrained to insurance assets even if an identifier collides with another registry. The profile form now uses a neutral “DISPLAY NAME” label and explains new versus existing-profile behavior without weakening new-profile validation. Verification: repository/integration tests **244/244**, latest-slice tests **67/67**, typecheck passed, lint **0 errors / 1 existing warning** at `app/index.tsx:403`, and `git diff --check` passed. The repository run required permission to bind temporary synthetic services to `127.0.0.1`; after that, all tests passed. No provider or personal health data was used. This is a verified slice, not completion of M1, M3 or any package.
+
+### Approval and parallel-delivery rule
+
+One approval of a package's user-visible direction authorizes implementation through its documented acceptance checks; it does **not** require another approval for every coding or test step. The integration owner keeps building independent work while a product choice is pending. Parallel lanes are limited to non-overlapping files/contracts; workers report changed files and tests, and the integration owner reviews and reruns the full gate before merging. User review happens only after internal verification, as one normal app journey with synthetic data and visible pass points. No user-test milestone is ready now.
+
 ## Shared design review
 
 - [NURA_STORYBOARD_PREVIEW.html](NURA_STORYBOARD_PREVIEW.html) is the clickable phone storyboard for all eleven stories, with screen concepts and interaction descriptions.
@@ -24,7 +70,7 @@
 | **D0 · Health-profile overview direction** | Replace the current orbital “map” with a clear 720-domain overview; separate tracking interests from records and review suggestions; show only explicit user-authored links. | **Waiting for the user's design approval.** Independent build work continues. | Approved visual contract, then 360/390/430 pt and reduced-motion review. No screen redesign is implemented before this approval. |
 | **M1 · First profile and history** | Login rehearsal → required profile → tracking choices → one batch of health files/notes → real processing events → item review → one save → dated/source-linked history → leave and re-enter. | **In progress.** Event-date handling and correction paths are now stricter; full in-app multi-file and review-to-history run remains open. | Fresh synthetic workspace; clear/edit/reject/unknown decisions; no report date silently becomes result date; one save; no duplicate timeline item; source navigation and re-entry pass. Then native/reduced-motion and identity/isolation remain for full M1 acceptance. |
 | **M2 + M8 · Medical Registry and timeline** | Connect accepted evidence to topic registries and a deduplicated, source-linked history; preserve corrections and user-authored relationships. | Partial; next after M1's complete review/save path. | Exact source/claim navigation, no duplicate records/events, truthful date and unknown states, edit/version and re-entry checks. |
-| **M3 · Insurance Registry** | One policy intake/review; compact coverage, exclusions, unclear wording and missing evidence; answer policy questions and compare policies without inventing coverage. | Partial; queued after M1/M2 integration. | Synthetic policy journey from upload through reviewed registry, grounded exclusions/unknowns, comparison and source-linked answer. |
+| **M3 · Insurance Registry** | One policy intake/review; compact coverage, exclusions, unclear wording and missing evidence; answer policy questions and compare policies without inventing coverage. | Partial; the latest evidence-action slice is verified while M1 remains the lead integration priority. | Synthetic policy journey from upload through reviewed registry, grounded exclusions/unknowns, comparison and source-linked answer. |
 | **M4–M7 + M9 · Daily-use and intelligence journeys** | Explore, Ask, treatment, visits/care, symptom support; connect real consented orchestration events, persistence and recovery. | Partial; build as bounded vertical slices after shared source/context contracts. | Each story completes its own scripted journey with real state/events, citations, cancellation/error behavior, and device/reduced-motion review. |
 | **M10–M11 + P1–P8 · Sharing and production readiness** | People/caregivers, privacy controls, identity, consent ledger, secure persistence/sync, provider operations, security, accessibility and release governance. | M10 not built; several production gates partial and two not started. | Every story and production gate passes its full contract; only then does progress reach 19/19. |
 
@@ -732,3 +778,13 @@ The user should review a stable story slice, not act as the team's error detecto
 - **In-app check:** on the separate synthetic preview at `/review`, opened the January sample report, used Edit with the result date left blank, staged and saved one claim, then opened `/health`. Its history row appeared under **Undated** as **Date not stated**, with the January report date retained on the source and not assigned to the result. No provider call or personal data was used.
 - **Status:** the unknown-date edit/save/history branch is verified in the browser preview. A user-entered result-date branch, the complete multi-file-plus-note journey, native/reduced-motion review, and identity/isolation checks remain open. M1 remains partial; strict counts stay **0/11 stories, 0/8 production gates, 0/19 accepted packages (0%)**. **No user-test milestone is ready.**
 - **Next slice:** run the app’s synthetic two-file-plus-note batch through one consent, event-driven processing, date/accept/edit/reject/unknown review, one save, source-linked month/year history and re-entry. Continue M2/M8 only after this first-history path is internally verified. D0’s profile-overview redesign remains pending user approval.
+
+
+### Insurance evidence routing, profile copy and plan visibility — 26 September 2026, 19:57 +08
+
+- M3 policy comparisons now show an exact-quote action only when a linked claim quote exists, otherwise open the saved policy source when available, or state plainly that no source link is available. Source fallback and the policy card's source action both stay within insurance assets; regressions cover colliding cross-registry IDs and blank identifiers.
+- The profile setup audit confirmed that genuinely new profiles require a display name and country. Existing profiles can continue without re-entering them to preserve access to saved records; that conditional rule had been shown as the confusing “OPTIONAL FOR EXISTING PROFILES” field label. The field now uses a neutral label and contextual explanatory copy. A fresh workspace's source default remains blank; the Riley name seen in the browser is consistent with a saved snapshot for that browser origin, but the exact origin storage was not inspected or reset.
+- The build board now starts with a visible 19-package status table, a single current target, and the approval rule for user-facing design direction. This improves observability only; it does not change acceptance counts.
+- Verification: repository/integration tests **244/244**, latest slices **67/67**, typecheck passed, lint **0 errors / 1 existing warning at `app/index.tsx:403`**, and `git diff --check` passed. Synthetic tests only; no provider call or real health data.
+- **Status:** still **0/11 accepted stories, 0/8 passed production gates, 0/19 accepted packages (0%)**. Ten stories have partial code/evidence, M10 is not built, P1 remains a local rehearsal, P2–P6 have partial foundations, and P7–P8 have not started. No whole-user test is ready.
+- **Next:** complete the M1 multi-file-plus-note review/save/history/re-entry path and the associated mobile/reduced-motion checks. D0 remains a product decision: whether to replace the orbit/rays with an evidence-first 720 overview that separates tracking interests, reviewed records and explicit links. Independent engineering work continues while that decision is pending.
