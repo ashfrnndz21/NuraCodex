@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
-import { loadProfileSetup, persistProfileSetup } from './profilePersistence.mjs';
+import { loadProfileSetup, persistApprovedMemoryFact, persistProfileSetup } from './profilePersistence.mjs';
 
 function createDatabase(filename = ':memory:', seed = true) {
   const connection = new DatabaseSync(filename);
@@ -159,6 +159,54 @@ test('profile commit rolls back the entire snapshot when provenance writing fail
     assert.deepEqual(topics.map((item) => item.id), ['bp-topic', 'cholesterol', 'sleep']);
     const [factCount] = await database.getAllAsync('SELECT COUNT(*) AS count FROM health_facts');
     assert.equal(factCount.count, 0);
+  } finally {
+    database.close();
+  }
+});
+
+test('approved Ask memory fact commits its fact and provenance together', async () => {
+  const database = createDatabase();
+  const fact = {
+    id: 'ask-memory-1', label: 'Morning routine', value: 'Walks before breakfast',
+    date: '2026-09-26T08:00:00.000Z', category: 'User-approved memory',
+    source: 'Nura suggestion · confirmed by you', status: 'reviewed',
+    note: 'User requested that Nura remember this.', sourceRunId: 'ask-run-1',
+    reviewState: 'user_confirmed', validFrom: '2026-09-26T08:00:00.000Z',
+    validUntil: null, confidence: null, permissionScope: 'profile_memory_write',
+  };
+  try {
+    await persistApprovedMemoryFact(database, fact);
+    assert.deepEqual(await database.getAllAsync('SELECT id,label,value FROM health_facts'), [
+      { id: 'ask-memory-1', label: 'Morning routine', value: 'Walks before breakfast' },
+    ]);
+    assert.deepEqual(await database.getAllAsync('SELECT fact_id,source_run_id,review_state,permission_scope FROM memory_provenance'), [
+      { fact_id: 'ask-memory-1', source_run_id: 'ask-run-1', review_state: 'user_confirmed', permission_scope: 'profile_memory_write' },
+    ]);
+  } finally {
+    database.close();
+  }
+});
+
+test('approved Ask memory fact leaves no partial fact when provenance commit fails', async () => {
+  const database = createDatabase();
+  const run = database.runAsync;
+  database.runAsync = async (sql, ...params) => {
+    if (sql.startsWith('INSERT INTO memory_provenance')) throw new Error('synthetic provenance failure');
+    return run(sql, ...params);
+  };
+  const fact = {
+    id: 'ask-memory-failed', label: 'Morning routine', value: 'Walks before breakfast',
+    date: '2026-09-26T08:00:00.000Z', category: 'User-approved memory',
+    source: 'Nura suggestion · confirmed by you', status: 'reviewed',
+    sourceRunId: 'ask-run-1', reviewState: 'user_confirmed',
+    validFrom: '2026-09-26T08:00:00.000Z', permissionScope: 'profile_memory_write',
+  };
+  try {
+    await assert.rejects(persistApprovedMemoryFact(database, fact), /synthetic provenance failure/);
+    const [factCount] = await database.getAllAsync('SELECT COUNT(*) AS count FROM health_facts');
+    const [provenanceCount] = await database.getAllAsync('SELECT COUNT(*) AS count FROM memory_provenance');
+    assert.equal(factCount.count, 0);
+    assert.equal(provenanceCount.count, 0);
   } finally {
     database.close();
   }

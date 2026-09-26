@@ -29,9 +29,23 @@ test('new profiles require a display name while an existing profile can continue
 
 test('fictional preview seed records do not make a new profile appear established', () => {
   assert.equal(hasExistingProfileEvidence({
+    name: '',
+    birthday: '',
+    country: '',
+    topics: [{ id: 'cholesterol', label: 'Cholesterol' }],
     treatments: [{ id: 'demo-treatment-01' }],
     visits: [{ id: 'demo-visit-upcoming' }, { id: 'demo-visit-completed' }],
   }), false);
+});
+
+test('partial demographics and topic choices do not bypass required profile setup', () => {
+  for (const profile of [
+    { country: 'Malaysia' },
+    { birthday: '1990-05-12' },
+    { name: 'Riley' },
+    { country: 'Malaysia', topics: [{ id: 'cholesterol', label: 'Cholesterol' }] },
+  ]) assert.equal(hasExistingProfileEvidence(profile), false);
+  assert.equal(hasExistingProfileEvidence({ name: 'Riley', country: 'Malaysia' }), true);
 });
 
 test('existing user-authored records preserve access without requiring a new name', () => {

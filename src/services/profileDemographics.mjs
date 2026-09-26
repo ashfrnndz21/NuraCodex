@@ -15,14 +15,20 @@ export function ageFromDateOfBirth(value, now = new Date()) {
 
 /** Sample fixtures must not make a new demo profile look like an existing person's profile. */
 export function hasExistingProfileEvidence(profile = {}) {
-  if (String(profile.name || '').trim() || String(profile.birthday || '').trim() || String(profile.country || '').trim()) return true;
-  const userCreated = (items) => Array.isArray(items) && items.length > 0;
-  const savedRecords = [profile.facts, profile.assets, profile.links, profile.savedQuestions, profile.agentMessages, profile.registryBriefs, profile.feedItems];
-  if (profile.topics?.length || savedRecords.some(userCreated)) return true;
+  // A new profile is only past the required identity step once both fields
+  // have been entered. A partial country or birth-date save must not make its
+  // name optional or unlock protected routes.
+  if (String(profile.name || '').trim() && String(profile.country || '').trim()) return true;
 
-  // The preview ships with these fictional rows so the app is explorable. They are not user history.
-  const hasNonSampleRecord = (items) => Array.isArray(items) && items.some((item) => !String(item?.id || '').startsWith('demo-'));
-  return hasNonSampleRecord(profile.treatments) || hasNonSampleRecord(profile.visits);
+  // Preserve access for genuinely established profiles, but ignore sample
+  // fixtures and topic selections: neither is user-authored health history.
+  const hasNonSampleRecord = (items) => Array.isArray(items) && items.some((item) => {
+    if (typeof item === 'string') return Boolean(item.trim());
+    const id = String(item?.id || '');
+    return Boolean(id) && !id.startsWith('demo-') && item?.permissionScope !== 'demo_only';
+  });
+  const savedRecords = [profile.facts, profile.assets, profile.links, profile.savedQuestions, profile.agentMessages, profile.registryBriefs, profile.feedItems, profile.treatments, profile.visits, profile.policyReplacements, profile.policyClarifications];
+  return savedRecords.some(hasNonSampleRecord);
 }
 
 export function validateRequiredProfileDetails({ name, country, customCountry = '', birthday, requireName = true, requireCountry = true, validateBirthday = true }, now = new Date()) {

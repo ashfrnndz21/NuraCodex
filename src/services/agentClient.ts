@@ -1,7 +1,7 @@
 export type AgentSource = { reference: string; id: string; title: string; detail: string; date: string; source: string; status: string; kind: string; category?: string; url?: string; publisher?: string };
 export type AgentTrace = { id: string; label: string; status: 'started' | 'complete'; detail?: string };
 export type CoverageAssessment = { kind: 'explicit_benefit' | 'explicit_limit' | 'explicit_exclusion' | 'unclear'; policyReference: string; detail: string; relatedHealthReferences: string[] };
-export type AgentAnswer = { answer: string; citations: string[]; unknowns: string[]; nextSteps: string[]; coverageAssessments?: CoverageAssessment[]; memoryProposal: { label: string; value: string; reason: string } | null };
+export type AgentAnswer = { answer: string; citations: string[]; unknowns: string[]; nextSteps: string[]; coverageAssessments?: CoverageAssessment[]; memoryProposal: { label: string; value: string; reason: string; sourceKind?: 'selected_record' | 'user_request'; sourceReferences?: string[] } | null };
 export type AgentEvent =
   | { type: 'run_started'; runId: string }
   | { type: 'trace'; id: string; label: string; status: 'started' | 'complete'; detail?: string }

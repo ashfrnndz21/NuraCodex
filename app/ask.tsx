@@ -40,7 +40,7 @@ const C = {
 };
 export default function Ask() {
   const params = useLocalSearchParams<{ context?: string; recordId?: string; question?: string; policySourceIds?: string; registryBriefTopicId?: string; registryBriefTopicLabel?: string; registrySourceSignature?: string }>();
-  const { facts, topics, links, treatments, visits, assets, agentMessages, addAgentMessage, saveRegistryBrief, clearAgentMessages, addQuestion, addFact } = useNura();
+  const { facts, topics, links, treatments, visits, assets, agentMessages, addAgentMessage, saveRegistryBrief, clearAgentMessages, addQuestion, saveApprovedMemoryFact } = useNura();
   const recordId = typeof params.recordId === 'string' ? params.recordId : null;
   const requestedPolicySourceIds = typeof params.policySourceIds === 'string' ? params.policySourceIds.split(',').filter(Boolean) : [];
   const policyReviewSourceKey = resolvePolicyReviewSourceIds(requestedPolicySourceIds, facts).join('|');
@@ -63,6 +63,9 @@ export default function Ask() {
   const [error, setError] = useState('');
   const [service, setService] = useState<{ available: boolean; provider?: string; model?: string; reason?: string; capabilities?: { documentExtraction?: boolean; trustedHealthSearch?: boolean } } | null>(null);
   const [proposalSaved, setProposalSaved] = useState(false);
+  const [proposalSaving, setProposalSaving] = useState(false);
+  const [proposalSaveError, setProposalSaveError] = useState('');
+  const proposalSaveLock = useRef(false);
   const [registryBriefSaved, setRegistryBriefSaved] = useState(false);
   const [registryBriefSaving, setRegistryBriefSaving] = useState(false);
   const [registryBriefSaveError, setRegistryBriefSaveError] = useState('');
@@ -177,17 +180,17 @@ export default function Ask() {
       activeRunController.current = null;
     };
   }, []);
-  function startQuestion() { if (!question.trim() || busy) return; setError(''); setShareExternalSearch(false); setShareTreatments(false); setShareVisits(false); if (policyReviewMode) setSelectedHealthFactIds([]); setConsentOpen(true); }
+  function startQuestion() { if (!question.trim() || busy || proposalSaveLock.current) return; setError(''); setShareExternalSearch(false); setShareTreatments(false); setShareVisits(false); if (policyReviewMode) setSelectedHealthFactIds([]); setConsentOpen(true); }
   function animateSend(toValue: number) {
     if (reducedMotion || busy || !question.trim()) return;
     Animated.timing(sendScale, { toValue, duration: toValue === 1 ? motion.pressOut : motion.pressIn, easing: toValue === 1 ? Easing.bezier(...motion.easing.bouncy) : Easing.linear, useNativeDriver: true }).start();
   }
   async function confirmAndSend() {
     const cleanQuestion = question.trim();
-    if (!cleanQuestion || busy) return;
+    if (!cleanQuestion || busy || proposalSaveLock.current) return;
     setConsentOpen(false);
     setQuestion('');
-    setAnswer(null); setSources([]); setTrace([]); setError(''); setProposalSaved(false); setRegistryBriefSaved(false); setRegistryBriefSaveError(''); setBusy(true);
+    setAnswer(null); setSources([]); setTrace([]); setError(''); setProposalSaved(false); setProposalSaving(false); setProposalSaveError(''); setRegistryBriefSaved(false); setRegistryBriefSaveError(''); setBusy(true);
     const runId = Crypto.randomUUID();
     const controller = new AbortController();
     const runGate = createAgentRunEventGate();
@@ -269,10 +272,21 @@ export default function Ask() {
     if (target.kind === 'registry') { router.push({ pathname: '/registry', params: { topicId: target.topicId } }); return; }
     router.push({ pathname: '/(tabs)/health', params: { focusId: target.focusId } });
   }
-  function acceptMemoryProposal() {
-    if (!answer?.memoryProposal || proposalSaved || !activeRunId) return;
-    addFact(answer.memoryProposal.label, answer.memoryProposal.value, { category: 'User-approved memory', source: 'Nura suggestion · confirmed by you', note: answer.memoryProposal.reason || 'Suggested in an Ask Nura conversation and approved by you.', sourceRunId: activeRunId, reviewState: 'user_confirmed', validFrom: new Date().toISOString(), validUntil: null, confidence: null, permissionScope: 'profile_memory_write' });
-    setProposalSaved(true);
+  async function acceptMemoryProposal() {
+    const proposal = answer?.memoryProposal;
+    if (!proposal || proposalSaved || proposalSaveLock.current || !activeRunId) return;
+    proposalSaveLock.current = true;
+    setProposalSaving(true);
+    setProposalSaveError('');
+    try {
+      await saveApprovedMemoryFact(proposal.label, proposal.value, { category: 'User-approved memory', source: 'Nura suggestion · confirmed by you', note: proposal.reason || 'Suggested in an Ask Nura conversation and approved by you.', sourceRunId: activeRunId, reviewState: 'user_confirmed', validFrom: new Date().toISOString(), validUntil: null, confidence: null, permissionScope: 'profile_memory_write' });
+      if (mounted.current) setProposalSaved(true);
+    } catch (caught) {
+      if (mounted.current) setProposalSaveError(caught instanceof Error ? caught.message : 'The profile update could not be saved. Nothing was added. Please try again.');
+    } finally {
+      proposalSaveLock.current = false;
+      if (mounted.current) setProposalSaving(false);
+    }
   }
   async function saveRegistrySummary() {
     if (!registryBriefMode || !registryBriefTopic || !answer || !activeRunId || busy || registryBriefSaved || registryBriefSaving) return;
@@ -323,12 +337,12 @@ export default function Ask() {
         {answer.unknowns.length > 0 && <View style={s.unknownBox}><Text style={s.unknownTitle}>{answer.coverageAssessments !== undefined ? 'POLICY DETAIL NOT SHOWN HERE' : 'NOT FOUND IN THIS REVIEW'}</Text>{answer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}{answer.coverageAssessments === undefined && <Text style={s.unknownScope}>This reflects only information selected for this answer. Other saved areas, files or records may not have been included.</Text>}</View>}
         {answer.nextSteps.length > 0 && <View style={s.nextBox}><Text style={s.nextTitle}>{answer.coverageAssessments !== undefined ? 'QUESTIONS TO CONFIRM WITH YOUR INSURER' : 'POSSIBLE NEXT STEP'}</Text>{answer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.nextText}>•  {item}</Text>)}</View>}
         {registryBriefMode && !busy && <View style={s.registrySave}><Text style={s.registrySaveTitle}>SAVE TO MEDICAL REGISTRY</Text><Text style={s.registrySaveBody}>This saves the answer, its stated unknowns and only the sources it cited. The summary will be marked out of date if linked records change.</Text>{registryBriefSaveError ? <Text style={s.registrySaveError}>{registryBriefSaveError}</Text> : null}<Pressable accessibilityRole="button" disabled={registryBriefSaved || registryBriefSaving || answer.citations.length === 0} onPress={() => void saveRegistrySummary()} style={[s.registrySaveButton, (registryBriefSaved || registryBriefSaving || answer.citations.length === 0) && { opacity: .5 }]}><Text style={s.registrySaveButtonText}>{registryBriefSaved ? 'SAVED TO MEDICAL REGISTRY' : registryBriefSaving ? 'SAVING ON THIS DEVICE…' : 'SAVE CITED SUMMARY'}</Text></Pressable></View>}
-        {answer.memoryProposal && <View style={s.proposal}><Text style={s.proposalTitle}>NURA SUGGESTED A PROFILE UPDATE</Text><Text style={s.proposalText}>{answer.memoryProposal.label}: {answer.memoryProposal.value}</Text>{answer.memoryProposal.reason ? <Text style={s.proposalReason}>{answer.memoryProposal.reason}</Text> : null}<Pressable onPress={acceptMemoryProposal} disabled={proposalSaved} style={[s.proposalButton, proposalSaved && s.proposalSaved]}><Text style={[s.proposalButtonText, proposalSaved && s.proposalSavedText]}>{proposalSaved ? 'ADDED · CONFIRMED BY YOU' : 'REVIEW AND ADD TO MY PROFILE'}</Text></Pressable></View>}
+        {answer.memoryProposal && <View style={s.proposal}><Text style={s.proposalTitle}>NURA SUGGESTED A PROFILE UPDATE</Text><Text style={s.proposalText}>{answer.memoryProposal.label}: {answer.memoryProposal.value}</Text>{answer.memoryProposal.reason ? <Text style={s.proposalReason}>{answer.memoryProposal.reason}</Text> : null}{answer.memoryProposal.sourceReferences?.length ? <View style={s.proposalSources}><Text style={s.proposalSourceHeading}>SUPPORTING RECORDS</Text>{answer.memoryProposal.sourceReferences.map((reference) => { const source = sources.find((item) => item.reference === reference); if (!source) return <Text key={reference} style={s.proposalSourceUnavailable}>Supporting record {reference} is unavailable in this review.</Text>; const target = evidenceTarget(source); return <Pressable key={reference} accessibilityRole="button" accessibilityState={{ disabled: !target }} disabled={!target} onPress={() => openEvidenceSource(source)} style={[s.proposalSourceLink, !target && s.proposalSourceLinkDisabled]}><Text style={s.proposalSourceRef}>{reference}</Text><View style={{ flex: 1 }}><Text style={s.proposalSourceTitle}>{source.title}</Text><Text style={s.proposalSourceAction}>{target ? 'OPEN SUPPORTING RECORD ↗' : 'SOURCE UNAVAILABLE'}</Text></View></Pressable>; })}</View> : answer.memoryProposal.sourceKind === 'user_request' ? <Text style={s.proposalReason}>Based on your explicit request in this conversation.</Text> : null}{proposalSaveError ? <Text accessibilityRole="alert" style={s.proposalSaveError}>{proposalSaveError}</Text> : null}<Pressable onPress={() => void acceptMemoryProposal()} disabled={proposalSaved || proposalSaving} style={[s.proposalButton, proposalSaved && s.proposalSaved, (proposalSaved || proposalSaving) && { opacity: .8 }]}><Text style={[s.proposalButtonText, proposalSaved && s.proposalSavedText]}>{proposalSaved ? 'ADDED · CONFIRMED BY YOU' : proposalSaving ? 'SAVING TO YOUR PROFILE…' : proposalSaveError ? 'TRY AGAIN' : 'REVIEW AND ADD TO MY PROFILE'}</Text></Pressable></View>}
         <Text style={s.medicalNote}>{answer.coverageAssessments !== undefined ? 'This is an evidence summary, not an insurer decision. Confirm important coverage questions with your insurer.' : 'Nura helps organize your records; this is not a diagnosis or a substitute for care from a clinician.'}</Text>
       </View>}
       {error ? <View style={s.errorCard}><Text style={s.errorTitle}>This run didn’t complete</Text><Text style={s.errorText}>{error}</Text><Text style={s.errorNote}>Your saved health records were not changed.</Text></View> : null}
     </ScrollView>
-    <View style={s.composerWrap}><View style={s.composer}><TextInput value={question} onChangeText={setQuestion} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} placeholder="Ask about your health history…" placeholderTextColor="#8A818D" style={s.input} multiline maxLength={2000} editable={!busy} /><Animated.View style={{ transform: [{ scale: sendScale }] }}><Pressable accessibilityRole="button" accessibilityLabel="Ask Nura" disabled={!question.trim() || busy} onPress={startQuestion} onPressIn={() => animateSend(motion.pressScale)} onPressOut={() => animateSend(1)} style={[s.sendButton, (!question.trim() || busy) && s.sendDisabled]}><Text style={[s.sendText, (!question.trim() || busy) && s.sendTextDisabled]}>↑</Text></Pressable></Animated.View></View><Text style={s.composerNote}>Conversation saves on this device. Selected context is sent for an answer only after you confirm.</Text></View>
+    <View style={s.composerWrap}><View style={s.composer}><TextInput value={question} onChangeText={setQuestion} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} placeholder="Ask about your health history…" placeholderTextColor="#8A818D" style={s.input} multiline maxLength={2000} editable={!busy && !proposalSaving} /><Animated.View style={{ transform: [{ scale: sendScale }] }}><Pressable accessibilityRole="button" accessibilityLabel="Ask Nura" disabled={!question.trim() || busy || proposalSaving} onPress={startQuestion} onPressIn={() => animateSend(motion.pressScale)} onPressOut={() => animateSend(1)} style={[s.sendButton, (!question.trim() || busy || proposalSaving) && s.sendDisabled]}><Text style={[s.sendText, (!question.trim() || busy || proposalSaving) && s.sendTextDisabled]}>↑</Text></Pressable></Animated.View></View><Text style={s.composerNote}>Conversation saves on this device. Selected context is sent for an answer only after you confirm.</Text></View>
       <Modal visible={consentOpen} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setConsentOpen(false)}><View style={[s.modalShade, Platform.OS === 'web' && s.modalShadeWeb]}><ScrollView style={[s.modalCard, Platform.OS === 'web' && s.modalCardWeb]} contentContainerStyle={s.modalContent} keyboardShouldPersistTaps="handled"><View style={s.modalHandle} /><Text style={s.modalEyebrow}>YOUR CHOICE · THIS ANSWER</Text><Text style={s.modalTitle}>{registryBriefMode ? 'Review what goes into this summary.' : 'Choose what Nura can use.'}</Text><Text style={s.modalBody}>When you continue, your question and selected details below are sent to Nura’s AI service to prepare an answer. Its privacy practices apply. Original files are never included. If you select report details below, only saved text from those sources is shared. {registryBriefMode ? 'This summary uses only the selected health area and its connected records. Recent chat messages are excluded.' : ''} {coverageQuestion ? 'For a policy review, Nura uses only the reviewed policy terms and health details you select. It does not search the web.' : ''} Nothing is sent until you continue.</Text><View style={s.shareList}>{policyReviewMode ? <>
         <ShareToggle label={policyComparisonMode ? 'Terms from these two policy documents' : 'Terms from this policy document'} count={availablePolicyFacts.length} selected={sharePolicyTerms} onPress={() => setSharePolicyTerms((value) => !value)} />
         <Text style={s.shareHint}>Choose the personal health facts Nura may compare. No health fact is selected by default.</Text>
@@ -470,6 +484,15 @@ const s = StyleSheet.create({
   proposalTitle: { color: C.plum, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
   proposalText: { color: C.ink, fontSize: 11, fontWeight: '600', marginTop: 6 },
   proposalReason: { color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 4 },
+  proposalSources: { marginTop: 9, gap: 6 },
+  proposalSourceHeading: { color: C.faint, fontSize: 7, fontWeight: '700', letterSpacing: 0.8 },
+  proposalSourceLink: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 10, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
+  proposalSourceLinkDisabled: { opacity: 0.65 },
+  proposalSourceRef: { color: C.blue, fontSize: 8, fontWeight: '700' },
+  proposalSourceTitle: { color: C.ink, fontSize: 9, fontWeight: '600' },
+  proposalSourceAction: { color: C.blue, fontSize: 7, fontWeight: '700', letterSpacing: 0.5, marginTop: 3 },
+  proposalSourceUnavailable: { color: C.faint, fontSize: 8, lineHeight: 12 },
+  proposalSaveError: { color: '#FFD2C4', fontSize: 9, lineHeight: 13, marginTop: 7 },
   proposalButton: { borderRadius: 12, backgroundColor: C.white, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', marginTop: 10 },
   proposalButtonText: { color: C.plumInk, fontSize: 8, fontWeight: '700', letterSpacing: 0.7 },
   proposalSaved: { backgroundColor: C.green, borderColor: 'rgba(188, 232, 208, 0.38)' },

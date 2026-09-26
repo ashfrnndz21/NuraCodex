@@ -15,4 +15,5 @@ export type ProfileSetupSnapshot = {
 };
 
 export declare function persistProfileSetup(database: SQLite.SQLiteDatabase, snapshot: ProfileSetupSnapshot): Promise<void>;
+export declare function persistApprovedMemoryFact(database: SQLite.SQLiteDatabase, fact: HealthFact): Promise<void>;
 export declare function loadProfileSetup(database: SQLite.SQLiteDatabase): Promise<PersistedProfileSetup>;

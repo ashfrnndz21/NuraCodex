@@ -30,7 +30,7 @@ test('coverage activity reports retrieved policy evidence accurately', () => {
 
 test('coverage findings cannot link health records outside the current evidence set', () => {
   const sources = [
-    { reference: 'R1', id: 'fact:policy', title: 'Cardiology visit limit', kind: 'user_record', category: 'Insurance coverage' },
+    { reference: 'R1', id: 'fact:policy', title: 'Cardiology visit limit', detail: 'Eight visits per year.', kind: 'user_record', category: 'Insurance coverage' },
     { reference: 'R2', id: 'visit:sample', title: 'Sample clinic visit', kind: 'care_visit', category: 'Care visit' },
   ];
   const answer = validateAnswer({
@@ -46,8 +46,74 @@ test('coverage findings cannot link health records outside the current evidence 
   assert.deepEqual(answer.citations, ['R1', 'R2']);
 });
 
+test('coverage validation rejects an explicit exclusion presented as a benefit', () => {
+  const sources = [{ reference: 'R1', title: 'Dialysis exclusion', detail: 'Dialysis treatment is excluded.', kind: 'user_record', category: 'Insurance coverage' }];
+  const answer = validateAnswer({
+    answer: 'Dialysis is covered under this policy.', citations: ['R1'],
+    coverageAssessments: [{ kind: 'explicit_benefit', policyReference: 'R1', detail: 'Dialysis treatment is excluded.', relatedHealthReferences: [] }],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'coverage', question: 'Is dialysis covered?' });
+
+  assert.deepEqual(answer.coverageAssessments, []);
+  assert.doesNotMatch(answer.answer, /Dialysis is covered/);
+  assert.deepEqual(answer.citations, []);
+
+  const mislabeled = validateAnswer({
+    answer: 'The reviewed wording is uncertain.', citations: ['R1'],
+    coverageAssessments: [{ kind: 'unclear', policyReference: 'R1', detail: 'Dialysis treatment is excluded.', relatedHealthReferences: [] }],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'coverage', question: 'What does this term say?' });
+  assert.deepEqual(mislabeled.coverageAssessments, []);
+});
+
+test('coverage validation rejects unsupported finding detail despite a valid policy citation', () => {
+  const sources = [{ reference: 'R1', title: 'Annual medical limit', detail: 'USD 50,000 per policy year.', kind: 'user_record', category: 'Insurance coverage' }];
+  const answer = validateAnswer({
+    answer: 'The policy limit is $500,000.', citations: ['R1'],
+    coverageAssessments: [{ kind: 'explicit_limit', policyReference: 'R1', detail: 'USD 500,000 per policy year.', relatedHealthReferences: [] }],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'coverage', question: 'What is the annual limit?' });
+
+  assert.deepEqual(answer.coverageAssessments, []);
+  assert.doesNotMatch(answer.answer, /500,000/);
+  assert.deepEqual(answer.citations, []);
+});
+
+test('coverage validation does not turn missing exclusion wording into a no-exclusions conclusion', () => {
+  const sources = [{ reference: 'R1', title: 'Exclusions', detail: 'No exclusions are listed in this summary.', kind: 'user_record', category: 'Insurance coverage' }];
+  const answer = validateAnswer({
+    answer: 'The policy has no exclusions.', citations: ['R1'],
+    coverageAssessments: [{ kind: 'explicit_exclusion', policyReference: 'R1', detail: 'No exclusions are listed in this summary.', relatedHealthReferences: [] }],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'coverage', question: 'Are there any exclusions?' });
+
+  assert.deepEqual(answer.coverageAssessments, []);
+  assert.match(answer.answer, /does not establish that the policy has no exclusions/i);
+  assert.ok(answer.unknowns.some((item) => /do not establish that the policy has no exclusions/i.test(item)));
+});
+
+test('coverage validation preserves exact supported limits, exclusions, and unclear findings', () => {
+  const sources = [
+    { reference: 'R1', title: 'Annual medical limit', detail: 'USD 50,000 per policy year.', kind: 'user_record', category: 'Insurance coverage' },
+    { reference: 'R2', title: 'Dialysis exclusion', detail: 'Dialysis treatment is excluded.', kind: 'user_record', category: 'coverage term' },
+    { reference: 'R3', title: 'Pre-existing conditions', detail: 'Coverage is subject to insurer approval.', kind: 'user_record', category: 'coverage_term' },
+  ];
+  const answer = validateAnswer({
+    answer: 'The saved wording lists a USD 50,000 annual limit and excludes dialysis; pre-existing condition coverage needs clarification.', citations: ['R1', 'R2', 'R3'],
+    coverageAssessments: [
+      { kind: 'explicit_limit', policyReference: 'R1', detail: 'USD 50,000 per policy year.', relatedHealthReferences: [] },
+      { kind: 'explicit_exclusion', policyReference: 'R2', detail: 'Dialysis treatment is excluded.', relatedHealthReferences: [] },
+      { kind: 'unclear', policyReference: 'R3', detail: 'Coverage is subject to insurer approval.', relatedHealthReferences: [] },
+    ],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'coverage', question: 'Summarize the limits and exclusions.' });
+
+  assert.deepEqual(answer.coverageAssessments.map((item) => item.kind), ['explicit_limit', 'explicit_exclusion', 'unclear']);
+  assert.deepEqual(answer.citations, ['R1', 'R2', 'R3']);
+});
+
 test('coverage validation accepts the normalized policy-term category variants', () => {
-  const policySource = { reference: 'R1', id: 'fact:policy', title: 'Annual visit limit', kind: 'user_record', category: 'coverage term' };
+  const policySource = { reference: 'R1', id: 'fact:policy', title: 'Annual visit limit', detail: 'Eight visits per year.', kind: 'user_record', category: 'coverage term' };
   const answer = validateAnswer({
     answer: 'The policy states an annual visit limit.', citations: [],
     coverageAssessments: [{ kind: 'explicit_limit', policyReference: 'R1', detail: 'Eight visits per year.', relatedHealthReferences: [] }],

@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Orb } from '../src/components/Orb';
 import { Label, Surface } from '../src/components/Surface';
 import { DocumentContextCard } from '../src/components/DocumentContextCard';
 import { useNura } from '../src/state/NuraContext';
 import type { IntakeAsset } from '../src/state/NuraContext';
-import { colors, radius } from '../src/theme';
+import { colors, motion, radius } from '../src/theme';
 import { CandidateClaim, IntakeActivity, LocalSource, analyzeSelfReport, correctCandidate, decideCandidate, describeSourceLocation, extractPickedFile, formatVideoTimestamp, getSourceClaims, resolveIntakeMediaType, retractAcceptedCandidate, sourceMatchesAsset, sourceMatchesText } from '../src/services/intakeClient';
 import { findMisdatedAcceptedClaims, findMissingAcceptedClaims, findMissingRetractions } from '../src/services/sourceClaimReconciliation.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
@@ -19,6 +19,25 @@ import { isReviewableIntakeAsset } from '../src/services/reviewableIntakeAsset.m
 const supported = (asset: { name: string; mimeType?: string }) => Boolean(resolveIntakeMediaType(asset));
 type BatchSourceReview = { assetId: string; name: string; status: 'loading' | 'verified' | 'mismatch' | 'unavailable'; source?: LocalSource; claims: CandidateClaim[] };
 type StagedReviewDecision = { decision: 'accept' | 'edit' | 'reject'; editedValue?: { label: string; value: string; unit: string } };
+
+function IntakeActivityRow({ item, reducedMotion }: { item: IntakeActivity; reducedMotion: boolean }) {
+  const [opacity] = useState(() => new Animated.Value(reducedMotion ? 1 : 0));
+  const [rise] = useState(() => new Animated.Value(reducedMotion ? 0 : 5));
+  useEffect(() => {
+    if (reducedMotion) { opacity.setValue(1); rise.setValue(0); return; }
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(rise, { toValue: 0, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+    ]).start();
+  }, [item.id, opacity, reducedMotion, rise]);
+  const symbol = item.status === 'complete' ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '';
+  return <Animated.View style={[styles.activityRow, { opacity, transform: [{ translateY: rise }] }]}>
+    <Text style={[styles.activityMark, item.status === 'complete' && styles.activityDone, item.status === 'failed' && styles.activityFailed, item.status === 'cancelled' && styles.activityCancelled]}>{symbol || '·'}</Text>
+    <Text style={styles.activityText}>{item.label}</Text>
+    {item.status === 'started' && <ActivityIndicator size="small" color={colors.violet} />}
+  </Animated.View>;
+}
+
 export default function Review() {
   const params = useLocalSearchParams<{ purpose?: string; assetId?: string; sourceId?: string; claimId?: string; focusClaimId?: string; firstRun?: string }>();
   const existingSourceId = typeof params.sourceId === 'string' ? params.sourceId : '';
@@ -45,6 +64,7 @@ export default function Review() {
   const extractionAbort = useRef<AbortController | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const [activity, setActivity] = useState<IntakeActivity[]>([]);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const [source, setSource] = useState<LocalSource | null>(null);
   const [claims, setClaims] = useState<CandidateClaim[]>([]);
   const [batchReviewRun, setBatchReviewRun] = useState<{ key: string; reviews: BatchSourceReview[]; complete: boolean }>({ key: '', reviews: [], complete: false });
@@ -78,6 +98,13 @@ export default function Review() {
   const stagedReviewCount = Object.keys(reviewDecisions).length + stagedNoteIds.length;
 
   useEffect(() => () => extractionAbort.current?.abort(), []);
+
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setReducedMotion(value); });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReducedMotion);
+    return () => { active = false; subscription.remove(); };
+  }, []);
 
   useEffect(() => {
     if (!sourceToOpen || !ready) return;
@@ -481,7 +508,7 @@ export default function Review() {
     {stagedReviewCount > 0 && <Surface style={styles.batchSave}><Label>{stagedReviewCount} ITEM{stagedReviewCount === 1 ? '' : 'S'} READY TO SAVE</Label><Text style={styles.batchIntro}>Your choices stay in review until you save. Approved details and selected self-reported notes will be added together.</Text><Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void saveReviewBatch()} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Saving reviewed items…' : 'Save reviewed items'}</Text><Text style={styles.arrow}>→</Text></Pressable></Surface>}
     {Boolean(sourceToOpen) && !source && !error && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Opening your saved review</Text><Text style={styles.noticeBody}>The suggestions for this file are loading. The original won’t be sent again.</Text></Surface>}
     {extracting && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Nura is reviewing your files</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP READING</Text></Pressable></Surface>}
-    {activity.length > 0 && <Surface style={styles.activity}><Label>HOW NURA IS WORKING</Label>{activity.map((item) => <View key={item.id} style={styles.activityRow}><Text style={[styles.activityMark, item.status === 'complete' && styles.activityDone, item.status === 'failed' && styles.activityFailed, item.status === 'cancelled' && styles.activityCancelled]}>{item.status === 'complete' ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '·'}</Text><Text style={styles.activityText}>{item.label}</Text></View>)}</Surface>}
+    {activity.length > 0 && <Surface style={styles.activity}><Label>FILE REVIEW ACTIVITY</Label>{activity.map((item) => <IntakeActivityRow key={item.id} item={item} reducedMotion={reducedMotion} />)}</Surface>}
     {notice ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>Review update</Text><Text style={styles.noticeBody}>{notice}</Text></Surface> : null}
     {error ? <Surface style={styles.error}><Text style={styles.noticeTitle}>Could not complete this step</Text><Text style={styles.noticeBody}>{error}</Text></Surface> : null}
     {Boolean(existingSourceId && ready && !selected) && <Surface style={styles.error}><Text style={styles.noticeTitle}>Original file unavailable</Text><Text style={styles.noticeBody}>Nura couldn’t match this extraction to its saved original. The extracted details stay hidden until the original file is available.</Text></Surface>}

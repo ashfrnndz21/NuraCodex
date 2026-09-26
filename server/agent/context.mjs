@@ -15,6 +15,26 @@ const normalizeEvidenceText = (value) => cleanText(value, 2000).normalize('NFKC'
 const explicitlyRequestsMemory = (question) => /^\s*(?:(?:please|kindly)\s+|(?:can|could|would)\s+you\s+(?:please\s+)?|i want you to\s+|i(?:'d| would) like you to\s+)?(?:remember|save|add|put)\s+(?:that\s+)?(?:i\b|my\b|this\b|that\b|it\b)/i.test(question);
 const isPolicyTermSource = (source) => source?.kind === 'user_record' && /^(insurance coverage|coverage_term|coverage term)$/i.test(cleanText(source.category, 80));
 
+const policyText = (source) => `${cleanText(source?.title, 240)} ${cleanText(source?.detail, 2000)}`.normalize('NFKC');
+const policyAssessmentKind = (source) => {
+  const text = policyText(source).toLocaleLowerCase();
+  const absentExclusions = /\b(?:no|none)\s+(?:specific\s+)?exclusions?\s+(?:are\s+)?(?:listed|stated|specified|shown|found|noted|identified|recorded)\b|\bexclusions?\s+(?:are\s+)?not\s+(?:listed|stated|specified|shown|found|noted|identified|recorded)\b/;
+  if (absentExclusions.test(text)) return 'unclear';
+  const exclusionText = text.replace(/\b(?:not|never)\s+excluded\b|\bno\s+(?:specific\s+)?exclusions?\s+(?:apply|applies)\b/g, '');
+  if (/\b(?:excluded|excludes|not covered|no coverage|ineligible)\b/.test(exclusionText)) return 'explicit_exclusion';
+  if (/\b(?:unclear|ambiguous|not specified|not stated|subject to confirmation|depends on|reasonable and customary|usual and customary|medically necessary|medical necessity|pre[- ]existing|waiting period|prior authorization|prior approval|subject to insurer approval|as determined by the insurer)\b/.test(text) || /\bexclusions?\b/.test(text)) return 'unclear';
+  if (/\b(?:limit|cap|maximum|max|deductible|co-?insurance|copay|co-pay|per day|per year|per visit|up to)\b|\b\d+(?:\.\d+)?\s*%|(?:[$€£]\s?\d|\b\d[\d,]*(?:\.\d{1,2})?\s?(?:usd|eur|gbp|sgd|myr)\b)/.test(text)) return 'explicit_limit';
+  if (/\b(?:covered|coverage|benefit|reimburse|reimbursement|payable|eligible|included)\b/.test(text)) return 'explicit_benefit';
+  return null;
+};
+const policyDetailIsQuoted = (source, detail) => {
+  const clause = normalizeEvidenceText(cleanText(source?.detail, 2000));
+  const quote = normalizeEvidenceText(detail);
+  return quote.length >= 8 && clause.includes(quote);
+};
+const noExclusionsClaim = /\b(?:no\s+(?:specific\s+)?exclusions?\s+(?:apply|exist|are\s+(?:listed|stated|set\s+out|included|identified)|were\s+(?:found|identified|listed)|apply\s+to)|(?:the\s+|this\s+|your\s+)?(?:policy|plan)\s+(?:has|contains|lists|includes)\s+no\s+exclusions|there\s+(?:are|were)\s+no\s+exclusions|nothing\s+is\s+excluded|all\s+(?:care|services|conditions|treatments)\s+(?:are|is)\s+covered)\b/i;
+const sourceConfirmsNoExclusions = (sources) => sources.filter(isPolicyTermSource).some((source) => /\bno\s+(?:specific\s+)?exclusions?\s+(?:apply|applies|exist|affect)\b/i.test(policyText(source)));
+
 function sanitizeContextEntries(items, allowedKinds, maxItems, maxValueLength) {
   if (!Array.isArray(items)) return [];
   return items.flatMap((item) => {
@@ -221,6 +241,7 @@ export function coverageTraceDetail(answer, sources) {
 export function validateAnswer(answer, sources, intent) {
   const allowed = new Set(sources.map((source) => source.reference));
   const sourceByReference = new Map(sources.map((source) => [source.reference, source]));
+  let rejectedCoverageFinding = false;
   const coverageAssessments = intent.key === 'coverage' && Array.isArray(answer?.coverageAssessments)
     ? answer.coverageAssessments.slice(0, 8).flatMap((item) => {
       const policyReference = cleanText(item?.policyReference, 8);
@@ -229,6 +250,10 @@ export function validateAnswer(answer, sources, intent) {
       const detail = cleanText(item?.detail, 320);
       const isPolicyTerm = isPolicyTermSource(policySource);
       if (!isPolicyTerm || !detail || !['explicit_benefit', 'explicit_limit', 'explicit_exclusion', 'unclear'].includes(policyKind)) return [];
+      if (policyAssessmentKind(policySource) !== policyKind || !policyDetailIsQuoted(policySource, detail)) {
+        rejectedCoverageFinding = true;
+        return [];
+      }
       const relatedHealthReferences = Array.isArray(item?.relatedHealthReferences)
         ? [...new Set(item.relatedHealthReferences.filter((reference) => {
           if (typeof reference !== 'string' || !allowed.has(reference)) return false;
@@ -241,7 +266,9 @@ export function validateAnswer(answer, sources, intent) {
     : [];
   const modelCitations = Array.isArray(answer?.citations) ? answer.citations.filter((value) => typeof value === 'string' && allowed.has(value)) : [];
   const coverageCitations = coverageAssessments.flatMap((item) => [item.policyReference, ...item.relatedHealthReferences]);
-  let citations = [...new Set([...modelCitations, ...coverageCitations])].slice(0, 20);
+  let citations = [...new Set([...(rejectedCoverageFinding ? [] : modelCitations), ...coverageCitations])].slice(0, 20);
+  const noExclusionsUnsubstantiated = intent.key === 'coverage' && noExclusionsClaim.test(cleanText(answer?.answer, 4000)) && !sourceConfirmsNoExclusions(sources);
+  const rejectedPolicyClaim = rejectedCoverageFinding || noExclusionsUnsubstantiated;
   const memory = answer?.memoryProposal;
   if (intent.key === 'symptom_support' && !modelCitations.some((reference) => sourceByReference.get(reference)?.kind === 'external_source')) {
     return {
@@ -268,12 +295,31 @@ export function validateAnswer(answer, sources, intent) {
     }
     : null;
   if (memoryProposal?.sourceReferences.length) citations = [...new Set([...citations, ...memoryProposal.sourceReferences])].slice(0, 20);
+  const unknowns = Array.isArray(answer?.unknowns) ? answer.unknowns.map((item) => cleanText(item, 240)).filter(Boolean).slice(0, 5) : [];
+  const nextSteps = Array.isArray(answer?.nextSteps) ? answer.nextSteps.map((item) => cleanText(item, 240)).filter(Boolean).slice(0, 3) : [];
+  if (noExclusionsUnsubstantiated) {
+    unknowns.unshift('The reviewed policy terms do not establish that the policy has no exclusions.');
+    nextSteps.unshift('Review the full exclusions section or ask the insurer to confirm the applicable exclusions.');
+  }
+  if (rejectedPolicyClaim) {
+    citations = coverageCitations;
+    return {
+      answer: noExclusionsUnsubstantiated
+        ? 'The reviewed policy wording does not establish that the policy has no exclusions. I have kept only findings that match the saved policy wording.'
+        : 'I could not verify that policy interpretation against its cited wording, so I have left it out. The findings shown below match saved policy text.',
+      citations,
+      ...(intent.key === 'coverage' ? { coverageAssessments } : {}),
+      unknowns: [...new Set(unknowns)].slice(0, 5),
+      nextSteps: [...new Set(nextSteps)].slice(0, 3),
+      memoryProposal: null,
+    };
+  }
   return {
     answer: cleanText(answer?.answer, 4000) || 'I could not form a clear answer from the selected information.',
     citations,
     ...(intent.key === 'coverage' ? { coverageAssessments } : {}),
-    unknowns: Array.isArray(answer?.unknowns) ? answer.unknowns.map((item) => cleanText(item, 240)).filter(Boolean).slice(0, 5) : [],
-    nextSteps: Array.isArray(answer?.nextSteps) ? answer.nextSteps.map((item) => cleanText(item, 240)).filter(Boolean).slice(0, 3) : [],
+    unknowns,
+    nextSteps,
     memoryProposal,
   };
 }

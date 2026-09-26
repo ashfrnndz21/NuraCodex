@@ -52,6 +52,35 @@ export async function persistProfileSetup(database, snapshot) {
   });
 }
 
+export async function persistApprovedMemoryFact(database, fact) {
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      'INSERT INTO health_facts (id,label,value,date,category,source,status,note) VALUES (?,?,?,?,?,?,?,?)',
+      fact.id,
+      fact.label,
+      fact.value,
+      fact.date,
+      fact.category,
+      fact.source,
+      fact.status,
+      fact.note ?? null,
+    );
+    await database.runAsync(
+      'INSERT INTO memory_provenance (fact_id,source_run_id,review_state,valid_from,valid_until,confidence,permission_scope,source_id,source_claim_id,supersedes_fact_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      fact.id,
+      fact.sourceRunId ?? null,
+      fact.reviewState ?? 'user_confirmed',
+      fact.validFrom ?? fact.date,
+      fact.validUntil ?? null,
+      fact.confidence ?? null,
+      fact.permissionScope ?? (fact.sourceRunId ? 'profile_memory_write' : 'profile_write'),
+      fact.sourceId ?? null,
+      fact.sourceClaimId ?? null,
+      fact.supersedesId ?? null,
+    );
+  });
+}
+
 export async function loadProfileSetup(database) {
   const profile = await database.getFirstAsync(
     'SELECT name,birthday,country,email,phone FROM profile WHERE id=1',

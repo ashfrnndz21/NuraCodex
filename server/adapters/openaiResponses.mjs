@@ -247,11 +247,11 @@ export async function searchHealthSources({ query, signal }) {
   const response = await postResponses({
     model: getOpenAIStatus().model,
     store: false,
-    max_output_tokens: 1200,
+    max_output_tokens: 800,
     tools: [{ type: 'web_search', search_context_size: 'low', filters: { allowed_domains: [...HEALTH_SEARCH_DOMAINS] } }],
     tool_choice: 'required',
     include: ['web_search_call.action.sources'],
-    input: `Search for general health education on this topic only. Do not search for or infer information about a particular person. Summarize briefly and cite each factual point. Topic: ${safeQuery}`,
+    input: `Search for general health education on this topic only. Do not search for or infer information about a particular person. Return a concise reading brief of at most 90 words: one sentence labelled Overview, then two short Key points bullets. Cite each factual point with its publisher where available. Use only facts supported by the linked sources. Do not create actions, a personal assessment, diagnosis, or individualized treatment advice. Topic: ${safeQuery}`,
   }, signal);
   const summary = outputText(response).slice(0, 3000);
   const candidates = [];

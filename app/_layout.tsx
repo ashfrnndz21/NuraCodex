@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DefaultTheme, router, Stack, ThemeProvider, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AccessibilityInfo, ActivityIndicator, Animated, Platform, StyleSheet, View } from 'react-native';
 import { NuraProvider, useNura } from '../src/state/NuraContext';
 import { AIStateProvider } from '../src/state/AIStateContext';
 import { PreviewIdentityProvider, usePreviewIdentity } from '../src/state/PreviewIdentityContext';
-import { colors } from '../src/theme';
+import { colors, motion } from '../src/theme';
 import { shouldRedirectToProfileSetup } from '../src/services/profileRouteGate.mjs';
 import type { ReactNode } from 'react';
 
@@ -18,6 +18,7 @@ export default function RootLayout() {
   const [opacity] = useState(() => new Animated.Value(1));
   const [offset] = useState(() => new Animated.Value(0));
   const [reducedMotion, setReducedMotion] = useState(false);
+  const previousPath = useRef(pathname);
   useEffect(() => {
     let active = true;
     AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setReducedMotion(value); });
@@ -25,17 +26,21 @@ export default function RootLayout() {
     return () => { active = false; subscription.remove(); };
   }, []);
   useEffect(() => {
+    const routeChanged = previousPath.current !== pathname;
+    previousPath.current = pathname;
     if (reducedMotion) { opacity.setValue(1); offset.setValue(0); return; }
-    opacity.setValue(0.92);
-    offset.setValue(5);
+    if (!routeChanged) return;
+    const isWeb = Platform.OS === 'web';
+    opacity.setValue(isWeb ? 0.88 : 0.96);
+    offset.setValue(isWeb ? 14 : 0);
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
-      Animated.timing(offset, { toValue: 0, duration: 240, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: isWeb ? motion.standard : motion.quick, useNativeDriver: true }),
+      Animated.timing(offset, { toValue: 0, duration: motion.standard, useNativeDriver: true }),
     ]).start();
   }, [offset, opacity, pathname, reducedMotion]);
   const stageStyle = Platform.OS === 'web' ? styles.webStage : styles.nativeStage;
   const frameStyle = Platform.OS === 'web' ? styles.webPhone : styles.nativePhone;
-  return <View style={stageStyle}><View style={frameStyle}><PreviewIdentityProvider><ThemeProvider value={NuraNavigationTheme}><StatusBar style="dark" /><Animated.View style={[styles.navigator, { opacity, transform: [{ translateY: offset }] }]}><SessionNavigator reducedMotion={reducedMotion} /></Animated.View></ThemeProvider></PreviewIdentityProvider></View></View>;
+  return <View style={stageStyle}><View style={frameStyle}><PreviewIdentityProvider><ThemeProvider value={NuraNavigationTheme}><StatusBar style="dark" /><Animated.View style={[styles.navigator, { opacity, transform: Platform.OS === 'web' ? [{ translateX: offset }] : [{ translateY: offset }] }]}><SessionNavigator reducedMotion={reducedMotion} /></Animated.View></ThemeProvider></PreviewIdentityProvider></View></View>;
 }
 
 function SessionNavigator({ reducedMotion }: { reducedMotion: boolean }) {
