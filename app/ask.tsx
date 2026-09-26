@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, KeyboardAvoidingView, LayoutAnimation, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { animatedNativeDriver } from '../src/services/animatedDriver';
+import { AccessibilityInfo, Animated, Easing, KeyboardAvoidingView, LayoutAnimation, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +16,7 @@ import { registryBriefCitations, registryBriefDisplayText } from '../src/service
 import { agentCitationTarget } from '../src/services/agentCitationNavigation.mjs';
 import { resolvePolicyReviewSourceIds, selectPolicyReviewFacts } from '../src/services/policyReviewScope.mjs';
 import { createAgentRunEventGate } from '../src/services/agentRunLifecycle.mjs';
+import { answerFirstView } from '../src/services/askAnswerPresentation.mjs';
 
 const C = {
   bg: brandScenes.atmosphere.base,
@@ -165,8 +167,8 @@ export default function Ask() {
       return;
     }
     const drift = Animated.loop(Animated.sequence([
-      Animated.timing(ambientShift, { toValue: 1, duration: 18000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(ambientShift, { toValue: 0, duration: 18000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(ambientShift, { toValue: 1, duration: 18000, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(ambientShift, { toValue: 0, duration: 18000, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
     ]));
     drift.start();
     return () => drift.stop();
@@ -183,7 +185,7 @@ export default function Ask() {
   function startQuestion() { if (!question.trim() || busy || proposalSaveLock.current) return; setError(''); setShareExternalSearch(false); setShareTreatments(false); setShareVisits(false); if (policyReviewMode) setSelectedHealthFactIds([]); setConsentOpen(true); }
   function animateSend(toValue: number) {
     if (reducedMotion || busy || !question.trim()) return;
-    Animated.timing(sendScale, { toValue, duration: toValue === 1 ? motion.pressOut : motion.pressIn, easing: toValue === 1 ? Easing.bezier(...motion.easing.bouncy) : Easing.linear, useNativeDriver: true }).start();
+    Animated.timing(sendScale, { toValue, duration: toValue === 1 ? motion.pressOut : motion.pressIn, easing: toValue === 1 ? Easing.bezier(...motion.easing.bouncy) : Easing.linear, useNativeDriver: animatedNativeDriver }).start();
   }
   async function confirmAndSend() {
     const cleanQuestion = question.trim();
@@ -324,13 +326,13 @@ export default function Ask() {
       {!fileContext && agentMessages.length === 0 && !busy && <View style={s.welcome}><Text style={s.welcomeEyebrow}>YOUR RECORDS, IN CONTEXT</Text><Text style={s.welcomeTitle}>Let’s look at the whole picture.</Text><Text style={s.welcomeBody}>Ask about information you’ve saved. Nura will show which records it used and where it could not find an answer.</Text><View style={s.promptRow}><Pressable style={s.prompt} onPress={() => setQuestion('What information is in my health profile?')}><Text style={s.promptText}>What’s in my profile?</Text><Text style={s.promptArrow}>↗</Text></Pressable><Pressable style={s.prompt} onPress={() => setQuestion('What information is missing from my records?')}><Text style={s.promptText}>What’s missing?</Text><Text style={s.promptArrow}>↗</Text></Pressable></View></View>}
       {agentMessages.filter((message) => !(answer && activeRunId && message.role === 'assistant' && message.runId === activeRunId)).map((message) => <View key={message.id} style={[s.message, message.role === 'user' ? s.userMessage : s.assistantMessage]}>
         <Text style={[s.messageLabel, message.role === 'user' && s.userMessageLabel]}>{message.role === 'user' ? 'YOU' : 'NURA'}</Text>
-        <Text style={[s.messageText, message.role === 'user' && s.userMessageText]}>{message.role === 'assistant' ? registryBriefDisplayText(message.text) : message.text}</Text>
+        {message.role === 'assistant' ? <PresentedAnswer text={registryBriefDisplayText(message.text)} textStyle={s.messageText} reducedMotion={reducedMotion} /> : <Text style={[s.messageText, s.userMessageText]}>{message.text}</Text>}
         {message.role === 'assistant' && message.coverageAssessments?.length ? <CoveragePanel assessments={message.coverageAssessments} sources={message.citations} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} /> : null}
         {message.role === 'assistant' && message.trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{message.trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
         {message.role === 'assistant' && message.citations.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES USED</Text>{message.citations.map((citation) => <EvidenceSourceCard key={citation.id} source={citation} target={evidenceTarget(citation)} onPress={() => openEvidenceSource(citation)} />)}</View>}
       </View>)}
       {busy && <View style={s.liveCard}><View style={s.liveHeader}><Orb size={30} /><View style={{ flex: 1 }}><Text style={s.liveTitle}>{aiState === 'responding' ? 'Nura is preparing an answer' : 'Nura is working with your records'}</Text><Text style={s.liveSub}>Live activity · only actions and evidence</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop this Ask Nura run" onPress={stopCurrentRun} style={s.stopRunButton}><Text style={s.stopRunText}>Stop</Text></Pressable></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><View style={[s.traceMark, item.status === 'complete' && s.traceMarkDone]}><Text style={[s.traceMarkText, item.status === 'complete' && s.traceMarkTextDone]}>{item.status === 'complete' ? '✓' : '·'}</Text></View><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail && <Text style={s.traceDetail}>{item.detail}</Text>}</View></View>)}</View>}
-      {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><Text style={s.answerText}>{registryBriefDisplayText(answer.answer)}</Text>
+      {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><PresentedAnswer text={registryBriefDisplayText(answer.answer)} textStyle={s.answerText} reducedMotion={reducedMotion} />
         {answer.coverageAssessments !== undefined && <CoveragePanel assessments={answer.coverageAssessments} sources={sources} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} />}
         {!busy && trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
         {sources.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES REVIEWED</Text>{sources.map((source) => <EvidenceSourceCard key={source.id} source={source} target={evidenceTarget(source)} onPress={() => openEvidenceSource(source)} />)}</View>}
@@ -356,6 +358,18 @@ export default function Ask() {
   </KeyboardAvoidingView>;
 }
 function ShareRow({ label, count, excluded }: { label: string; count: string; excluded?: boolean }) { return <View style={s.shareRow}><Text style={s.shareLabel}>{label}</Text><Text style={[s.shareCount, excluded && s.shareExcluded]}>{count}</Text></View>; }
+function PresentedAnswer({ text, textStyle, reducedMotion }: { text: string; textStyle: StyleProp<TextStyle>; reducedMotion: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const firstView = answerFirstView(text);
+  const toggle = () => {
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded((current) => !current);
+  };
+  return <View>
+    <Text style={textStyle}>{expanded || !firstView.expandable ? text : `${firstView.text}…`}</Text>
+    {firstView.expandable ? <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={expanded ? 'Show less of Nura’s answer' : 'Read the full Nura answer'} onPress={toggle} style={s.answerDisclosure}><Text style={s.answerDisclosureText}>{expanded ? 'SHOW LESS ↑' : 'READ FULL ANSWER ↓'}</Text></Pressable> : null}
+  </View>;
+}
 function ShareToggle({ label, count, selected, onPress, disabled = false }: { label: string; count: number | string; selected: boolean; onPress: () => void; disabled?: boolean }) { return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled }} disabled={disabled} onPress={onPress} style={s.shareRow}><View style={s.shareToggleLabel}><View style={[s.checkBox, selected && s.checkBoxOn]}><Text style={s.checkMark}>{selected ? '✓' : ''}</Text></View><Text style={s.shareLabel}>{label}</Text></View><Text style={[s.shareCount, (!count || disabled) && s.shareExcluded]}>{typeof count === 'number' ? `${count} ${count === 1 ? 'item' : 'items'}` : count}</Text></Pressable>; }
 function HealthFactToggle({ fact, selected, onPress }: { fact: { id: string; label: string; value: string; source: string; date: string }; selected: boolean; onPress: () => void }) { return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} onPress={onPress} style={s.healthFactRow}><View style={[s.checkBox, selected && s.checkBoxOn]}><Text style={s.checkMark}>{selected ? '✓' : ''}</Text></View><View style={s.healthFactCopy}><Text style={s.shareLabel}>{fact.label}</Text><Text style={s.healthFactDetail}>{fact.value} · {fact.source} · {fact.date}</Text></View></Pressable>; }
 type AgentCitationTarget = { kind: 'health'; focusId: string } | { kind: 'registry'; topicId: string } | { kind: 'external'; url: string } | null;
@@ -473,6 +487,8 @@ const s = StyleSheet.create({
   answerCard: { backgroundColor: C.surface, borderRadius: 20, borderWidth: 1, borderColor: C.line, padding: 15, marginTop: 12 },
   answerLabel: { color: C.plum, fontSize: 8, fontWeight: '700', letterSpacing: 1.25 },
   answerText: { color: C.ink, fontSize: 13, lineHeight: 20, marginTop: 7 },
+  answerDisclosure: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 8 },
+  answerDisclosureText: { color: C.blue, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
   unknownBox: { backgroundColor: C.amber, padding: 10, borderRadius: 12, marginTop: 11 },
   unknownTitle: { color: C.amberInk, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
   unknownText: { color: C.ink, fontSize: 10, lineHeight: 15, marginTop: 5 },

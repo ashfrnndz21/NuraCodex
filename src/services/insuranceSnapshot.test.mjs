@@ -36,7 +36,7 @@ test('does not turn a missing policy detail into an exclusion', () => {
 test('keeps absent or negated exclusion wording out of the explicit-exclusion list', () => {
   const notListed = term('Exclusions', 'No exclusions are listed in this schedule.');
   const noExclusionApplies = term('Exclusions', 'No exclusion applies to outpatient visits.');
-  const excluded = term('Cancer treatment', 'The plan excludes this treatment unless approved in advance.');
+  const excluded = term('Cancer treatment', 'The plan excludes this treatment.');
 
   assert.equal(classifyInsuranceTerm(notListed), 'needs_clarification');
   assert.equal(classifyInsuranceTerm(noExclusionApplies), 'stated');
@@ -45,6 +45,16 @@ test('keeps absent or negated exclusion wording out of the explicit-exclusion li
   const snapshot = buildInsuranceSnapshot([notListed, noExclusionApplies, excluded]);
   assert.deepEqual(snapshot.exclusions.map((item) => item.label), ['Cancer treatment']);
   assert.deepEqual(snapshot.clarifications.map((item) => item.label), ['Exclusions']);
+});
+
+test('routes conditional exclusions to clarification instead of the confirmed not-covered list', () => {
+  const conditional = term('Cancer treatment', 'The plan excludes this treatment unless approved in advance.');
+  const exception = term('Emergency care', 'Not covered except for emergency stabilization.');
+  const explicit = term('Cosmetic procedures', 'Cosmetic procedures are excluded.');
+
+  const snapshot = buildInsuranceSnapshot([conditional, exception, explicit]);
+  assert.deepEqual(snapshot.exclusions.map((item) => item.label), ['Cosmetic procedures']);
+  assert.deepEqual(snapshot.clarifications.map((item) => item.label), ['Cancer treatment', 'Emergency care']);
 });
 
 test('builds compact highlights from approved key terms without inventing missing values', () => {

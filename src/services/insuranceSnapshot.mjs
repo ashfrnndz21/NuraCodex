@@ -72,6 +72,12 @@ export function classifyInsuranceTerm(term) {
   if (/\b(?:no|none)\s+(?:specific\s+)?exclusions?\s+(?:are\s+)?(?:listed|stated|specified|shown|found|noted|identified|recorded)\b|\bexclusions?\s+(?:are\s+)?not\s+(?:listed|stated|specified|shown|found|noted|identified|recorded)\b/i.test(text)) {
     return 'needs_clarification';
   }
+  // An exclusion with an exception or approval condition is not a blanket
+  // denial. Keep it in the clarification list so the overview does not imply
+  // that the care is always outside cover.
+  const hasExclusionWording = /\b(?:excluded|excludes|not covered|no coverage|ineligible)\b/i.test(text);
+  const hasExceptionOrCondition = /\b(?:unless|except(?:\s+(?:for|where|when))?|subject to|only if|provided that|on condition that)\b/i.test(text);
+  if (hasExclusionWording && hasExceptionOrCondition) return 'needs_clarification';
   // Negated exclusion wording must not be surfaced as a confirmed exclusion.
   const positiveExclusionText = text.replace(/\b(?:not|never)\s+excluded\b|\bno\s+(?:specific\s+)?exclusions?\s+(?:apply|applies)\b/gi, '');
   if (/\b(?:excluded|excludes|not covered|no coverage|ineligible)\b/i.test(positiveExclusionText)) return 'explicit_exclusion';

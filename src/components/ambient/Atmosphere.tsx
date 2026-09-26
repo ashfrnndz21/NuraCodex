@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { animatedNativeDriver } from '../../services/animatedDriver';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { brandScenes } from '../../theme';
@@ -7,8 +8,8 @@ export function Atmosphere() {
   const [drift] = useState(() => new Animated.Value(0));
   useEffect(() => {
     const loop = Animated.loop(Animated.sequence([
-      Animated.timing(drift, { toValue: 1, duration: 16000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(drift, { toValue: 0, duration: 16000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(drift, { toValue: 1, duration: 16000, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(drift, { toValue: 0, duration: 16000, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
     ]));
     loop.start();
     return () => loop.stop();

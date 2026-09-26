@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { animatedNativeDriver } from '../src/services/animatedDriver';
 import { ActivityIndicator, Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -26,7 +27,7 @@ export default function SignInScreen() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
     stepOpacity.setValue(0.85);
-    Animated.timing(stepOpacity, { toValue: 1, duration: motion.statusIn, useNativeDriver: true }).start();
+    Animated.timing(stepOpacity, { toValue: 1, duration: motion.statusIn, useNativeDriver: animatedNativeDriver }).start();
   }, [isCodeStep, stepOpacity]);
 
   function changeChannel(next: PreviewIdentityChannel) {

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { animatedNativeDriver } from '../../src/services/animatedDriver';
 import { AccessibilityInfo, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -19,8 +20,8 @@ const domains = [
 
 function TapScale({ children, onPress, label, style, reducedMotion, containerStyle }: { children: React.ReactNode; onPress: () => void; label: string; style: any; reducedMotion: boolean; containerStyle?: any }) {
   const [scale] = useState(() => new Animated.Value(1));
-  const pressIn = () => { if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: true }).start(); };
-  const pressOut = () => { if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: true }).start(); };
+  const pressIn = () => { if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: animatedNativeDriver }).start(); };
+  const pressOut = () => { if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: animatedNativeDriver }).start(); };
   return <Animated.View style={[containerStyle, { transform: [{ scale }] }]}><Pressable accessibilityRole="button" accessibilityLabel={label} onPressIn={pressIn} onPressOut={pressOut} onPress={onPress} style={style}>{children}</Pressable></Animated.View>;
 }
 function Count({ value, label, tint, ink }: { value: number; label: string; tint: string; ink: string }) {

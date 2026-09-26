@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { animatedNativeDriver } from '../../services/animatedDriver';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 import type { AIState } from '../../state/AIStateContext';
 import { motion as designMotion } from '../../theme';
@@ -33,14 +34,14 @@ export function IntelligenceOrbCanvas({ size, state }: { size: number; state: AI
       if (reduced) return;
 
       const period = periods[state];
-      spin = Animated.loop(Animated.timing(rotationProgress, { toValue: 1, duration: period, easing: Easing.linear, useNativeDriver: true }));
+      spin = Animated.loop(Animated.timing(rotationProgress, { toValue: 1, duration: period, easing: Easing.linear, useNativeDriver: animatedNativeDriver }));
       if (state === 'idle') {
         breathing = Animated.loop(Animated.sequence([
-          Animated.timing(breath, { toValue: 1, duration: designMotion.breathe / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(breath, { toValue: 0, duration: designMotion.breathe / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(breath, { toValue: 1, duration: designMotion.breathe / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
+          Animated.timing(breath, { toValue: 0, duration: designMotion.breathe / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
         ]));
       } else if (state !== 'error') {
-        statePulse = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: period, easing: Easing.linear, useNativeDriver: true }));
+        statePulse = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: period, easing: Easing.linear, useNativeDriver: animatedNativeDriver }));
       }
       spin.start();
       breathing?.start();

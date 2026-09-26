@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { animatedNativeDriver } from '../../src/services/animatedDriver';
 import { AccessibilityInfo, Animated, Easing, LayoutAnimation, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useNura, type TreatmentStatus } from '../../src/state/NuraContext';
@@ -8,8 +9,8 @@ import { parseHealthDate } from '../../src/utils/healthDate';
 type MotionCardProps = { label: string; onPress: () => void; reducedMotion: boolean; children: React.ReactNode; style?: object };
 function MotionCard({ label, onPress, reducedMotion, children, style }: MotionCardProps) {
   const [scale] = useState(() => new Animated.Value(1));
-  const pressIn = () => { if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: true }).start(); };
-  const pressOut = () => { if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start(); };
+  const pressIn = () => { if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: animatedNativeDriver }).start(); };
+  const pressOut = () => { if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start(); };
   return <Animated.View style={[{ transform: [{ scale }] }, style]}><Pressable accessibilityRole="button" accessibilityLabel={label} onPressIn={pressIn} onPressOut={pressOut} onPress={onPress} style={s.motionCard}>{children}</Pressable></Animated.View>;
 }
 
@@ -35,7 +36,7 @@ export default function CareOverview() {
   useEffect(() => {
     if (reducedMotion) { entrance.setValue(1); return; }
     entrance.setValue(0);
-    Animated.timing(entrance, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+    Animated.timing(entrance, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
   }, [entrance, reducedMotion]);
 
   const visibleTreatments = useMemo(() => treatments

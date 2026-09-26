@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { animatedNativeDriver } from '../src/services/animatedDriver';
 import { router, useLocalSearchParams } from 'expo-router';
 import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Orb } from '../src/components/Orb';
@@ -26,8 +27,8 @@ function IntakeActivityRow({ item, reducedMotion }: { item: IntakeActivity; redu
   useEffect(() => {
     if (reducedMotion) { opacity.setValue(1); rise.setValue(0); return; }
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(rise, { toValue: 0, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(rise, { toValue: 0, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
     ]).start();
   }, [item.id, opacity, reducedMotion, rise]);
   const symbol = item.status === 'complete' ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '';

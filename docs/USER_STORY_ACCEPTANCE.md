@@ -98,3 +98,18 @@ The person can see what is stored, where it came from, how it is used, and what 
 - **M4:** live feed rows identify topic and actual search status/count, compact briefs expand on request, and activity/navigation motion honors reduced motion. Route rendering and helper checks are verified; full feed journey, phone-size/reduced-motion visual review, browser-refresh behavior and production provider controls remain open.
 - **M5:** a user-approved memory proposal reports success only after persistence; native fact and provenance writes are transactional, browser writes are awaited, and save failure is retryable. Proposal references navigate to the cited record when available. Focused persistence checks pass; multi-tool orchestration, broader evaluation/security and full user journey remain open.
 - Consolidated evidence: `npm run test:repo` **220/220**, `npm run test:latest-slices` **53/53**, typecheck passed, lint **0 errors / 1 existing warning at `app/index.tsx:402`**, and `git diff --check` passed. These results do not close any story package. Overall remains **0/11, 0/8, 0/19 (0%)**; no user-test milestone is ready.
+
+
+### M1 browser evidence and profile-map count correction — 26 September 2026
+
+A clean synthetic preview origin on port 8095 was used without clearing the existing 8094 preview. The in-app path verified the local demo-code rehearsal, required profile fields, five primary areas plus two nested details, one approved built-in fictional lipid PDF together with a self-reported note, eight source-linked extraction suggestions checked against the PDF, one explicit review/save action, and a month/year history containing one report event plus the user note. Reloading `/health` preserved the displayed browser history. The PDF is represented by its captured event in Everything rather than a duplicate file card. This does not prove production OTP, active-person authorization, a multi-file upload batch, every review decision state, native restart, exact 390×844 layout, or reduced-motion acceptance; Story 1 remains partial.
+
+The profile map summary now distinguishes current timeline items, primary chosen health areas, and nested selected details. It no longer treats a tracking choice as saved medical information.
+
+The resumed code slices also add a 360-character expandable first view for long Ask answers and route conditional policy exclusions to clarification. Full answer/citation state stays available. Automated checks passed: repository tests **227/227**, latest slices **59/59**, typecheck, and lint with **0 errors / 1 existing warning at `app/index.tsx:402`**. The Ask presentation and profile-map summary tests are included in both standard test commands. No complete story or production gate is accepted; total remains **0/11, 0/8, 0/19**.
+
+
+### Shared motion driver compatibility — 26 September 2026
+
+- All current `Animated` call sites now share a platform policy: native driver for iOS/Android and JavaScript driver on web. Android enables the documented LayoutAnimation runtime flag at app startup. Existing motion token values and reduced-motion behavior are unchanged.
+- Verification: platform policy tests pass, the rebuilt `/health` and `/care` browser routes render, and the Expo web log no longer reports the missing native animation module. This is a shared foundation improvement; it does not complete any story. Native-device, reduced-motion, 390×844 and 360×780 visual acceptance remain open.

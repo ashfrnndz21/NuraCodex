@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { animatedNativeDriver } from '../../src/services/animatedDriver';
 import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,15 +33,15 @@ function FeedCard({ item, index, reducedMotion, brief, showHidden, onSave, onDis
     if (reducedMotion) { detailsOpacity.setValue(opening ? 1 : 0); detailsRise.setValue(0); if (!opening) setDetailsMounted(false); return; }
     if (opening) { detailsOpacity.setValue(0); detailsRise.setValue(8); }
     Animated.parallel([
-      Animated.timing(detailsOpacity, { toValue: opening ? 1 : 0, duration: opening ? motion.cardEnter : motion.pressOut, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(detailsRise, { toValue: opening ? 0 : 8, duration: opening ? motion.cardEnter : motion.pressOut, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(detailsOpacity, { toValue: opening ? 1 : 0, duration: opening ? motion.cardEnter : motion.pressOut, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(detailsRise, { toValue: opening ? 0 : 8, duration: opening ? motion.cardEnter : motion.pressOut, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
     ]).start(({ finished }) => { if (finished && !opening) setDetailsMounted(false); });
   }
   useEffect(() => {
     if (reducedMotion) { opacity.setValue(1); rise.setValue(0); return; }
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, delay: index * motion.stagger.rows, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(rise, { toValue: 0, delay: index * motion.stagger.rows, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, delay: index * motion.stagger.rows, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(rise, { toValue: 0, delay: index * motion.stagger.rows, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
     ]).start();
   }, [index, opacity, reducedMotion, rise]);
   return <Animated.View style={{ opacity, transform: [{ translateY: rise }] }}>
@@ -77,9 +78,9 @@ function FeedActivityRow({ item, busy, reducedMotion }: { item: ReturnType<typeo
   useEffect(() => {
     if (reducedMotion) { opacity.setValue(1); rise.setValue(0); checkScale.setValue(item.status === 'complete' ? 1 : 0.82); return; }
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(rise, { toValue: 0, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.spring(checkScale, { toValue: item.status === 'complete' ? 1 : 0.82, speed: 24, bounciness: 3, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(rise, { toValue: 0, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.spring(checkScale, { toValue: item.status === 'complete' ? 1 : 0.82, speed: 24, bounciness: 3, useNativeDriver: animatedNativeDriver }),
     ]).start();
   }, [checkScale, item.status, opacity, reducedMotion, rise]);
   return <Animated.View style={[styles.activityRow, { opacity, transform: [{ translateY: rise }] }]}>
@@ -107,7 +108,7 @@ function SearchBriefCard({ brief, reducedMotion }: { brief: FeedBrief; reducedMo
     setExpanded((value) => !value);
     if (reducedMotion) return;
     opacity.setValue(0.82);
-    Animated.timing(opacity, { toValue: 1, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+    Animated.timing(opacity, { toValue: 1, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
   }
   const sourceLabel = `Based on ${brief.sourceIds.length} linked source${brief.sourceIds.length === 1 ? '' : 's'}`;
   return <Animated.View style={{ opacity }}><Surface style={styles.briefCard}>

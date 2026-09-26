@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { animatedNativeDriver } from '../services/animatedDriver';
 import { AccessibilityInfo, ActivityIndicator, Alert, Animated, Easing, Image, LayoutAnimation, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { parseHealthDate } from '../utils/healthDate';
 import { colors, motion, timelineColors } from '../theme';
+import { profileMapSummary } from '../services/profileMapSummary.mjs';
 import type { HealthFact, HealthLink, HealthLinkRelation, HealthTopic, HealthVisit, IntakeAsset, TreatmentRecord } from '../state/NuraContext';
 import { formatVideoTimestamp, getSourceClaims, sourceMatchesAsset, type CandidateClaim, type LocalSource } from '../services/intakeClient';
 import { findMisdatedAcceptedClaims } from '../services/sourceClaimReconciliation.mjs';
@@ -153,7 +155,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
     for (const [nodeId, scale] of nodeScales.current) {
       const target = nodeId === selectedNode ? 1.08 : 1;
       if (reducedMotion) scale.setValue(target);
-      else Animated.timing(scale, { toValue: target, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+      else Animated.timing(scale, { toValue: target, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
     }
   }, [selectedNode, reducedMotion]);
   function nodeScaleFor(nodeId: string) {
@@ -167,11 +169,11 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
     else {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       transition.setValue(0.72);
-      Animated.timing(transition, { toValue: 1, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+      Animated.timing(transition, { toValue: 1, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
     }
     if (next === 'connections') {
       routeMotion.setValue(reducedMotion ? 1 : 0);
-      if (!reducedMotion) Animated.timing(routeMotion, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+      if (!reducedMotion) Animated.timing(routeMotion, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
     }
     setView(next);
   }
@@ -210,6 +212,10 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
   }, [initialFilter]);
   const timelineEntries = useMemo(() => omitAssetsRepresentedByDetails(entries, assets), [entries, assets]);
   const timelineEvents = useMemo(() => groupSourceFactEvents(timelineEntries, assets), [timelineEntries, assets]);
+  const profileSummaryText = useMemo(() => {
+    const selectedAreas = topics.filter((topic) => !topic.id.includes('::')).length;
+    return profileMapSummary({ timelineItems: timelineEntries.filter((entry) => !entry.validUntil).length, selectedAreas, selectedDetails: topics.length - selectedAreas });
+  }, [timelineEntries, topics]);
   const filteredEntries = useMemo(() => (filter === 'Documents' ? entries : timelineEntries).filter((entry) => {
     if (filter === 'Documents') return entry.kind === 'asset';
     if (filter === 'Care') return /care|visit|clinic|doctor|appointment/i.test(`${entry.category} ${entry.title}`);
@@ -471,7 +477,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
         <View style={s.mapOrb}><View style={s.orbCore} /></View>
         <Text style={s.mapName}>{name.trim() || 'You'}</Text>
         <Text style={s.mapCaption}>YOUR PROFILE · BUILT FROM YOUR INPUT</Text>
-        <Text style={s.mapSummary}>{profileDomains.filter((domain) => domain.entries.length + domain.topics.length > 0).length} of 6 areas have saved information · {timelineEntries.filter((entry) => !entry.validUntil).length} current items</Text>
+        <Text style={s.mapSummary}>{profileSummaryText}</Text>
       </View>
       <View style={s.domainGraph}>
         <View pointerEvents="none" style={s.domainSpine} />

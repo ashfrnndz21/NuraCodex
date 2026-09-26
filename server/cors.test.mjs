@@ -7,9 +7,12 @@ test('development defaults allow the current Nura preview ports and hosts', () =
   assert.equal(allowed.has('http://localhost:8094'), true);
   assert.equal(allowed.has('http://127.0.0.1:8094'), true);
   assert.equal(allowed.has('http://nura.localhost:8094'), true);
+  assert.equal(allowed.has('http://localhost:8095'), true);
+  assert.equal(allowed.has('http://127.0.0.1:8095'), true);
   assert.equal(allowed.has('http://localhost:8092'), true);
   assert.equal(isAllowedOrigin(undefined, allowed), true);
   assert.equal(isAllowedOrigin('http://localhost:8094', allowed), true);
+  assert.equal(isAllowedOrigin('http://localhost:8095', allowed), true);
   assert.equal(isAllowedOrigin('http://localhost:9999', allowed), false);
 });
 

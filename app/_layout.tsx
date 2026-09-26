@@ -1,13 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { DefaultTheme, router, Stack, ThemeProvider, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AccessibilityInfo, ActivityIndicator, Animated, Platform, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Animated, Platform, StyleSheet, UIManager, View } from 'react-native';
 import { NuraProvider, useNura } from '../src/state/NuraContext';
 import { AIStateProvider } from '../src/state/AIStateContext';
 import { PreviewIdentityProvider, usePreviewIdentity } from '../src/state/PreviewIdentityContext';
 import { colors, motion } from '../src/theme';
 import { shouldRedirectToProfileSetup } from '../src/services/profileRouteGate.mjs';
+import { animatedNativeDriver } from '../src/services/animatedDriver';
 import type { ReactNode } from 'react';
+
+if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
 
 const NuraNavigationTheme = {
   ...DefaultTheme,
@@ -34,8 +37,8 @@ export default function RootLayout() {
     opacity.setValue(isWeb ? 0.88 : 0.96);
     offset.setValue(isWeb ? 14 : 0);
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: isWeb ? motion.standard : motion.quick, useNativeDriver: true }),
-      Animated.timing(offset, { toValue: 0, duration: motion.standard, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: isWeb ? motion.standard : motion.quick, useNativeDriver: animatedNativeDriver }),
+      Animated.timing(offset, { toValue: 0, duration: motion.standard, useNativeDriver: animatedNativeDriver }),
     ]).start();
   }, [offset, opacity, pathname, reducedMotion]);
   const stageStyle = Platform.OS === 'web' ? styles.webStage : styles.nativeStage;

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { animatedNativeDriver } from '../src/services/animatedDriver';
 import { AccessibilityInfo, Animated, Easing, LayoutAnimation, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
@@ -60,7 +61,7 @@ export default function VisitsScreen() {
   useEffect(() => {
     if (reducedMotion) { enter.setValue(1); return; }
     enter.setValue(0.94);
-    Animated.timing(enter, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+    Animated.timing(enter, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
   }, [scene, reducedMotion, enter]);
 
   const activeVisit = visits.find((visit) => visit.id === visitId) ?? null;

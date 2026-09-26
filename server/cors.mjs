@@ -1,6 +1,7 @@
 const DEFAULT_DEV_ORIGINS = [
   'http://localhost:8092', 'http://127.0.0.1:8092',
   'http://localhost:8094', 'http://127.0.0.1:8094', 'http://nura.localhost:8094',
+  'http://localhost:8095', 'http://127.0.0.1:8095',
   'http://localhost:8081', 'http://127.0.0.1:8081',
 ];
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { animatedNativeDriver } from '../src/services/animatedDriver';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -122,8 +123,8 @@ function PressScale({
     }
     const animation = Animated.loop(Animated.sequence([
       Animated.delay(floatDelay),
-      Animated.timing(drift, { toValue: 1, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(drift, { toValue: 0, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(drift, { toValue: 1, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(drift, { toValue: 0, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
     ]));
     animation.start();
     return () => animation.stop();
@@ -138,10 +139,10 @@ function PressScale({
         accessibilityState={{ selected }}
         onPress={onPress}
         onPressIn={() => {
-          if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: true }).start();
+          if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: animatedNativeDriver }).start();
         }}
         onPressOut={() => {
-          if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: true }).start();
+          if (!reducedMotion) Animated.timing(scale, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: animatedNativeDriver }).start();
         }}
         style={style}
       >
@@ -173,7 +174,7 @@ function MapNode({
   const enter = useMemo(() => new Animated.Value(0.72), []);
   useEffect(() => {
     enter.setValue(reducedMotion ? 1 : 0.72);
-    if (!reducedMotion) Animated.spring(enter, { toValue: 1, speed: 22, bounciness: 5, useNativeDriver: true }).start();
+    if (!reducedMotion) Animated.spring(enter, { toValue: 1, speed: 22, bounciness: 5, useNativeDriver: animatedNativeDriver }).start();
   }, [enter, reducedMotion]);
 
   return (
@@ -201,7 +202,7 @@ function ProfileLink({ area, left, top, width, angle, reducedMotion, subtle = fa
   const reveal = useMemo(() => new Animated.Value(0), []);
   useEffect(() => {
     reveal.setValue(reducedMotion ? 1 : 0);
-    if (!reducedMotion) Animated.timing(reveal, { toValue: 1, delay: 70, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }).start();
+    if (!reducedMotion) Animated.timing(reveal, { toValue: 1, delay: 70, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
   }, [reducedMotion, reveal]);
   return (
     <Animated.View
@@ -420,8 +421,8 @@ export default function ProfileSetup() {
     measurementsOpacity.setValue(measurementsOpen ? 0 : 1);
     measurementsY.setValue(measurementsOpen ? 7 : 0);
     const animation = Animated.parallel([
-      Animated.timing(measurementsOpacity, { toValue: targetOpacity, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(measurementsY, { toValue: targetY, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(measurementsOpacity, { toValue: targetOpacity, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(measurementsY, { toValue: targetY, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
     ]);
     animation.start(({ finished }) => { if (finished && !measurementsOpen) setMeasurementsMounted(false); });
     return () => animation.stop();
@@ -453,9 +454,9 @@ export default function ProfileSetup() {
     }
     setMoving(true);
     Animated.parallel([
-      Animated.timing(panelOpacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(panelX, { toValue: -direction * 24, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(panelScale, { toValue: 0.985, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(panelOpacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(panelX, { toValue: -direction * 24, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(panelScale, { toValue: 0.985, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
     ]).start(({ finished }) => {
       if (!finished) { setMoving(false); return; }
       setStep(next);
@@ -463,9 +464,9 @@ export default function ProfileSetup() {
       panelScale.setValue(0.985);
       setError('');
       Animated.parallel([
-        Animated.timing(panelOpacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-        Animated.timing(panelX, { toValue: 0, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-        Animated.spring(panelScale, { toValue: 1, speed: 20, bounciness: 3, useNativeDriver: true }),
+        Animated.timing(panelOpacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+        Animated.timing(panelX, { toValue: 0, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+        Animated.spring(panelScale, { toValue: 1, speed: 20, bounciness: 3, useNativeDriver: animatedNativeDriver }),
       ]).start(() => setMoving(false));
     });
   }
@@ -768,16 +769,16 @@ function FollowupBubbles({
     y.setValue(reducedMotion ? 0 : 24);
     if (reducedMotion) return;
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.spring(y, { toValue: 0, speed: 22, bounciness: 4, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.spring(y, { toValue: 0, speed: 22, bounciness: 4, useNativeDriver: animatedNativeDriver }),
     ]).start();
   }, [area.id, opacity, reducedMotion, y]);
 
   function closeSheet() {
     if (reducedMotion) { onClose(); return; }
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(y, { toValue: 18, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(y, { toValue: 18, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
     ]).start(({ finished }) => { if (finished) onClose(); });
   }
 

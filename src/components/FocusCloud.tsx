@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { animatedNativeDriver } from '../services/animatedDriver';
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { HealthTopic } from '../state/NuraContext';
 import { colors, motion } from '../theme';
@@ -40,8 +41,8 @@ function FocusBubble({ label, diameter, x, y, selected, index, detail = false, o
     if (selected && !reducedMotion) {
       pop.setValue(0.94);
       Animated.sequence([
-        Animated.spring(pop, { toValue: 1.065, speed: 26, bounciness: 5, useNativeDriver: true }),
-        Animated.spring(pop, { toValue: 1, speed: 24, bounciness: 3, useNativeDriver: true }),
+        Animated.spring(pop, { toValue: 1.065, speed: 26, bounciness: 5, useNativeDriver: animatedNativeDriver }),
+        Animated.spring(pop, { toValue: 1, speed: 24, bounciness: 3, useNativeDriver: animatedNativeDriver }),
       ]).start();
     } else if (reducedMotion) pop.setValue(1);
   }, [fill, pop, reducedMotion, selected]);
@@ -50,8 +51,8 @@ function FocusBubble({ label, diameter, x, y, selected, index, detail = false, o
     if (reducedMotion) { drift.setValue(0); return; }
     const bob = Animated.loop(Animated.sequence([
       Animated.delay((index % 5) * motion.stagger.dense),
-      Animated.timing(drift, { toValue: -7, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(drift, { toValue: 0, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(drift, { toValue: -7, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
+      Animated.timing(drift, { toValue: 0, duration: motion.bob / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: animatedNativeDriver }),
     ]));
     bob.start();
     return () => bob.stop();
@@ -63,7 +64,7 @@ function FocusBubble({ label, diameter, x, y, selected, index, detail = false, o
   const size = detail ? diameter : diameter;
   return <Animated.View style={[styles.bubblePosition, { width: size, height: size, left: x, top: y, transform: [{ translateY }, { scale: Animated.multiply(press, pop) }] }]}>
     <Animated.View style={[styles.bubbleSurface, { backgroundColor, borderColor, borderRadius: size / 2, shadowColor: selected ? (detail ? colors.peach : colors.cream) : '#2A1736', shadowOpacity: selected ? 0.34 : 0.12, shadowRadius: selected ? 16 : 8 }]}>
-      <Pressable accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`${label.replace('\n', ' ')}${selected ? ', selected' : ''}`} onPress={onPress} onPressIn={() => { if (!reducedMotion) Animated.timing(press, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: true }).start(); }} onPressOut={() => { if (!reducedMotion) Animated.timing(press, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: true }).start(); }} style={styles.bubbleTouch}>
+      <Pressable accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`${label.replace('\n', ' ')}${selected ? ', selected' : ''}`} onPress={onPress} onPressIn={() => { if (!reducedMotion) Animated.timing(press, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: animatedNativeDriver }).start(); }} onPressOut={() => { if (!reducedMotion) Animated.timing(press, { toValue: 1, duration: motion.pressOut, easing: Easing.bezier(...motion.easing.bouncy), useNativeDriver: animatedNativeDriver }).start(); }} style={styles.bubbleTouch}>
         {selected && !detail && <View pointerEvents="none" style={styles.selectedSpark}><Text style={styles.sparkText}>✦</Text></View>}
         <Text style={[styles.bubbleText, detail && styles.detailText, selected && styles.selectedText]}>{label}</Text>
       </Pressable>
