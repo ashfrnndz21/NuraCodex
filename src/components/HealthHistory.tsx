@@ -114,7 +114,7 @@ function connectionMeta(id: string, entries: Entry[]) {
 }
 function dateTime(value: string) { return parseHealthDate(value)?.getTime() ?? 0; }
 function healthDateKey(value: string) { const date = parseHealthDate(value); return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : null; }
-function readableDate(value: string) { const parsed = parseHealthDate(value); return parsed ? parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : value; }
+function readableDate(value: string) { const parsed = parseHealthDate(value); return parsed ? parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : value || 'Date not stated'; }
 function dateParts(value: string) { const parsed = parseHealthDate(value); if (!parsed) return { day: '—', month: 'DATE' }; return { day: String(parsed.getDate()).padStart(2, '0'), month: parsed.toLocaleDateString(undefined, { month: 'short' }).toUpperCase() }; }
 function assetGlyph(kind: IntakeAsset['kind']) { return kind === 'pdf' ? '▤' : kind === 'image' ? '▧' : kind === 'video' ? '▶' : '▤'; }
 function sourceAssetNameFor(sourceId: string | undefined, assets: IntakeAsset[]) {

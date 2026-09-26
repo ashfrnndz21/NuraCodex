@@ -76,6 +76,8 @@ test('correcting an accepted extracted claim appends a linked version and preser
     const accepted = await repository.decideClaim(claim.id, { decision: 'accept' });
     assert.equal(accepted.assertion.referenceRange, '3.5–5.0');
     assert.equal(accepted.assertion.method, 'Enzymatic');
+    assert.equal(accepted.assertion.effectiveAt, '2026-09-12');
+    assert.equal(accepted.assertion.validFrom, accepted.assertion.recordedAt);
     const corrected = await repository.correctClaim(claim.id, {
       expectedAssertionId: accepted.assertion.id,
       editedValue: { label: 'Sample marker', value: '4.2', unit: 'mmol/L', effectiveAt: '2026-09-12' },
@@ -90,7 +92,21 @@ test('correcting an accepted extracted claim appends a linked version and preser
     assert.equal(corrected.assertion.version, 2);
     assert.equal(corrected.assertion.supersedes, accepted.assertion.id);
     assert.equal(corrected.assertion.sourceId, source.id);
+    assert.equal(corrected.claim.effectiveAt, '2026-09-12');
+    assert.equal(corrected.assertion.validFrom, corrected.assertion.recordedAt);
     assert.deepEqual((await repository.listAssertions()).map((item) => item.id), [corrected.assertion.id, accepted.assertion.id]);
+
+    await assert.rejects(repository.correctClaim(claim.id, {
+      expectedAssertionId: corrected.assertion.id,
+      editedValue: { label: 'Sample marker', value: '4.3', unit: 'mmol/L', effectiveAt: '2026-02-30' },
+    }), /real calendar date/);
+    const undated = await repository.correctClaim(claim.id, {
+      expectedAssertionId: corrected.assertion.id,
+      editedValue: { label: 'Sample marker', value: '4.3', unit: 'mmol/L', effectiveAt: '' },
+    });
+    assert.equal(undated.claim.effectiveAt, null);
+    assert.equal(undated.assertion.effectiveAt, null);
+    assert.equal(undated.assertion.validFrom, undated.assertion.recordedAt);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -161,6 +177,39 @@ test('a stale profile assertion cannot be retracted by an old review', async () 
     );
     assert.equal((await repository.getClaim(claim.id)).evidenceState, 'user_confirmed');
     assert.equal((await repository.listAssertions(DEMO_PROFILE_ID))[0].validUntil, null);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('reviewed result dates are validated and an explicit blank remains undated', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nura-reviewed-result-date-'));
+  try {
+    const repository = new LocalDemoRepository(directory);
+    const source = createSourceRecord({ displayName: 'sample-lab.pdf', mediaType: 'application/pdf', sizeBytes: 17, sha256: 'd'.repeat(64) });
+    await repository.createSource(source);
+    const undated = createCandidateClaim({
+      profileId: DEMO_PROFILE_ID, sourceId: source.id, kind: 'measurement',
+      label: 'Glucose', value: '5.1', unit: 'mmol/L',
+      sourceLocation: { page: 1, quote: 'Glucose 5.1 mmol/L' },
+    });
+    const dated = createCandidateClaim({
+      profileId: DEMO_PROFILE_ID, sourceId: source.id, kind: 'measurement',
+      label: 'Cholesterol', value: '4.2', unit: 'mmol/L', effectiveAt: '2025-01-21',
+      sourceLocation: { page: 1, quote: 'Cholesterol 4.2 mmol/L' },
+    });
+    await repository.saveCandidateClaims([undated, dated]);
+    await assert.rejects(
+      repository.decideClaim(undated.id, { decision: 'edit', editedValue: { label: 'Glucose', value: '5.1', unit: 'mmol/L', effectiveAt: '2025-02-30' } }),
+      /real calendar date/,
+    );
+    const reviewed = await repository.decideClaim(undated.id, { decision: 'edit', editedValue: { label: 'Glucose', value: '5.1', unit: 'mmol/L', effectiveAt: '2025-02-28' } });
+    assert.equal(reviewed.claim.effectiveAt, '2025-02-28');
+    assert.equal(reviewed.assertion.effectiveAt, '2025-02-28');
+    const cleared = await repository.decideClaim(dated.id, { decision: 'edit', editedValue: { label: 'Cholesterol', value: '4.2', unit: 'mmol/L', effectiveAt: '' } });
+    assert.equal(cleared.claim.effectiveAt, null);
+    assert.equal(cleared.assertion.effectiveAt, null);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

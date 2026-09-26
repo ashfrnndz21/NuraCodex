@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DEMO_PROFILE_ID } from '../contracts.mjs';
+import { normalizeReviewEventDate } from '../../src/utils/healthDate.mjs';
 
 const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '.nura-dev');
 const EMPTY = () => ({ schemaVersion: 1, sources: [], claims: [], assertions: [], runEvents: [] });
@@ -118,7 +119,12 @@ export class LocalDemoRepository {
       const label = typeof edited?.label === 'string' ? edited.label.trim().slice(0, 160) : claim.label;
       const value = typeof edited?.value === 'string' ? edited.value.trim().slice(0, 1200) : claim.value;
       const unit = typeof edited?.unit === 'string' ? edited.unit.trim().slice(0, 48) : claim.unit;
-      const effectiveAt = typeof edited?.effectiveAt === 'string' ? edited.effectiveAt.slice(0, 64) : claim.effectiveAt;
+      let effectiveAt = claim.effectiveAt;
+      if (typeof edited?.effectiveAt === 'string') {
+        const reviewedDate = normalizeReviewEventDate(edited.effectiveAt);
+        if (!reviewedDate.ok) throw new Error('Use a real calendar date in YYYY-MM-DD format, or leave the result date blank.');
+        effectiveAt = reviewedDate.value;
+      }
       if (!label || !value) throw new Error('A reviewed claim needs a label and value.');
       if (decision.decision === 'edit' && !claim.originalExtraction) {
         claim.originalExtraction = { label: claim.label, value: claim.value, unit: claim.unit, effectiveAt: claim.effectiveAt };
@@ -130,13 +136,14 @@ export class LocalDemoRepository {
       claim.evidenceState = 'user_confirmed';
       claim.reviewedAt = new Date().toISOString();
       if (!claim.acceptedAssertionId) {
+        const recordedAt = new Date().toISOString();
         const assertion = {
           id: randomUUID(), schemaVersion: 1, profileId: claim.profileId, sourceId: claim.sourceId,
           claimId: claim.id, kind: claim.kind, label: claim.label, value: claim.value, unit: claim.unit,
           referenceRange: claim.referenceRange ?? null, method: claim.method ?? null,
-          effectiveAt: claim.effectiveAt, recordedAt: new Date().toISOString(), origin: state.sources.find((item) => item.id === claim.sourceId)?.origin === 'user_entered' ? 'user_entered' : 'document_extraction',
+          effectiveAt: claim.effectiveAt, recordedAt, origin: state.sources.find((item) => item.id === claim.sourceId)?.origin === 'user_entered' ? 'user_entered' : 'document_extraction',
           evidenceState: 'user_confirmed', confidence: claim.confidence, sourceLocation: claim.sourceLocation,
-          validFrom: claim.effectiveAt || new Date().toISOString(), validUntil: null, version: 1, supersedes: null,
+          validFrom: recordedAt, validUntil: null, version: 1, supersedes: null,
         };
         state.assertions.unshift(assertion);
         claim.acceptedAssertionId = assertion.id;
@@ -160,7 +167,12 @@ export class LocalDemoRepository {
       const label = typeof editedValue?.label === 'string' ? editedValue.label.trim().slice(0, 160) : '';
       const value = typeof editedValue?.value === 'string' ? editedValue.value.trim().slice(0, 1200) : '';
       const unit = typeof editedValue?.unit === 'string' ? editedValue.unit.trim().slice(0, 48) : '';
-      const effectiveAt = typeof editedValue?.effectiveAt === 'string' ? editedValue.effectiveAt.trim().slice(0, 64) : current.effectiveAt;
+      let effectiveAt = current.effectiveAt;
+      if (typeof editedValue?.effectiveAt === 'string') {
+        const reviewedDate = normalizeReviewEventDate(editedValue.effectiveAt);
+        if (!reviewedDate.ok) throw new Error('Use a real calendar date in YYYY-MM-DD format, or leave the result date blank.');
+        effectiveAt = reviewedDate.value;
+      }
       if (!label || !value) throw new Error('Add a label and corrected value before saving.');
       const now = new Date().toISOString();
       claim.revisionHistory = [...(Array.isArray(claim.revisionHistory) ? claim.revisionHistory : []), {
@@ -172,7 +184,7 @@ export class LocalDemoRepository {
       current.supersededAt = now;
       const next = {
         ...current, id: randomUUID(), label, value, unit: unit || null, effectiveAt: effectiveAt || null,
-        recordedAt: now, validFrom: current.validFrom || effectiveAt || now, validUntil: null,
+        recordedAt: now, validFrom: now, validUntil: null,
         origin: 'user_entered', evidenceState: 'user_confirmed', confidence: null,
         version: current.version + 1, supersedes: current.id,
       };

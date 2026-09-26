@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { resolveFactEventDate } from '../utils/healthDate.mjs';
 import { Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
@@ -53,13 +54,13 @@ function agentMessageFromRow(row: AgentMessageRow): AgentMessage {
 }
 export type RegistryBrief = { id: string; topicId: string; topicLabel: string; answer: string; unknowns: string[]; citations: AgentCitation[]; sourceSignature: string; runId: string; createdAt: string; supersedesBriefId?: string };
 export type RegistryBriefInput = Omit<RegistryBrief, 'id' | 'createdAt' | 'supersedesBriefId'>;
-export type AddFactMetadata = { source?: string; category?: string; note?: string; sourceRunId?: string; sourceId?: string; sourceClaimId?: string; supersedesId?: string; reviewState?: 'user_confirmed'; validFrom?: string; validUntil?: string | null; confidence?: number | null; permissionScope?: string };
+export type AddFactMetadata = { source?: string; category?: string; note?: string; sourceRunId?: string; sourceId?: string; sourceClaimId?: string; supersedesId?: string; reviewState?: 'user_confirmed'; eventDate?: string | null; validFrom?: string; validUntil?: string | null; confidence?: number | null; permissionScope?: string };
 type NuraState = {
   ready: boolean; storageError: string | null; name: string; birthday: string; country: string; email: string; phone: string;
   topics: HealthTopic[]; assets: IntakeAsset[]; intakeNotes: HealthIntakeNote[]; facts: HealthFact[]; treatments: TreatmentRecord[]; treatmentEvents: TreatmentEvent[]; visits: HealthVisit[]; visitEvents: VisitEvent[]; links: HealthLink[]; policyReplacements: PolicyReplacement[]; policyClarifications: PolicyClarification[]; feedItems: HealthFeedItem[]; savedQuestions: string[]; agentMessages: AgentMessage[]; registryBriefs: RegistryBrief[];
   updateProfile: (patch: Partial<Pick<NuraState, 'name' | 'birthday' | 'country' | 'email' | 'phone'>>) => void;
   commitProfileSetup: () => Promise<void>;
-  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; saveApprovedMemoryFact: (label: string, value: string, metadata?: AddFactMetadata) => Promise<HealthFact>; correctFact: (id: string, label: string, value: string) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; saveIntakeNote: (note: { id?: string; text: string; topicId?: string; topicLabel?: string }) => Promise<HealthIntakeNote>; linkIntakeNoteSource: (id: string, sourceId: string | null) => Promise<void>; commitIntakeNote: (id: string, text?: string) => Promise<HealthFact>; removeIntakeNote: (id: string) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => Promise<void>;
+  toggleTopic: (topic: HealthTopic) => void; addFact: (label: string, value: string, metadata?: AddFactMetadata) => void; saveApprovedMemoryFact: (label: string, value: string, metadata?: AddFactMetadata) => Promise<HealthFact>; correctFact: (id: string, label: string, value: string, eventDate?: string | null) => Promise<HealthFact | null>; retractFact: (id: string, retractedAt: string) => Promise<boolean>; removeFact: (id: string) => void; addAssets: (assets: Omit<IntakeAsset, 'addedAt'>[]) => Promise<void>; saveIntakeNote: (note: { id?: string; text: string; topicId?: string; topicLabel?: string }) => Promise<HealthIntakeNote>; linkIntakeNoteSource: (id: string, sourceId: string | null) => Promise<void>; commitIntakeNote: (id: string, text?: string) => Promise<HealthFact>; removeIntakeNote: (id: string) => Promise<void>; attachSourceToAsset: (assetId: string, sourceId: string | null) => Promise<void>;
   reconcileSourceFactDate: (factId: string, sourceId: string, sourceClaimId: string, effectiveAt: string) => boolean;
   reconcileSourceFactValue: (factId: string, sourceId: string, sourceClaimId: string, expectedValue: string, normalizedValue: string) => Promise<boolean>;
   addTreatment: (input: TreatmentInput) => TreatmentRecord | null; updateTreatment: (id: string, patch: Partial<TreatmentInput>) => TreatmentRecord | null; markTreatmentPast: (id: string, endedOn?: string) => TreatmentRecord | null;
@@ -247,7 +248,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     const cleanLabel = label.trim(); const cleanValue = value.trim(); if (!cleanLabel || !cleanValue) return;
     const now = new Date().toISOString();
     const factDate = metadata.validFrom && Number.isFinite(Date.parse(metadata.validFrom)) ? metadata.validFrom : now;
-    const fact: HealthFact = { id: newId(), label: cleanLabel, value: cleanValue, date: factDate, category: metadata.category ?? 'Self-reported', source: metadata.source ?? 'Entered by you', status: 'reviewed', note: metadata.note, sourceRunId: metadata.sourceRunId, sourceId: metadata.sourceId, sourceClaimId: metadata.sourceClaimId, supersedesId: metadata.supersedesId, reviewState: metadata.reviewState ?? 'user_confirmed', validFrom: metadata.validFrom ?? now, validUntil: metadata.validUntil ?? null, confidence: metadata.confidence ?? null, permissionScope: metadata.permissionScope ?? (metadata.sourceRunId ? 'profile_memory_write' : 'profile_write') };
+    const fact: HealthFact = { id: newId(), label: cleanLabel, value: cleanValue, date: Object.prototype.hasOwnProperty.call(metadata, 'eventDate') ? resolveFactEventDate(metadata.eventDate, now) : factDate, category: metadata.category ?? 'Self-reported', source: metadata.source ?? 'Entered by you', status: 'reviewed', note: metadata.note, sourceRunId: metadata.sourceRunId, sourceId: metadata.sourceId, sourceClaimId: metadata.sourceClaimId, supersedesId: metadata.supersedesId, reviewState: metadata.reviewState ?? 'user_confirmed', validFrom: metadata.validFrom ?? now, validUntil: metadata.validUntil ?? null, confidence: metadata.confidence ?? null, permissionScope: metadata.permissionScope ?? (metadata.sourceRunId ? 'profile_memory_write' : 'profile_write') };
     setFacts((current) => [fact, ...current]);
     if (Platform.OS !== 'web') void enqueueProfileWrite(getDatabase().then(async (db) => {
       await db.withTransactionAsync(async () => {
@@ -289,7 +290,6 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     if (Platform.OS !== 'web') void enqueueProfileWrite(getDatabase().then(async (db) => {
       await db.withTransactionAsync(async () => {
         await db.runAsync('UPDATE health_facts SET date=? WHERE id=?', effectiveAt, factId);
-        await db.runAsync('UPDATE memory_provenance SET valid_from=? WHERE fact_id=? AND source_id=? AND source_claim_id=?', effectiveAt, factId, sourceId, sourceClaimId);
       });
     }));
     return true;
@@ -310,13 +310,13 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     setFacts((items) => items.map((fact) => fact.id === factId && fact.sourceId === sourceId && fact.sourceClaimId === sourceClaimId && fact.value === expectedValue && !fact.validUntil ? normalized : fact));
     return true;
   }, [facts, enqueueProfileWrite]);
-  const correctFact = useCallback(async (id: string, label: string, value: string): Promise<HealthFact | null> => {
+  const correctFact = useCallback(async (id: string, label: string, value: string, eventDate?: string | null): Promise<HealthFact | null> => {
     const original = facts.find((fact) => fact.id === id);
     const cleanLabel = label.trim(); const cleanValue = value.trim();
     if (!original || !cleanValue) return null;
     const now = new Date().toISOString();
     const prior: HealthFact = { ...original, validUntil: now, note: [original.note, `Superseded by your correction on ${new Date(now).toLocaleDateString()}.`].filter(Boolean).join(' ') };
-    const corrected: HealthFact = { id: newId(), label: cleanLabel || original.label, value: cleanValue, date: now, category: original.category, source: original.source, status: 'reviewed', note: [`Corrected by you on ${new Date(now).toLocaleDateString()}. The original source remains attached.`, original.note].filter(Boolean).join(' · '), sourceId: original.sourceId, sourceClaimId: original.sourceClaimId, reviewState: 'user_confirmed', validFrom: now, validUntil: null, confidence: null, permissionScope: 'profile_write', supersedesId: original.id };
+    const corrected: HealthFact = { id: newId(), label: cleanLabel || original.label, value: cleanValue, date: eventDate === undefined ? now : resolveFactEventDate(eventDate, now), category: original.category, source: original.source, status: 'reviewed', note: [`Corrected by you on ${new Date(now).toLocaleDateString()}. The original source remains attached.`, original.note].filter(Boolean).join(' · '), sourceId: original.sourceId, sourceClaimId: original.sourceClaimId, reviewState: 'user_confirmed', validFrom: now, validUntil: null, confidence: null, permissionScope: 'profile_write', supersedesId: original.id };
     if (Platform.OS !== 'web') await enqueueProfileWrite(getDatabase().then(async (db) => {
       await db.withTransactionAsync(async () => {
         await db.runAsync('UPDATE memory_provenance SET valid_until=? WHERE fact_id=?', now, id);
