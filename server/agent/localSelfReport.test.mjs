@@ -27,6 +27,23 @@ test('explicitly reported diagnosis remains labeled as the person’s report; ca
   ]);
 });
 
+test('a calendar date is not mistaken for a glucose measurement', () => {
+  const text = 'I have checked fictional fasting glucose readings at home since 15 January 2025. I do not know what target range to use yet.';
+  const result = organizeSelfReportLocally(text);
+  assert.deepEqual(result.claims, []);
+  assert.deepEqual(result.unknowns.map(({ quote }) => quote), [
+    'I have checked fictional fasting glucose readings at home since 15 January 2025.',
+    'I do not know what target range to use yet.',
+  ]);
+});
+
+test('a real numeric result remains extractable when the same sentence includes a natural-language date', () => {
+  const result = organizeSelfReportLocally('My glucose result was 6.3 mmol/L on 15 January 2025.');
+  assert.equal(result.claims.length, 1);
+  assert.equal(result.claims[0].value, '6.3');
+  assert.equal(result.claims[0].unit, 'mmol/L');
+});
+
 test('unclear and unrecognized passages are never promoted into claims', async () => {
   const result = await interpretSelfReportRequest({
     consentForThisNote: true, syntheticDemoConfirmed: true, noteId: 'note-02',

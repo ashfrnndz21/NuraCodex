@@ -113,3 +113,12 @@ The resumed code slices also add a 360-character expandable first view for long 
 
 - All current `Animated` call sites now share a platform policy: native driver for iOS/Android and JavaScript driver on web. Android enables the documented LayoutAnimation runtime flag at app startup. Existing motion token values and reduced-motion behavior are unchanged.
 - Verification: platform policy tests pass, the rebuilt `/health` and `/care` browser routes render, and the Expo web log no longer reports the missing native animation module. This is a shared foundation improvement; it does not complete any story. Native-device, reduced-motion, 390×844 and 360×780 visual acceptance remain open.
+
+### Ask consent and self-report regression follow-up — 26 September 2026, 15:50 +08
+
+- Ask's general health-context consent now expands to individual saved facts and shows an included/total count. Live synthetic preview confirmed 9/9 → 8/9 after excluding one fact; canceling the staged question sent no request.
+- The first-run local self-report organizer falsely read “15 January 2025” as a glucose value and split “6.3” at the decimal. It now masks full ISO and month-name calendar dates before numeric extraction and keeps decimal values in one sentence. Regression tests cover both cases. Unsupported wording remains marked unclear.
+- Live synthetic profile setup reached five selected areas and one nested detail. The bundled report resolved to an existing saved source, so it was not reprocessed. A fictional note was explicitly included and saved as a separate timeline event; /health reload preserved the note and the report history.
+- The native multiple-file picker did not surface in the locked desktop session. The M1 integration test did pass batch consent/retry/cancel and source-decision behavior, but the in-app multi-file path remains unverified.
+- Full verification: repository suite 236/236, latest slices 66/66, typecheck passed, lint 0 errors / 1 pre-existing warning at app/index.tsx:403, and git diff --check passed.
+- This is partial evidence for Stories 1, 2 and 5 only. Overall remains 0/11 stories, 0/8 production gates, 0/19 packages (0%). No user-test milestone is ready.

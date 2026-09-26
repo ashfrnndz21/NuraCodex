@@ -2,12 +2,20 @@ const HEALTH_TERMS = ['shortness of breath', 'headache', 'dizziness', 'dizzy', '
 const MEASUREMENT_TERMS = ['blood pressure', 'cholesterol', 'glucose', 'blood sugar', 'weight', 'height', 'temperature', 'heart rate', 'pulse'];
 
 function sentenceSpans(text) {
-  return [...text.matchAll(/[^.!?\n]+[.!?]?/g)].map((match) => {
+  return [...text.matchAll(/(?:[^.!?\n]|\.(?=\d))+[.!?]?/g)].map((match) => {
     const raw = match[0];
     const leading = raw.search(/\S/);
     const quote = raw.trim();
     return { quote, index: match.index + Math.max(0, leading) };
   }).filter(({ quote }) => quote.length > 0);
+}
+
+function withoutCalendarDates(text) {
+  const month = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+  const naturalDate = new RegExp('\\b(?:\\d{1,2}(?:st|nd|rd|th)?\\s+' + month + '\\.?\\s*,?\\s+\\d{4}|' + month + '\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?\\s*,?\\s+\\d{4})\\b', 'gi');
+  return text
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, (date) => ' '.repeat(date.length))
+    .replace(naturalDate, (date) => ' '.repeat(date.length));
 }
 
 function exactTerm(quote, terms) {
@@ -31,7 +39,7 @@ export function organizeSelfReportLocally(text) {
     }
 
     const measurementLabel = exactTerm(quote, MEASUREMENT_TERMS);
-    const measurement = measurementLabel && new RegExp(`\\b${measurementLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b.{0,40}?\\b(?:is|was|measured|read|at|of)?\\s*(\\d+(?:[.,]\\d+)?(?:\\s*\\/\\s*\\d+(?:[.,]\\d+)?)?)(?:\\s*(mmHg|mg\\s*\\/\\s*dL|mmol\\s*\\/\\s*L|kg|cm|bpm))?`, 'i').exec(quote);
+    const measurement = measurementLabel && new RegExp(`\\b${measurementLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b.{0,40}?\\b(?:is|was|measured|read|at|of)?\\s*(\\d+(?:[.,]\\d+)?(?:\\s*\\/\\s*\\d+(?:[.,]\\d+)?)?)(?:\\s*(mmHg|mg\\s*\\/\\s*dL|mmol\\s*\\/\\s*L|kg|cm|bpm))?`, 'i').exec(withoutCalendarDates(quote));
     if (measurement) {
       const value = measurement[1];
       const unit = measurement[2] ?? null;

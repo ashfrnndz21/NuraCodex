@@ -169,3 +169,13 @@ Every 30-minute update should state:
 7. **Scope remaining:** the next open story and production gates, with partial foundations named separately.
 
 Never describe a plan as completed work, a screen as a completed story, a configured API key as a validated AI flow, or an attempted test as a passing test. Do not ask the user to debug unfinished work. If the user owes a product decision, keep building independent work and clearly name the decision gate.
+
+### Latest verified continuation — 26 September 2026, 15:50 +08
+
+- Ask consent can now be narrowed to individual saved health facts. The live local demo showed 9 facts, changed the display to 8/9 after one was excluded, then canceled before transmission. A distinct, explicitly confirmed synthetic Ask run earlier returned eight source citations and navigated to the selected history evidence.
+- The deterministic local self-report organizer no longer turns a month-name date into a measurement and now preserves decimal numeric values. Regression tests reproduce both the false date-derived value and the decimal-splitting bug.
+- In a separate local demo origin, the first-run rehearsal covered sign-in, required profile fields, five selected areas, one nested detail, a bundled sample report and a self-report note. The report was matched to an existing sample source rather than reprocessed. After explicit inclusion, the note appeared as a separate timeline item; a browser reload retained it. This is not production OTP, owner isolation, multi-file UI, or native restart evidence.
+- The service-level multi-file integration test passed. The in-app browser could not expose the native chooser in the locked Mac session, so multi-file browser acceptance remains open.
+- Verification: repository 236/236; latest slices 66/66; TypeScript typecheck passed; lint 0 errors / one existing warning at app/index.tsx:403; diff check passed.
+- Completion status remains 0/11 stories, 0/8 production gates, 0/19 packages (0%). The full scope still requires all 11 user journeys and all eight production gates. No user test is ready for handoff.
+- Next: complete a supported in-app multi-file batch review with edit/reject/unclear/save and re-entry, then continue the next open story and production-gate acceptance.
