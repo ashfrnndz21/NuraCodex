@@ -24,7 +24,8 @@ import { Orb } from '../src/components/Orb';
 import { useNura, HealthTopic } from '../src/state/NuraContext';
 import { brandScenes, motion } from '../src/theme';
 import { ageFromDateOfBirth, hasExistingProfileEvidence, validateRequiredProfileDetails } from '../src/services/profileDemographics.mjs';
-import { createProfileMapLayout } from '../src/services/profileMapLayout.mjs';
+import { buildProfileEvidenceRows } from '../src/services/profileOverview.mjs';
+import type { ProfileOverviewAsset, ProfileOverviewFact, ProfileOverviewTreatment, ProfileOverviewVisit } from '../src/services/profileOverview.mjs';
 
 type Signal = { id: string; label: string };
 type FocusArea = {
@@ -35,6 +36,12 @@ type FocusArea = {
   ink: string;
   signals: Signal[];
 };
+
+function formatOverviewDate(value: string) {
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 type OnboardingStep = 'welcome' | 'identity' | 'focus';
 
 const palette = {
@@ -95,6 +102,7 @@ function detailFor(area: FocusArea, signal: Signal): HealthTopic {
 function PressScale({
   children,
   selected,
+  expanded,
   onPress,
   style,
   containerStyle,
@@ -105,6 +113,7 @@ function PressScale({
 }: {
   children: React.ReactNode;
   selected?: boolean;
+  expanded?: boolean;
   onPress: () => void;
   style: any;
   containerStyle?: any;
@@ -136,7 +145,7 @@ function PressScale({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
-        accessibilityState={{ selected }}
+        accessibilityState={{ selected, expanded }}
         onPress={onPress}
         onPressIn={() => {
           if (!reducedMotion) Animated.timing(scale, { toValue: motion.pressScale, duration: motion.pressIn, easing: Easing.linear, useNativeDriver: animatedNativeDriver }).start();
@@ -152,140 +161,184 @@ function PressScale({
   );
 }
 
-function MapNode({
-  area,
-  left,
-  top,
-  count,
-  compact = false,
-  width = 78,
-  reducedMotion,
-  onPress,
-}: {
-  area: FocusArea;
-  left: number;
-  top: number;
-  count: number;
-  compact?: boolean;
-  width?: number;
-  reducedMotion: boolean;
-  onPress: () => void;
-}) {
-  const enter = useMemo(() => new Animated.Value(0.72), []);
-  useEffect(() => {
-    enter.setValue(reducedMotion ? 1 : 0.72);
-    if (!reducedMotion) Animated.spring(enter, { toValue: 1, speed: 22, bounciness: 5, useNativeDriver: animatedNativeDriver }).start();
-  }, [enter, reducedMotion]);
-
-  return (
-    <Animated.View style={[styles.mapNode, compact && styles.mapNodeCompact, { left, top, width, opacity: enter, transform: [{ scale: enter }] }]}>
-      <Pressable accessibilityRole="button" accessibilityLabel={'Open ' + area.label + ' details, ' + count + ' selected'} accessibilityHint="Shows the details connected to this health area" onPress={onPress} style={styles.mapNodeButton}>
-        <View style={[styles.mapNodeDot, compact && styles.mapNodeDotCompact, { backgroundColor: area.color, borderColor: area.pale, shadowColor: area.color }]}>
-          <Text style={[styles.mapNodeGlyph, compact && styles.mapNodeGlyphCompact]}>{area.label === 'Blood pressure' ? '↕' : area.label === 'Cholesterol' ? '◌' : area.label === 'Sleep' ? '☾' : area.label === 'Heart health' ? '♡' : area.label === 'Blood sugar' ? '⌁' : area.label === 'Medicines' ? '+' : '•'}</Text>
-        </View>
-        <Text numberOfLines={compact ? 2 : 1} style={[styles.mapNodeLabel, compact && styles.mapNodeLabelCompact]}>{area.label}</Text>
-        {count > 0 ? <Text style={styles.mapNodeMeta}>{count} detail{count === 1 ? '' : 's'}</Text> : null}
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-function ProfileLink({ area, left, top, width, angle, reducedMotion, subtle = false }: {
-  area: FocusArea;
-  left: number;
-  top: number;
-  width: number;
-  angle: string;
-  reducedMotion: boolean;
-  subtle?: boolean;
-}) {
-  const reveal = useMemo(() => new Animated.Value(0), []);
-  useEffect(() => {
-    reveal.setValue(reducedMotion ? 1 : 0);
-    if (!reducedMotion) Animated.timing(reveal, { toValue: 1, delay: 70, duration: motion.standard, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }).start();
-  }, [reducedMotion, reveal]);
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.mapLine, { left, top, width, backgroundColor: area.color + (subtle ? 'A0' : 'C8'), opacity: reveal, transform: [{ rotate: angle }, { scaleX: reveal }] }]}
-    />
-  );
-}
-
-function LiveProfileMap({
+function EvidenceFirstProfileOverview({
   name,
   areas,
   topics,
   facts,
   treatments,
   assets,
+  visits,
   reducedMotion,
+  allowEntranceMotion,
+  activeAreaId,
   onAreaPress,
 }: {
   name: string;
   areas: FocusArea[];
   topics: HealthTopic[];
-  facts: { id: string; category: string; validUntil?: string | null }[];
-  treatments: { id: string }[];
-  assets: { id: string }[];
+  facts: ProfileOverviewFact[];
+  treatments: ProfileOverviewTreatment[];
+  assets: ProfileOverviewAsset[];
+  visits: ProfileOverviewVisit[];
   reducedMotion: boolean;
+  allowEntranceMotion: boolean;
+  activeAreaId: string | null;
   onAreaPress: (area: FocusArea) => void;
 }) {
-  const [width, setWidth] = useState(320);
-  const visible = areas;
-  const { expanded, graphHeight, centerX, centerY, nodeWidth, nodeDiameter, slots } = createProfileMapLayout(visible.length, width);
-  const connectors = visible.map((area, index) => {
-    const slot = slots[index];
-    const x2 = slot.left + nodeWidth / 2;
-    const y2 = slot.top + nodeDiameter / 2;
-    const dx = x2 - centerX;
-    const dy = y2 - centerY;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    const angle = Math.atan2(dy, dx) + 'rad';
-    return (
-      <ProfileLink
-        key={'connection-' + area.id}
-        area={area}
-        left={centerX - length / 2}
-        top={centerY}
-        width={length}
-        angle={angle}
-        subtle={expanded}
-        reducedMotion={reducedMotion}
-      />
-    );
-  });
+  const entrance = useMemo(() => new Animated.Value(1), []);
+  const entranceHasPlayed = useRef(false);
+  const [expandedEvidenceRows, setExpandedEvidenceRows] = useState<Set<string>>(() => new Set());
+  const evidenceRows = buildProfileEvidenceRows({ facts, assets, treatments, visits });
   const detailCount = topics.filter((topic) => topic.id.includes('::')).length;
 
+  useEffect(() => {
+    if (!allowEntranceMotion || reducedMotion || entranceHasPlayed.current) {
+      entrance.setValue(1);
+      return;
+    }
+    entranceHasPlayed.current = true;
+    entrance.setValue(0);
+    const animation = Animated.timing(entrance, {
+      toValue: 1,
+      duration: motion.cardEnter,
+      easing: Easing.bezier(...motion.easing.gentle),
+      useNativeDriver: animatedNativeDriver,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [allowEntranceMotion, entrance, reducedMotion]);
+
+  const overviewY = entrance.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
+  const shownEvidence = evidenceRows.slice(0, 3);
+
+  function openEvidenceRow(row: (typeof evidenceRows)[number]) {
+    if (row.kind === 'source') {
+      const asset = assets.find((item) => row.assetIds?.includes(item.id));
+      if (!asset) return;
+      router.push({ pathname: '/review', params: { purpose: asset.purpose ?? 'medical', assetId: asset.id, ...(row.sourceId ? { sourceId: row.sourceId } : asset.serverSourceId ? { sourceId: asset.serverSourceId } : {}) } });
+      return;
+    }
+    if (row.kind === 'detail') {
+      const factId = row.id.slice('fact:'.length);
+      router.push({ pathname: '/(tabs)/health', params: { focusId: `fact:${factId}` } });
+      return;
+    }
+    if (row.kind === 'visit') {
+      const visitId = row.id.slice('visit:'.length);
+      router.push({ pathname: '/visits', params: { visitId } });
+      return;
+    }
+    const treatmentId = row.id.slice('treatment:'.length);
+    router.push({ pathname: '/treatment', params: { treatmentId } });
+  }
+
+  function toggleEvidenceDetails(rowId: string) {
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedEvidenceRows((current) => {
+      const next = new Set(current);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }
+
   return (
-    <View style={styles.mapCard}>
-      <View style={styles.mapHeading}>
-        <View>
-          <Text style={styles.eyebrow}>YOUR TRACKING PROFILE</Text>
-          <Text style={styles.mapTitle}>Areas you chose</Text>
+    <Animated.View style={[styles.profileOverview, { opacity: entrance, transform: [{ translateY: overviewY }] }]}>
+      <View style={styles.overviewHeading}>
+        <View style={styles.overviewTitleGroup}>
+          <Text style={styles.overviewEyebrow}>YOUR 720 PROFILE</Text>
+          <Text style={styles.overviewTitle}>{name.trim() || 'Your health profile'}</Text>
         </View>
-        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>YOUR CHOICES</Text></View>
+        <View style={styles.overviewStatus}><View style={styles.overviewStatusDot} /><Text style={styles.overviewStatusText}>SETUP IN PROGRESS</Text></View>
       </View>
-      <Text style={styles.mapSub}>{expanded ? `All ${visible.length} areas you chose to track are shown. These choices do not confirm a diagnosis or add records.` : 'These are tracking interests, not diagnoses or records. Tap an area to choose what you want to follow.'}</Text>
-      <View style={[styles.mapGraph, { height: graphHeight }]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-        {connectors}
-        {visible.map((area, index) => {
-          const count = topics.filter((topic) => topic.id.startsWith(area.id + '::')).length;
-          const slot = slots[index];
-          return <MapNode key={area.id} area={area} left={slot.left} top={slot.top} width={expanded ? nodeWidth : 78} compact={expanded} count={count} reducedMotion={reducedMotion} onPress={() => onAreaPress(area)} />;
-        })}
-        <View style={[styles.mapOrbRing, expanded && styles.mapOrbRingExpanded]}><Orb size={expanded ? 34 : 40} state="idle" /></View>
-        <Text numberOfLines={1} style={[styles.mapYou, expanded && styles.mapYouExpanded]}>{name.trim() || 'Your profile'}</Text>
-        {areas.length === 0 ? <Text style={styles.mapEmpty}>Choose an area you would like to follow.</Text> : null}
+      <Text style={styles.overviewIntro}>Areas you choose are preferences, not diagnoses. Health details appear here only when you add them or approve a source-linked suggestion.</Text>
+
+      <View style={styles.overviewMetrics}>
+        <View style={styles.overviewMetric}><Text style={styles.overviewMetricValue}>{String(areas.length).padStart(2, '0')}</Text><Text style={styles.overviewMetricLabel}>AREAS YOU FOLLOW</Text></View>
+        <View style={styles.overviewMetricRule} />
+        <View style={styles.overviewMetric}><Text style={styles.overviewMetricValue}>{String(detailCount).padStart(2, '0')}</Text><Text style={styles.overviewMetricLabel}>DETAIL CHOICES</Text></View>
+        <View style={styles.overviewMetricRule} />
+        <View style={styles.overviewMetric}><Text style={styles.overviewMetricValue}>{String(evidenceRows.length).padStart(2, '0')}</Text><Text style={styles.overviewMetricLabel}>RECORD GROUPS</Text></View>
       </View>
-      <View style={styles.mapStats}>
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(areas.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>AREAS</Text></View>
-        <View style={styles.mapStatRule} />
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(detailCount).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>DETAILS</Text></View>
-        <View style={styles.mapStatRule} />
-        <View style={styles.mapStat}><Text style={styles.mapStatNumber}>{String(assets.length + facts.filter((fact) => !fact.validUntil).length + treatments.length).padStart(2, '0')}</Text><Text style={styles.mapStatLabel}>SAVED ITEMS</Text></View>
+
+      <View style={styles.overviewSection}>
+        <View style={styles.overviewSectionHeading}><Text style={styles.overviewSectionTitle}>YOUR FOCUS AREAS</Text><Text style={styles.overviewSectionMeta}>{areas.length} selected</Text></View>
+        <Text style={styles.overviewSectionHint}>Open an area to edit its details. Use the choices below to add or remove areas.</Text>
+        {areas.length === 0 ? (
+          <Text style={styles.overviewEmptyArea}>No areas chosen yet. Pick any topics below, then open one to add related details.</Text>
+        ) : (
+          <View style={styles.overviewAreaList}>
+            {areas.map((area) => {
+              const count = topics.filter((topic) => topic.id.startsWith(area.id + '::')).length;
+              const detailLabel = count === 0 ? 'Choose related details' : `${count} detail ${count === 1 ? 'choice' : 'choices'}`;
+              return (
+                <PressScale
+                  key={area.id}
+                  selected
+                  expanded={activeAreaId === area.id}
+                  reducedMotion={reducedMotion}
+                  label={`${area.label}. ${detailLabel}. ${activeAreaId === area.id ? 'Details open.' : 'Open to edit details.'}`}
+                  onPress={() => onAreaPress(area)}
+                  containerStyle={styles.overviewAreaSlot}
+                  style={[styles.overviewAreaCard, { borderLeftColor: area.color }]}
+                >
+                  <View style={[styles.overviewAreaDot, { backgroundColor: area.color }]} />
+                  <View style={styles.overviewAreaCopy}><Text style={styles.overviewAreaName}>{area.label}</Text><Text style={styles.overviewAreaMeta}>{detailLabel}</Text></View>
+                  <Text style={styles.overviewAreaArrow}>EDIT  ›</Text>
+                </PressScale>
+              );
+            })}
+          </View>
+        )}
       </View>
-    </View>
+
+      <View style={styles.overviewSection}>
+        <View style={styles.overviewSectionHeading}><Text style={styles.overviewSectionTitle}>FROM YOUR RECORDS</Text><Text style={styles.overviewSectionMeta}>{evidenceRows.length} groups</Text></View>
+        {shownEvidence.length === 0 ? (
+          <View style={styles.overviewEmptyRecords}>
+            <Text style={styles.overviewEmptyTitle}>No health records added yet</Text>
+            <Text style={styles.overviewEmptyText}>Next, add a report or write a note. Nura will show each suggestion with its source so you can review it before saving.</Text>
+          </View>
+        ) : (
+          <View style={styles.overviewEvidenceList}>
+            {shownEvidence.map((row) => {
+              const expanded = expandedEvidenceRows.has(row.id);
+              const shownDetails = expanded ? row.details : row.details.slice(0, 2);
+              const actionLabel = row.kind === 'source' ? 'Open saved source for review' : row.kind === 'detail' ? 'Open saved health detail in history' : row.kind === 'visit' ? 'Open care visit' : 'Open treatment record';
+              const recordMeta = row.kind === 'source'
+                ? [row.sourceType?.toUpperCase(), row.addedAt ? `Added ${formatOverviewDate(row.addedAt)}` : null, row.counts ? `${row.counts.total} linked item${row.counts.total === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ')
+                : row.kind === 'visit' && row.date ? formatOverviewDate(row.date) : null;
+              return <View key={row.id} style={styles.overviewEvidenceCard}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${actionLabel}: ${row.title}`}
+                  accessibilityHint="Opens this saved item using its existing record identifier."
+                  onPress={() => openEvidenceRow(row)}
+                  style={({ pressed }) => [styles.overviewEvidenceHeader, pressed && { opacity: 0.78 }]}
+                >
+                  <View style={[styles.overviewEvidenceMark, row.kind === 'source' ? styles.overviewSourceMark : styles.overviewDetailMark]}><Text style={styles.overviewEvidenceGlyph}>{row.kind === 'source' ? '▤' : row.kind === 'treatment' ? '+' : '•'}</Text></View>
+                  <View style={styles.overviewEvidenceCopy}>
+                    <Text style={styles.overviewEvidenceState}>{row.state}</Text>
+                    <Text numberOfLines={2} style={styles.overviewEvidenceTitle}>{row.title}</Text>
+                    {recordMeta ? <Text style={styles.overviewEvidenceMeta}>{recordMeta}</Text> : null}
+                    <Text style={styles.overviewEvidenceSummary}>{row.summary}</Text>
+                  </View>
+                  <Text style={styles.overviewEvidenceOpen}>OPEN  ↗</Text>
+                </Pressable>
+                {shownDetails.map((detail) => (
+                  <View key={detail.id} style={styles.overviewEvidenceDetail}><Text style={styles.overviewEvidenceDetailTitle}>{detail.label}</Text><Text style={styles.overviewEvidenceDetailValue}>{[detail.value, detail.date === 'Date not stated' ? null : `Report date ${formatOverviewDate(detail.date)}`].filter(Boolean).join(' · ')}</Text></View>
+                ))}
+                {row.details.length > 2 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={expanded ? `Show fewer details for ${row.title}` : `Show all ${row.details.length} details for ${row.title}`} onPress={() => toggleEvidenceDetails(row.id)} style={styles.overviewEvidenceMoreButton}><Text style={styles.overviewEvidenceMore}>{expanded ? 'SHOW FEWER DETAILS' : `SHOW ALL ${row.details.length} DETAILS`}</Text></Pressable> : null}
+              </View>;
+            })}
+            {evidenceRows.length > shownEvidence.length ? <Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/health')} style={styles.overviewAllRecords}><Text style={styles.overviewAllRecordsText}>VIEW ALL RECORD GROUPS  ↗</Text></Pressable> : null}
+          </View>
+        )}
+      </View>
+
+      <Text style={styles.overviewFootnote}>A chosen area does not add a health record. Connections appear only when you create them.</Text>
+    </Animated.View>
   );
 }
 
@@ -300,7 +353,7 @@ function FocusAreaChoice({ area, selected, reducedMotion, onPress }: {
     <PressScale
       selected={selected}
       reducedMotion={reducedMotion}
-      label={(selected ? 'Remove ' : 'Add ') + area.label + (selected ? ' from' : ' to') + ' your health map'}
+      label={(selected ? 'Remove ' : 'Add ') + area.label + (selected ? ' from' : ' to') + ' your followed health areas'}
       onPress={onPress}
       containerStyle={styles.focusChoiceSlot}
       style={[styles.focusChoice, selected && styles.focusChoiceSelected, { borderColor: selected ? area.color + 'CC' : 'rgba(255,255,255,.20)' }]}
@@ -376,7 +429,9 @@ export default function ProfileSetup() {
   const [customCountry, setCustomCountry] = useState('');
   const [customCountryEdited, setCustomCountryEdited] = useState(false);
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [motionPreference, setMotionPreference] = useState<boolean | null>(null);
+  // Suppress movement until the OS preference has arrived; then honor it for all onboarding motion.
+  const reducedMotion = motionPreference !== false;
   const [error, setError] = useState('');
   const [moving, setMoving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -400,12 +455,12 @@ export default function ProfileSetup() {
     profileLoadChecked.current = true;
     initialBirthdayAtLoad.current = birthday;
     setExistingProfileAtLoad(hasExistingProfileEvidence({ name, birthday, country, topics, facts, assets, treatments, visits }));
-  }, [assets.length, birthday, country, facts.length, name, ready, topics.length, treatments.length, visits.length]);
+  }, [assets, birthday, country, facts, name, ready, topics, treatments, visits]);
 
   useEffect(() => {
     let active = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setReducedMotion(value); });
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReducedMotion);
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setMotionPreference(value); });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setMotionPreference);
     return () => { active = false; subscription.remove(); };
   }, []);
 
@@ -551,15 +606,18 @@ export default function ProfileSetup() {
     }
   }
 
-  const profileMap = () => (
-    <LiveProfileMap
+  const profileOverview = () => (
+    <EvidenceFirstProfileOverview
       name={name}
       areas={selectedAreas}
       topics={topics}
       facts={currentFacts}
       treatments={treatments}
       assets={assets}
+      visits={visits}
       reducedMotion={reducedMotion}
+      allowEntranceMotion={motionPreference !== null && !reducedMotion}
+      activeAreaId={activeAreaId}
       onAreaPress={(area) => setActiveAreaId(area.id)}
     />
   );
@@ -650,13 +708,13 @@ export default function ProfileSetup() {
     return (
       <View>
         {stepIntro('02  ·  YOUR HEALTH AREAS', 'What would you like to keep track of?', 'Choose any areas that matter to you. These are focus choices, not diagnoses.')}
-        {profileMap()}
+        {profileOverview()}
         <View style={styles.focusPicker}>
           <View style={styles.focusHeading}>
-            <Text style={styles.cardOverline}>CHOOSE HEALTH AREAS</Text>
+            <Text style={styles.cardOverline}>ADD OR REMOVE AREAS</Text>
             <Text style={styles.focusCount}>{String(selectedAreas.length).padStart(2, '0')} SELECTED</Text>
           </View>
-          <Text style={styles.focusHelper}>Choose areas you want to follow. This doesn’t add a diagnosis or record. After you review your profile, you can add past reports.</Text>
+          <Text style={styles.focusHelper}>Choose areas you want to follow. This does not add a diagnosis or health record. You can add reports or a note in the next step.</Text>
           <View style={styles.focusChoices}>
             {focusAreas.map((area) => (
               <FocusAreaChoice
@@ -671,9 +729,9 @@ export default function ProfileSetup() {
         </View>
         {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: savingProfile, busy: savingProfile }} disabled={savingProfile} onPress={continueFocus} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed, savingProfile && styles.buttonDisabled]}>
-          <Text style={styles.primaryButtonText}>{savingProfile ? 'SAVING YOUR PROFILE…' : 'REVIEW MY PROFILE'}</Text>{savingProfile ? <ActivityIndicator color="#2A203B" size="small" /> : <Text style={styles.primaryArrow}>→</Text>}
+          <Text style={styles.primaryButtonText}>{savingProfile ? 'SAVING YOUR PROFILE…' : 'ADD RECORDS OR A NOTE'}</Text>{savingProfile ? <ActivityIndicator color="#2A203B" size="small" /> : <Text style={styles.primaryArrow}>→</Text>}
         </Pressable>
-        <Text style={styles.focusNext}>You can change these choices later. Nura keeps selected topics separate from confirmed health details.</Text>
+        <Text style={styles.focusNext}>Nura will keep your topics separate from your records and show extracted suggestions for your review before saving.</Text>
       </View>
     );
   })();
@@ -922,37 +980,59 @@ const styles = StyleSheet.create({
   fieldHelper: { color: 'rgba(255,249,244,.58)', fontSize: 9, lineHeight: 14, marginTop: 9 },
   ageReadout: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6, paddingHorizontal: 3 },
   ageReadoutText: { color: '#D9EAF9', fontSize: 9 },
-  mapCard: { backgroundColor: 'rgba(255,255,255,.075)', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,.21)', paddingHorizontal: 13, paddingTop: 13, marginBottom: 13, overflow: 'hidden' },
-  mapHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  eyebrow: { color: 'rgba(255,249,244,.64)', fontSize: 10, fontWeight: '700', letterSpacing: 1.3 },
-  mapTitle: { color: palette.ink, fontSize: 14, fontWeight: '600', marginTop: 3 },
-  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(199,168,229,.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,.18)' },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: palette.lilac },
-  liveBadgeText: { color: '#E8E1EA', fontSize: 8, fontWeight: '700', letterSpacing: 0.55 },
-  mapSub: { color: palette.muted, fontSize: 10, lineHeight: 14, marginTop: 4 },
-  mapGraph: { height: 185, marginTop: 7, position: 'relative', overflow: 'hidden' },
-  mapLine: { position: 'absolute', height: 1.4, borderRadius: 2, transformOrigin: 'center' } as any,
-  mapNode: { position: 'absolute', width: 78, alignItems: 'center', zIndex: 2 },
-  mapNodeCompact: { alignItems: 'center' },
-  mapNodeButton: { width: '100%', alignItems: 'center' },
-  mapNodeDot: { width: 42, height: 42, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center', shadowOpacity: .4, shadowRadius: 9, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
-  mapNodeDotCompact: { width: 36, height: 36, borderRadius: 19 },
-  mapNodeGlyph: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
-  mapNodeGlyphCompact: { fontSize: 15 },
-  mapNodeLabel: { color: palette.ink, fontSize: 10, fontWeight: '600', marginTop: 2, maxWidth: 80, textAlign: 'center' },
-  mapNodeLabelCompact: { color: palette.ink, fontSize: 8.5, lineHeight: 10, maxWidth: '100%', minHeight: 20 },
-  mapNodeMeta: { color: 'rgba(255,249,244,.58)', fontSize: 9, marginTop: 1 },
-  mapOrbRing: { position: 'absolute', width: 56, height: 56, borderRadius: 29, left: '50%', marginLeft: -28, top: 54, alignItems: 'center', justifyContent: 'center', zIndex: 4, backgroundColor: 'rgba(255,255,255,.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,.32)', shadowColor: palette.lilac, shadowOpacity: .42, shadowRadius: 13, shadowOffset: { width: 0, height: 3 } },
-  mapOrbRingExpanded: { top: 0 },
-  mapYou: { position: 'absolute', top: 111, left: '50%', width: 112, marginLeft: -56, textAlign: 'center', color: palette.ink, fontSize: 10, fontWeight: '700', zIndex: 4 },
-  mapYouExpanded: { top: 60 },
-  mapEmpty: { position: 'absolute', left: 4, right: 4, bottom: 1, color: 'rgba(255,249,244,.62)', textAlign: 'center', fontSize: 9 },
+  profileOverview: { backgroundColor: '#FBF6F0', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,.58)', paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12, marginBottom: 13, overflow: 'hidden' },
+  overviewHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9 },
+  overviewTitleGroup: { flex: 1, minWidth: 0 },
+  overviewEyebrow: { color: '#795A8D', fontSize: 10, fontWeight: '800', letterSpacing: 1.35 },
+  overviewTitle: { color: '#2D2732', fontSize: 19, lineHeight: 23, fontWeight: '700', marginTop: 3, maxWidth: '100%' },
+  overviewStatus: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, borderRadius: 16, backgroundColor: '#F1E8F2', borderWidth: 1, borderColor: '#DCCBE1' },
+  overviewStatusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#BB8DD2' },
+  overviewStatusText: { color: '#70567C', fontSize: 9, fontWeight: '800', letterSpacing: .55 },
+  overviewIntro: { color: '#635B68', fontSize: 12, lineHeight: 17, marginTop: 8 },
+  overviewMetrics: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', minHeight: 48, marginTop: 11, borderRadius: 14, borderWidth: 1, borderColor: '#E8DDE8', backgroundColor: '#F6F0F5' },
+  overviewMetric: { flex: 1, alignItems: 'center', paddingHorizontal: 2 },
+  overviewMetricValue: { color: '#342C3A', fontSize: 18, lineHeight: 21, fontWeight: '600' },
+  overviewMetricLabel: { color: '#756B7B', fontSize: 9, lineHeight: 12, letterSpacing: .25, textAlign: 'center', marginTop: 2 },
+  overviewMetricRule: { width: 1, height: 25, backgroundColor: '#DED2E1' },
+  overviewSection: { marginTop: 13 },
+  overviewSectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
+  overviewSectionTitle: { color: '#70567C', fontSize: 10, fontWeight: '800', letterSpacing: .95 },
+  overviewSectionMeta: { color: '#756B7B', fontSize: 10, fontWeight: '600' },
+  overviewSectionHint: { color: '#756B7B', fontSize: 10, lineHeight: 14, marginBottom: 7 },
+  overviewAreaList: { gap: 6 },
+  overviewAreaSlot: { width: '100%' },
+  overviewAreaCard: { minHeight: 52, borderRadius: 13, borderWidth: 1, borderLeftWidth: 3, borderColor: '#E5DCE7', backgroundColor: '#FFFCF9', paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  overviewAreaDot: { width: 9, height: 9, borderRadius: 5 },
+  overviewAreaCopy: { flex: 1, minWidth: 0 },
+  overviewAreaName: { color: '#332B38', fontSize: 13, lineHeight: 17, fontWeight: '700' },
+  overviewAreaMeta: { color: '#756B7B', fontSize: 10, lineHeight: 14, marginTop: 2 },
+  overviewAreaArrow: { color: '#1764D9', fontSize: 9, fontWeight: '800', letterSpacing: .35 },
+  overviewEmptyArea: { color: '#625B67', fontSize: 12, lineHeight: 17, borderRadius: 13, borderWidth: 1, borderColor: '#E6DBE8', backgroundColor: '#F6F0F5', padding: 11 },
+  overviewEvidenceList: { gap: 7 },
+  overviewEvidenceCard: { borderRadius: 15, borderWidth: 1, borderColor: '#E6DDE8', backgroundColor: '#FFFCF9', padding: 10 },
+  overviewEvidenceHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  overviewEvidenceMark: { width: 27, height: 27, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  overviewSourceMark: { backgroundColor: '#E6F0FF' },
+  overviewDetailMark: { backgroundColor: '#EFE6F1' },
+  overviewEvidenceGlyph: { color: '#2868CF', fontSize: 14, fontWeight: '700' },
+  overviewEvidenceCopy: { flex: 1, minWidth: 0 },
+  overviewEvidenceState: { color: '#2B68C8', fontSize: 9, fontWeight: '800', letterSpacing: .7 },
+  overviewEvidenceTitle: { color: '#302936', fontSize: 13, lineHeight: 17, fontWeight: '700', marginTop: 3 },
+  overviewEvidenceMeta: { color: '#756B7B', fontSize: 10, lineHeight: 14, marginTop: 2 },
+  overviewEvidenceSummary: { color: '#625B68', fontSize: 11, lineHeight: 15, marginTop: 3 },
+  overviewEvidenceOpen: { color: '#1764D9', fontSize: 8.5, fontWeight: '800', letterSpacing: .45, marginLeft: 'auto' },
+  overviewEvidenceDetail: { marginTop: 7, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#EFE8EF' },
+  overviewEvidenceDetailTitle: { color: '#403747', fontSize: 11, lineHeight: 15, fontWeight: '700' },
+  overviewEvidenceDetailValue: { color: '#625B68', fontSize: 10, lineHeight: 14, marginTop: 2 },
+  overviewEvidenceMoreButton: { minHeight: 44, alignItems: 'flex-start', justifyContent: 'center', marginTop: 3 },
+  overviewEvidenceMore: { color: '#765A87', fontSize: 10, fontWeight: '700' },
+  overviewAllRecords: { minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: '#C7DBFB', backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center' },
+  overviewAllRecordsText: { color: '#155BCC', fontSize: 10, fontWeight: '800', letterSpacing: .5 },
+  overviewEmptyRecords: { borderRadius: 15, borderWidth: 1, borderColor: '#E4D8E7', backgroundColor: '#F7F0F6', padding: 11 },
+  overviewEmptyTitle: { color: '#372F3C', fontSize: 12, fontWeight: '700' },
+  overviewEmptyText: { color: '#625B68', fontSize: 11, lineHeight: 16, marginTop: 5 },
+  overviewFootnote: { color: '#756B7B', fontSize: 10, lineHeight: 14, marginTop: 10 },
   liveSignalDot: { width: 6, height: 6, borderRadius: 3 },
-  mapStats: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.16)', minHeight: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
-  mapStat: { alignItems: 'center', flex: 1 },
-  mapStatNumber: { color: palette.ink, fontSize: 15, fontWeight: '400' },
-  mapStatLabel: { color: 'rgba(255,249,244,.48)', fontSize: 8, letterSpacing: .6, marginTop: 1 },
-  mapStatRule: { width: 1, height: 25, backgroundColor: 'rgba(255,255,255,.16)' },
   measureInputRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   measureInput: { flex: 1 },
   unitLabel: { color: '#B7DFFF', fontSize: 13, fontWeight: '700', width: 34 },

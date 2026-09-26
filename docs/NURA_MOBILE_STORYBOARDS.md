@@ -26,7 +26,7 @@ Nura can present “what changed” and “what may be related.” It must disti
 
 The two references describe different, intentional mobile surfaces; do not flatten them into one theme:
 
-- **Onboarding and Nura-led conversations:** follow the Blueprint v2 phone scene. Use the deep indigo-to-plum-to-dusty-rose atmospheric background, slow peach/lilac ambient light, frosted translucent cards, warm cream type and action buttons, and the animated conic-gradient orb. On the identity step, use warm-white input fields with dark readable text against the gradient. A tap visibly selects a bubble, reveals its related detail bubbles, updates the profile map, and changes the live count. These are full-screen scenes, not a white form page with a purple banner.
+- **Onboarding and Nura-led conversations:** follow the Blueprint v2 phone scene. Use the deep indigo-to-plum-to-dusty-rose atmospheric background, slow peach/lilac ambient light, frosted translucent cards, warm cream type and action buttons, and the animated conic-gradient orb. On the identity step, use warm-white input fields with dark readable text against the gradient. On the health-area step, use the approved evidence-first overview in a warm-paper card; keep focus choices and saved source records visibly separate. A tap visibly selects a topic or opens that topic's detail editor, and counts change from actual saved profile state. These are full-screen scenes, not a white form page with a purple banner.
 - **Medical history and evidence review:** follow the selected light record-history reference. Use a soft lilac-paper canvas (`#EDE5EF`) with warm cream evidence cards (`#FFFBF7`), readable charcoal type, cobalt record nodes and relationship lines, and category colors used consistently with labels/icons alongside them. Keep this surface calm enough to scan dense dates and evidence; preserve a clear canvas/card contrast rather than turning the whole screen white.
 - **Data color:** cobalt identifies record nodes and rails in the history view; mint means complete/in range; amber means review/uncertainty/conflict; indigo-violet-peach belongs to Nura's presence and the onboarding atmosphere. Do not make all health information purple.
 - **Reference hierarchy:** strong editorial headlines, quiet controls, translucent scene cards for conversation/onboarding, and clean white evidence cards for the timeline. Do not mix the two surfaces in one screen without a clear transition.
@@ -69,7 +69,7 @@ Create the design around composable, accessible primitives:
 - Editorial headline, reason/context line, insight/action card.
 - Orb state indicator, compact Ask composer, conversation view.
 - Timeline rail, typed record node, event card, source chip, relationship path.
-- Focus-topic bubble and conditional branch, live profile map.
+- Focus-topic selector and conditional detail branch, evidence-first 720 profile overview, source-grouped records.
 - Candidate-claim review row, source preview, status badge.
 - Registry / wiki topic header, evidence list, version history.
 - Feed / video card, visit brief section, permissions row.
@@ -98,7 +98,7 @@ Treat motion as **state feedback, hierarchy, and orientation**, never as proof o
 - **Card entrance:** primary content 400–600 ms; secondary 300–450 ms; subtle stagger 40–100 ms. Do not replay a cascade on every scroll.
 - **Expand/morph:** retain the same card identity and anchor, then reveal content in place in about 260–420 ms. Avoid “fade out → unrelated page.”
 - **Sheets:** controlled spring entrance around 320–450 ms; follow drag; snap back when gesture does not dismiss; use immediate or short opacity change with reduced motion.
-- **Selected topic branch:** selection feedback first; reveal dependent bubble branch in a short stagger, then update the profile map when the save succeeds. Collapse only dependent unanswered selections on parent removal.
+- **Selected topic branch:** selection feedback first; reveal dependent detail choices in a short stagger and update the evidence-first overview count from committed profile state. Collapse only dependent unanswered selections on parent removal.
 - **Timeline focus:** node enlarges slightly and gains a halo / selected outline; matching card receives a clear focus state; selected relationship path highlights only after the user requests it.
 - **Chart:** draw only actual data. Do not count up fictional or inferred health values.
 - **Orb:** idle breathing can be very subtle; listening only during active capture; thinking/retrieving only during real service activity; responding only while response content arrives; error is subdued. Stop when run ends or view becomes inactive.
@@ -159,11 +159,11 @@ Do not force a person to complete every topic before uploading. The topic cloud 
 
 **Hierarchy:** “What would you like Nura to keep track of?” → multi-select topic word cloud → live selected count → continue or skip and add later.
 
-**Components:** responsive topic nodes for blood pressure, cholesterol, sleep, heart health, blood sugar, medicines, family history, joints and movement, and something else; a selected-topics summary; a live profile visualization containing only selected topics.
+**Components:** responsive topic choices for blood pressure, cholesterol, sleep, heart health, blood sugar, medicines, family history, joints and movement, and something else; the approved evidence-first 720 profile overview; a separate topic-detail editor; a source-grouped record preview.
 
-**Interactions/states:** selecting any number of topics updates the count and summary; there is no four-topic cap. The cloud wraps/reflows on small screens and remains scrollable. A selected node opens its own contextual detail step. Users can skip this step and upload records first. Topic size never implies disease severity, and empty map space never implies a healthy result.
+**Interactions/states:** selecting any number of topics updates the count and selected state; there is no four-topic cap. The choices reflow on small screens and remain scrollable. Tapping a row in the profile overview opens its topic-specific details; selector choices below add/remove the area. Users can skip this step and upload records first. Topic size never implies disease severity, and no overview state implies a diagnosis.
 
-**Motion:** each chosen node receives the agreed color/outline and a short anchored connection to the profile orb after state commits. The count changes with the selection. More than four selections reflow without shrinking labels or hiding items. Reduced motion uses an immediate highlight and count update.
+**Motion:** each chosen area receives the agreed color/outline and short press feedback. The overview and selector count update from committed state; grouped evidence remains anchored to its source. More than four selections reflow without shrinking labels or hiding items. Reduced motion uses an immediate highlight and count update.
 
 **Acceptance:** selected topics are visibly preferences only; selection count is accurate for 0–all topics; no topic is preselected; deselecting one topic never deletes facts or files.
 
@@ -223,7 +223,7 @@ Do not force a person to complete every topic before uploading. The topic cloud 
 
 **Interactions/states:** the save action commits only user-approved or explicitly user-entered facts into versioned memory. The app reports exactly what was saved and what remains to review. Timeline order uses the record’s event date, not upload time; uncertain dates are labelled. Initial setup can be resumed without processing the same evidence again. New files later run incrementally and deduplicate against the existing registry.
 
-**Motion:** only after the save event succeeds do accepted items settle into the profile map and appear on the month/year timeline. A source-selected node can open its record card and original document. The insurance invitation follows as a separate next step; it can be deferred without blocking the health profile.
+**Motion:** only after the save event succeeds do accepted items appear under their source in the evidence-first profile overview and on the month/year timeline. A source-selected node can open its record card and original document. The insurance invitation follows as a separate next step; it can be deferred without blocking the health profile.
 
 **Acceptance:** a saved profile survives supported restarts; source-linked facts and correction history remain; unresolved items remain visibly pending; insurance is offered after the health registry is saved.
 
@@ -606,7 +606,7 @@ The front-end states above should map to domain events/services rather than besp
 
 Examples:
 
-- Select “cholesterol” → persist chosen focus → emit focus-added → reveal related selections and update profile map.
+- Select “cholesterol” → persist chosen focus → emit focus-added → reveal related selections and update the evidence-first overview count.
 - Accept a candidate blood result → validate source/location and user decision → append confirmed assertion + timeline event → update wiki-page dependencies → show new cobalt node at the record's event date.
 - Ask about that result → collect explicit scope → retrieve permitted facts → emit retrieval/evidence events → stream cited answer → offer separately approved memory write.
 - Replace a policy → store new validity interval, close prior policy validity, preserve both → update coverage wiki and timeline.
@@ -677,7 +677,7 @@ Current routes in Nura include:
 Implementation snapshot reviewed on 2026-09-23:
 
 - The interactive storyboard for all eleven stories is available at [`NURA_STORYBOARD_PREVIEW.html`](NURA_STORYBOARD_PREVIEW.html). It is a design/interaction artifact, not a claim that each story's service is already connected.
-- Onboarding/profile-start now has animated focus bubbles, dependent detail choices, a changing 720 profile map, optional current biometrics and privacy-aware browser preview messaging. First evidence-aware synthesis, completion/re-entry and account recovery remain incomplete.
+- Onboarding/profile-start now has an evidence-first 720 overview, dependent topic details, up-to-nine focus-area selection, optional current biometrics and privacy-aware browser preview messaging. First evidence-aware synthesis, completion/re-entry and account recovery remain incomplete.
 - Health History uses the selected light canvas and cobalt record nodes/rails, with focusable event details and user-authored links. Full typed relationship navigation, source version history and conflict reconciliation remain incomplete.
 - Ask and document review are connected to the loopback demo backend. Ask returns real model output grounded in the selected context and accepted claims; PDF/image extraction creates candidates that require user review. A partial policy comparison can use reviewed policy terms and selected health evidence, and feed search can use allowlisted health sources when explicitly enabled. Video analysis, complete policy version/navigation, and the full registry wiki remain incomplete.
 - Native data is stored locally. Browser preview starts with synthetic content, keeps edits in memory only and resets on reload. It is not persistent browser storage and must not be used with real health or contact data.

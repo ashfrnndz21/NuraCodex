@@ -17,9 +17,11 @@
 
 ## 720 profile entry
 
-Keep a visible 720 constellation/map on the initial profile screen. It should show the profile domains from the beginning and visibly respond as the person adds information. Distinguish selected topics, user-entered details, saved source documents, and reviewed facts by shape/label/status; do not make an unreviewed selection look like a diagnosis.
+**Approved direction — evidence-first profile overview.** Replace the onboarding orbit/rays with a clear overview on the health-area step. Keep the Blueprint v2 plum-to-rose scene, but use a warm-paper overview card that distinguishes chosen focus areas from saved evidence. Never draw a connection from a selected topic to the profile as if it were a medical finding.
 
-The conversation can advance one focused question at a time inside this dense visual frame: who the profile is for, name and personal details, then health areas with a floating word-cloud/bubble interaction. Selecting a topic can reveal relevant follow-up choices; deselection removes it and its dependent unanswered branch. Preserve free text and “why are you asking?” paths. Provide skip/continue controls without implying that blank domains are healthy or complete.
+The step begins with profile identity and status, followed by truthful counts for focus areas, selected detail preferences, and grouped record sources. Focus-area rows open their own detail editor; the selector below adds or removes areas. Show up to three record groups with source names, linked reviewed details, dates and honest states such as “Source linked” or “File saved.” Group extracted facts under their original source to avoid duplicate-looking cards. Fixture prefixes and file extensions stay out of the overview title; the original filename remains available in source details. Keep the overview useful when empty, without invented dates, diagnoses, review queues or completeness claims.
+
+Selecting a topic remains a tracking preference, never a diagnosis or record. Detail preferences remain attached to their topic; record upload and plain-language notes stay a separate next step. Provide skip/continue controls without implying that blank domains are healthy or complete. Opened details, selected/deselected state and record sources must preserve their existing data semantics.
 
 After the initial pass, show a concise synthesis with visible source/status cues and clear edit/add/correct actions. Only regenerate it from saved user input or reviewed evidence. A generated synthesis is a view of the profile, not the source of truth.
 
@@ -40,7 +42,7 @@ Centralize motion durations, easing/spring choices, press scale, stagger timing,
 Use purposeful motion:
 
 - Orb breathing at idle; listening halo only when capture is genuinely active; thinking only while a service job is running; response state only while real content is arriving; error state only after a failed job.
-- Topic bubbles drift gently and respond to selection. The profile map gains a node only after a real profile event.
+- Topic choices respond to selection with the shared press/selection feedback; the overview counts change from saved app state. Record cards appear only from actual profile records and retain their source grouping.
 - Cards reveal supporting details in place; a document card may morph into its report detail; bottom sheets can be dismissed by drag and return to their resting point on a short drag.
 - A media card has truthful idle/loading/playing/paused/complete/error states; nothing autoplays.
 - Honor OS reduced-motion preferences by replacing movement with stable state and instant/short opacity changes.
