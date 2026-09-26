@@ -4,7 +4,7 @@
 
 **Scope baseline:** 24 September 2026. The existing [mobile storyboard](NURA_MOBILE_STORYBOARDS.md), [agentic foundation](NURA_AGENTIC_FOUNDATION.md), and [story acceptance contract](USER_STORY_ACCEPTANCE.md) remain detailed design/architecture references. This document joins them into one completion and testing plan.
 
-**Latest checkpoint:** 27 September 2026, 02:56 +08. Strict acceptance remains **0/11 user stories, 0/8 production gates, 0/19 packages (0%)**. A verified slice or route does not count as a complete package. `/review` now groups claims by typed category, reflects staged decisions in its compact rows, and consolidates real file activity; Ask and Insurance result typography has been enlarged. These result surfaces still need a populated, phone-size visual review. The complete M1 journey remains open.
+**Latest checkpoint:** 27 September 2026, 04:04 +08. Strict acceptance remains **0/11 user stories, 0/8 production gates, 0/19 packages (0%)**. A verified slice or route does not count as a complete package. M1 now has a repeatable preview-only two-PDF intake set and a visually checked, single approval sheet naming both files; no document processing was approved in this checkpoint. The complete M1 journey remains open.
 
 ## What “100% complete” means
 
@@ -220,3 +220,12 @@ Never describe a plan as completed work, a screen as a completed story, a config
 - **Progress:** still **0/11 accepted stories, 0/8 passed production gates, 0/19 accepted packages (0%)**. This is partial M1/M8 evidence, not a ready whole-user test. Multi-file in-app review, all review decisions, native/reduced-motion/device checks, verified production sign-in and owner isolation remain open.
 - **Next slice:** streamline M1's review surface by grouping source claims by report and category and consolidating the running notice with the per-file activity list; preserve exact quotes and per-item decisions. Then test multi-file input through a supported picker path and one save/re-entry.
 - **Blocker:** desktop browser automation has not exposed the native multi-file chooser; this blocks the in-app batch journey and therefore M1/P4 acceptance. Build and verify independent UI slices while resolving the test path. M10, P7 and P8 remain unbuilt; all other stories and production gates also have incomplete acceptance criteria.
+
+
+### Repeatable M1 sample batch and consent clarity — 27 September 2026, 04:04 +08
+
+- A separate `localhost:8100` preview origin kept the user's existing preview storage unchanged. The local synthetic sign-in, required profile name/country, one selected Cholesterol focus area, two-file staging action and M1 approval sheet were exercised. Both files appeared separately by name and the approval sheet showed one explicit action for the exact two-file batch.
+- The added follow-up fixture is one page, carries a visible sample-data notice and contains extractable text for five dated lipid measurements. Intake's sample action is gated to development or explicit sample-preview builds, avoids adding duplicates, and performs no extraction. The consent sheet states that the connected AI service reads the listed files one at a time and that results are not saved until user review. No provider was called.
+- Verification: typecheck and lint passed; repository/integration tests **265/265**; latest-slice tests **79/79**; `git diff --check` passed.
+- Strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. M1 remains partial because this run stopped before file approval, source-claim review, one save, and timeline re-entry. No user-test milestone is ready.
+- Next: verify the staged two-report batch using deterministic local extraction, per-file events, the full edit/reject/unclear/date queue, one save, source navigation and reload, without a live provider. Native/reduced-motion/device checks and production identity/isolation remain open.
