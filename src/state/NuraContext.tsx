@@ -6,7 +6,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import { loadProfileSetup, persistApprovedMemoryFact as persistApprovedMemoryFactRecord, persistProfileSetup } from './profilePersistence.mjs';
 import { appendRegistryBrief } from './registryBriefPersistence.mjs';
-import { readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
+import { createEmptyBrowserDemoSnapshot, readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
 import { browserAssetUri, clearBrowserAssets, deleteBrowserAsset, saveBrowserAsset } from './browserAssetStore.mjs';
 import { validatePolicyReplacement } from '../services/policyReplacement.mjs';
 import { mergeHealthFeedItems } from '../services/feedDedupe.mjs';
@@ -102,8 +102,7 @@ function demoSnapshot(): BrowserDemoSnapshot {
   };
 }
 function emptyDemoSnapshot(): BrowserDemoSnapshot {
-  const seed = demoSnapshot();
-  return { ...seed, name: '', birthday: '', country: '', email: '', phone: '', topics: [], assets: [], intakeNotes: [], facts: [], treatments: [], treatmentEvents: [], visits: [], visitEvents: [], links: [], policyReplacements: [], policyClarifications: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [] };
+  return createEmptyBrowserDemoSnapshot(demoSnapshot());
 }
 async function getDatabase() {
   if (!dbPromise) dbPromise = (async () => {
@@ -161,8 +160,8 @@ function newId() { return Crypto.randomUUID(); }
 export function NuraProvider({ children }: { children: React.ReactNode }) {
   const [browserBootstrap] = useState(() => {
     if (Platform.OS !== 'web') return { snapshot: null as BrowserDemoSnapshot | null, warning: null as string | null };
-    try { return readBrowserDemoSnapshot(typeof window === 'undefined' ? null : window.localStorage, WEB_DEMO_KEY, demoSnapshot()); }
-    catch { return { snapshot: demoSnapshot(), warning: 'Browser storage is unavailable. Changes may not survive a refresh.' }; }
+    try { return readBrowserDemoSnapshot(typeof window === 'undefined' ? null : window.localStorage, WEB_DEMO_KEY, emptyDemoSnapshot()); }
+    catch { return { snapshot: emptyDemoSnapshot(), warning: 'Browser storage is unavailable. Changes may not survive a refresh.' }; }
   });
   const webBootstrap = browserBootstrap.snapshot;
   const browserWritesAllowed = useRef(!browserBootstrap.warning);

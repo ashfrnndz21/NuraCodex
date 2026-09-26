@@ -1,3 +1,5 @@
+export function createEmptyBrowserDemoSnapshot<T>(seed: T): T;
+
 export type BrowserStorage = {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;

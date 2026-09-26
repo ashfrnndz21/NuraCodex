@@ -37,6 +37,20 @@ test('different values with a missing source date are flagged for clarification,
   assert.deepEqual(findings[0].eventDates, ['2026-01-10']);
 });
 
+test('shows source report dates as context without mislabeling them as result dates', () => {
+  const findings = analyzeIntakeBatch([
+    { ...source('s1', 'January report', claim('c1', 'Fasting glucose', '6.3', null)), documentDates: [{ kind: 'report_date', value: '15 January 2025' }] },
+    { ...source('s2', 'February report', claim('c2', 'Fasting glucose', '6.1', null)), documentDates: [{ kind: 'report_date', value: '15 February 2025' }] },
+  ]);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].kind, 'date_uncertain_difference');
+  assert.deepEqual(findings[0].eventDates, []);
+  assert.deepEqual(findings[0].documentDates.map(({ sourceName, kind, value }) => ({ sourceName, kind, value })), [
+    { sourceName: 'January report', kind: 'report_date', value: '15 January 2025' },
+    { sourceName: 'February report', kind: 'report_date', value: '15 February 2025' },
+  ]);
+});
+
 test('same result on different or unknown dates is only a possible repeat', () => {
   const findings = analyzeIntakeBatch([
     source('s1', 'Earlier report', claim('c1', 'LDL Cholesterol', '3.4', '2026-01-10')),

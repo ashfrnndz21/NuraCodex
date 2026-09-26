@@ -4,6 +4,14 @@ const arrayFields = [
 ];
 const stringFields = ['name', 'birthday', 'country', 'email', 'phone'];
 const optionalArrayFields = ['policyReplacements', 'policyClarifications', 'intakeNotes'];
+
+export function createEmptyBrowserDemoSnapshot(seed) {
+  return {
+    ...seed,
+    ...Object.fromEntries(stringFields.map((field) => [field, ''])),
+    ...Object.fromEntries([...arrayFields, ...optionalArrayFields].map((field) => [field, []])),
+  };
+}
 const legacySeededTopics = [
   { id: 'bp-topic', label: 'Blood pressure' },
   { id: 'cholesterol', label: 'Cholesterol' },

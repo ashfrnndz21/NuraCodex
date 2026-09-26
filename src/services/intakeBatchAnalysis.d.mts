@@ -5,12 +5,14 @@ export type IntakeBatchFinding = {
   unit: string | null;
   values: string[];
   eventDates: string[];
+  documentDates: { kind: 'collected_at' | 'report_date'; value: string; sourceId: string; sourceName: string }[];
   claimIds: string[];
   sources: { id: string; name: string }[];
 };
 export function analyzeIntakeBatch(sources: Array<{
   sourceId: string;
   sourceName?: string;
+  documentDates?: { kind: string; value: string }[];
   claims: Array<{
     id: string;
     label: string;

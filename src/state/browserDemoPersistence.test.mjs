@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
+import { createEmptyBrowserDemoSnapshot, readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
 import { removePolicyClarification, updatePolicyClarification } from '../services/policyClarification.mjs';
 
 function memoryStorage(seed = {}) {
@@ -17,6 +17,27 @@ const fallback = {
   topics: [], assets: [], intakeNotes: [], facts: [], treatments: [], treatmentEvents: [], visits: [], policyReplacements: [], policyClarifications: [],
   visitEvents: [], links: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [],
 };
+
+test('a fresh workspace clears sample profile and record data before onboarding', () => {
+  const sampleSeed = {
+    ...fallback,
+    name: 'Riley Sample',
+    country: 'Malaysia',
+    topics: [{ id: 'bp-topic', label: 'Blood pressure' }],
+    assets: [{ id: 'sample-file', name: 'Example report.pdf' }],
+    facts: [{ id: 'sample-fact', label: 'Example result' }],
+    treatments: [{ id: 'sample-treatment', name: 'Example medicine' }],
+    visits: [{ id: 'sample-visit', purpose: 'Example visit' }],
+  };
+  const fresh = createEmptyBrowserDemoSnapshot(sampleSeed);
+  const loaded = readBrowserDemoSnapshot(memoryStorage(), 'nura-demo', fresh);
+  assert.equal(loaded.snapshot.demoOnly, true);
+  assert.equal(loaded.snapshot.name, '');
+  assert.equal(loaded.snapshot.country, '');
+  for (const field of ['topics', 'assets', 'intakeNotes', 'facts', 'treatments', 'treatmentEvents', 'visits', 'visitEvents', 'links', 'policyReplacements', 'policyClarifications', 'feedItems', 'savedQuestions', 'agentMessages', 'registryBriefs']) {
+    assert.deepEqual(loaded.snapshot[field], [], field);
+  }
+});
 
 test('browser demo snapshot round-trips profile, facts, source links and agent history', () => {
   const storage = memoryStorage();

@@ -21,12 +21,33 @@ function dateKey(value) {
   return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === day ? day : '';
 }
 
+function sourceDateContext(items, sourceId, sourceName) {
+  return (Array.isArray(items) ? items : []).flatMap((item) => {
+    const kind = String(item?.kind ?? '');
+    const value = String(item?.value ?? '').trim();
+    if (!value || !['collected_at', 'report_date'].includes(kind)) return [];
+    return [{ kind, value, sourceId, sourceName }];
+  });
+}
+
+function documentDatesFor(claims) {
+  const unique = new Map();
+  for (const claim of claims) {
+    for (const item of claim.documentDates) {
+      unique.set(`${item.sourceId}\u0000${item.kind}\u0000${item.value}`, item);
+    }
+  }
+  return [...unique.values()];
+}
+
 /** Compare claims from distinct source files; findings are prompts for review, never merges or diagnoses. */
 export function analyzeIntakeBatch(sources) {
   const claims = [];
   for (const source of Array.isArray(sources) ? sources : []) {
     const sourceId = String(source?.sourceId ?? '');
     if (!sourceId) continue;
+    const sourceName = String(source.sourceName || sourceId);
+    const documentDates = sourceDateContext(source.documentDates, sourceId, sourceName);
     for (const claim of Array.isArray(source.claims) ? source.claims : []) {
       if (!claim?.id || !['candidate', 'needs_review', 'user_confirmed'].includes(claim.evidenceState)) continue;
       const label = normalizeLabel(claim.label);
@@ -35,7 +56,8 @@ export function analyzeIntakeBatch(sources) {
       claims.push({
         id: String(claim.id),
         sourceId,
-        sourceName: String(source.sourceName || sourceId),
+        sourceName,
+        documentDates,
         label: String(claim.label),
         valueText: String(claim.value),
         valueKey: value,
@@ -76,6 +98,7 @@ export function analyzeIntakeBatch(sources) {
         eventDates: [...dates].filter(Boolean).sort(),
         claimIds: [...new Set(sameValue.map((claim) => claim.id))].sort(),
         sources: [...new Map(sameValue.map((claim) => [claim.sourceId, { id: claim.sourceId, name: claim.sourceName }])).values()],
+        documentDates: documentDatesFor(sameValue),
       });
     }
 
@@ -99,6 +122,7 @@ export function analyzeIntakeBatch(sources) {
           eventDates: [...new Set(involved.map((claim) => claim.eventDate).filter(Boolean))].sort(),
           claimIds: involved.map((claim) => claim.id).sort(),
           sources: [...new Map(involved.map((claim) => [claim.sourceId, { id: claim.sourceId, name: claim.sourceName }])).values()],
+          documentDates: documentDatesFor(involved),
         });
       }
     }
@@ -123,6 +147,7 @@ export function analyzeIntakeBatch(sources) {
         eventDates: [eventDate],
         claimIds: [...new Set(dated.map((claim) => claim.id))].sort(),
         sources: [...new Map(dated.map((claim) => [claim.sourceId, { id: claim.sourceId, name: claim.sourceName }])).values()],
+        documentDates: documentDatesFor(dated),
       });
     }
   }
