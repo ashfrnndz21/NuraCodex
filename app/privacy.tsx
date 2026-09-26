@@ -14,7 +14,7 @@ function RecordLine({ title, value, source }: { title: string; value?: string; s
 }
 
 export default function Privacy() {
-  const { ready, storageError, name, birthday, country, email, phone, topics, facts, assets, treatments, visits, links, feedItems, savedQuestions, agentMessages, registryBriefs, clearAllLocalData, resetDemo } = useNura();
+  const { ready, storageError, name, birthday, country, email, phone, topics, facts, assets, treatments, visits, links, feedItems, savedQuestions, agentMessages, registryBriefs, policyClarifications, clearAllLocalData, resetDemo } = useNura();
   const [expanded, setExpanded] = useState<string | null>('profile');
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [confirmError, setConfirmError] = useState('');
@@ -80,11 +80,16 @@ export default function Privacy() {
       details: registryBriefs.length ? registryBriefs.map((brief) => <RecordLine key={brief.id} title={brief.topicLabel + ' · ' + new Date(brief.createdAt).toLocaleDateString()} value={brief.answer} source={'Saved summary · ' + brief.citations.length + ' cited sources · run ' + brief.runId} />) : <Text style={styles.empty}>No Medical Registry summaries saved.</Text>,
     },
     {
+      id: 'policy-clarifications', title: 'Insurer replies you recorded', count: policyClarifications.length,
+      summary: 'Your notes about replies from an insurer, kept separate from extracted policy wording.',
+      details: policyClarifications.length ? policyClarifications.map((reply) => <RecordLine key={reply.id} title={`${reply.termLabel} · ${new Date(reply.reportedAt).toLocaleDateString()}`} value={reply.response} source={`User-reported · not policy wording · linked to source claim ${reply.sourceClaimId}`} />) : <Text style={styles.empty}>No insurer replies recorded.</Text>,
+    },
+    {
       id: 'questions', title: 'Ask history and saved questions', count: agentMessages.length + savedQuestions.length,
       summary: 'Conversation messages and questions saved on this device or in this tab.',
       details: <>{savedQuestions.map((question, index) => <RecordLine key={`question-${index}`} title="Saved question" value={question} source="Saved by you" />)}{agentMessages.map((message) => <RecordLine key={message.id} title={message.role === 'user' ? 'You asked' : 'Nura answered'} value={message.text} source={`${new Date(message.createdAt).toLocaleString()} · ${message.citations.length} cited sources`} />)}{!savedQuestions.length && !agentMessages.length ? <Text style={styles.empty}>No conversation history saved.</Text> : null}</>,
     },
-  ], [personalDetails, topics, facts, assets, treatments, visits, links, feedItems, agentMessages, registryBriefs, savedQuestions]);
+  ], [personalDetails, topics, facts, assets, treatments, visits, links, feedItems, agentMessages, registryBriefs, policyClarifications, savedQuestions]);
 
   function toggleRow(id: string) {
     if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

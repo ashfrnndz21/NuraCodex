@@ -8,6 +8,7 @@ import { formatVideoTimestamp, getSourceClaims, sourceMatchesAsset, type Candida
 import { findMisdatedAcceptedClaims } from '../services/sourceClaimReconciliation.mjs';
 import { groupSourceFactEvents, omitAssetsRepresentedByDetails, resolveTimelineSourceAsset } from '../services/timelineSourceGrouping.mjs';
 import { groupTimelineByYear } from '../services/timelineYearSections.mjs';
+import { resolveTimelineEndpointNavigation, type TimelineEndpointNavigation } from '../services/timelineEndpointNavigation.mjs';
 import { DocumentContextCard } from './DocumentContextCard';
 import { Orb } from './Orb';
 
@@ -136,6 +137,10 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
   const [removingLink, setRemovingLink] = useState<HealthLink | null>(null);
   const [transition] = useState(() => new Animated.Value(1));
   const [routeMotion] = useState(() => new Animated.Value(0));
+  const scrollViewRef = useRef<ScrollView>(null);
+  const timelineEntryRefs = useRef(new Map<string, View>());
+  const topicRefs = useRef(new Map<string, View>());
+  const [pendingEndpointNavigation, setPendingEndpointNavigation] = useState<TimelineEndpointNavigation | null>(null);
   const nodeScales = useRef(new Map<string, Animated.Value>());
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
@@ -219,6 +224,22 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
   const listedTotal = filter === 'Documents' ? entries.filter((entry) => entry.kind === 'asset').length : timelineEvents.length;
   const listedUnit = filter === 'Documents' ? 'documents' : 'events';
   useEffect(() => {
+    if (view !== 'timeline' || !pendingEndpointNavigation || !scrollViewRef.current) return;
+    const target = pendingEndpointNavigation.targetKind === 'topic'
+      ? topicRefs.current.get(pendingEndpointNavigation.targetRenderId)
+      : timelineEntryRefs.current.get(pendingEndpointNavigation.targetRenderId);
+    if (!target) return;
+    const scrollView = scrollViewRef.current;
+    target.measureLayout(
+      scrollView.getInnerViewNode(),
+      (_left, top) => {
+        scrollView.scrollTo({ y: Math.max(0, top - 22), animated: !reducedMotion });
+        setPendingEndpointNavigation(null);
+      },
+      () => setPendingEndpointNavigation(null),
+    );
+  }, [view, pendingEndpointNavigation, visibleEntries, topics, reducedMotion]);
+  useEffect(() => {
     if (!initialFocusId || !ready) return;
     const entry = entries.find((item) => item.nodeId === initialFocusId);
     const focused = entry?.kind === 'asset' ? entry : timelineEvents.find((item) => item.nodeId === initialFocusId || item.members?.some((member) => member.nodeId === initialFocusId));
@@ -248,7 +269,16 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
   function chooseRelation(value: HealthLinkRelation) { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setRelationType(value); }
   function saveLink() { if (!first || !second) return; const result = addLink(first, second, label.trim() || 'Connected by you', relationType); if (!result) return; setModal(false); changeView('connections'); }
   function toggleDetails(id: string) { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSelectedNode(id); setExpanded((current) => current === id ? null : id); }
-  function focusLinkedItem(id: string) { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setView('timeline'); setSelectedNode(id); const linkedEntry = entries.find((item) => item.nodeId === id); const event = timelineEvents.find((item) => item.nodeId === id || item.members?.some((member) => member.nodeId === id)); setExpanded(id.startsWith('topic:') ? null : linkedEntry?.kind === 'asset' ? linkedEntry.id : event?.id ?? id); if (!id.startsWith('topic:')) setFilter(linkedEntry?.kind === 'asset' ? 'Documents' : 'Everything'); }
+  function focusLinkedItem(id: string) {
+    const navigation = resolveTimelineEndpointNavigation(id, entries, timelineEvents, topics);
+    if (!navigation) return;
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setView('timeline');
+    setSelectedNode(navigation.selectedNodeId);
+    setExpanded(navigation.expandedId);
+    setFilter(navigation.filter);
+    setPendingEndpointNavigation(navigation);
+  }
   function askAbout(entry: Entry) { router.push({ pathname: '/ask', params: { context: entry.title, recordId: entry.nodeId } }); }
   async function openSource(entry: Entry) {
     const fact = entry.kind === 'fact' ? facts.find((item) => `fact:${item.id}` === entry.nodeId) : undefined;
@@ -337,7 +367,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
     </View>;
   }
 
-  return <View style={s.page}><ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+  return <View style={s.page}><ScrollView ref={scrollViewRef} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
     <View style={s.brandRow}><View><Text style={s.brand}>nura</Text><Text style={s.tagline}>YOUR HEALTH, UNDERSTOOD</Text></View><View style={s.topActions}><Pressable accessibilityRole="button" accessibilityLabel="View health connections" style={s.topIcon} onPress={() => changeView('connections')}><Text style={s.topIconText}>↔</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="View 720 profile" style={s.topIcon} onPress={() => changeView('map')}><Text style={s.topIconText}>···</Text></Pressable></View></View>
     <Text style={s.eyebrow}>YOUR HEALTH JOURNEY</Text>
     <View style={s.heroRow}><View style={s.heroText}><Text style={s.title}>{view === 'map' ? 'Your 720 profile' : view === 'connections' ? 'Connections' : 'Timeline'}</Text><Text style={s.subtitle}>{view === 'map' ? 'A clear view of what is here and what can be added.' : view === 'connections' ? 'See the links you have made between saved information.' : 'A history of records and health details.'}</Text></View>{view === 'map' && <Pressable style={s.backPill} onPress={() => changeView('timeline')}><Text style={s.backText}>BACK</Text></Pressable>}</View>
@@ -361,7 +391,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
         const selected = selectedNode === entry.nodeId || Boolean(entry.members?.some((member) => member.nodeId === selectedNode));
         const entryAsset = entry.kind === 'asset' ? assets.find((asset) => `asset:${asset.id}` === entry.nodeId) : undefined;
         const glyph = entry.kind === 'fact' ? '✳' : entry.kind === 'treatment' ? '✚' : entry.kind === 'visit' ? '⌂' : assetGlyph(entryAsset?.kind ?? 'file');
-        return <View key={entry.id} style={s.timelineRow}>
+        return <View key={entry.id} ref={(node) => { if (node) timelineEntryRefs.current.set(entry.id, node); else timelineEntryRefs.current.delete(entry.id); }} style={s.timelineRow}>
           <View style={s.dateCol}><Text style={s.dateDay}>{dateParts(entry.date).day}</Text><Text style={s.dateMonth}>{dateParts(entry.date).month}</Text></View>
           <View style={s.axis}><View style={[s.axisLine, { backgroundColor: tint.line }]} /><Pressable accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${entry.title}`} onPress={() => toggleDetails(entry.id)} style={({ pressed }) => [s.nodeHalo, { backgroundColor: tint.pale, borderColor: selected ? tint.accent : '#FFFFFF', borderWidth: selected ? 2 : 1 }, pressed && s.nodePressed]}><Animated.View style={[s.node, { backgroundColor: tint.node, borderColor: tint.line, shadowColor: tint.accent, transform: [{ scale: nodeScaleFor(entry.nodeId) }] }]}><Text style={s.nodeGlyph}>{glyph}</Text></Animated.View></Pressable></View>
           <View style={s.eventWrap}><View style={[s.eventCard, { backgroundColor: C.white, borderColor: tint.line, borderLeftColor: tint.node, borderLeftWidth: 3 }, selected && { borderColor: tint.node, backgroundColor: '#FBF6FA' }]}>
@@ -391,7 +421,7 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
         </View>;
       })}
       </React.Fragment>)}
-      {topics.length > 0 && <View style={s.focusSection}><View style={s.focusHeader}><Text style={s.sectionLabel}>YOUR CHOSEN HEALTH AREAS</Text><Pressable accessibilityRole="button" onPress={() => { const selectedTopic = selectedNode?.startsWith('topic:') ? selectedNode.slice('topic:'.length) : topics[0]?.id; router.push({ pathname: '/registry', params: selectedTopic ? { topicId: selectedTopic } : {} }); }}><Text style={s.focusOpenText}>OPEN WIKI ↗</Text></Pressable></View><Text style={s.focusIntro}>These are topics you selected, shown separately from dated records.</Text><View style={s.topicWrap}>{topics.map((topic, index) => { const topicId = `topic:${topic.id}`; const selected = selectedNode === topicId; return <Pressable key={topic.id} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSelectedNode(selected ? null : topicId); setExpanded(null); }} style={[s.topicChip, index % 3 === 1 && s.topicChipLilac, index % 3 === 2 && s.topicChipMint, selected && s.topicChipActive]}><Text style={s.topicChipText}>{topic.label}</Text></Pressable>; })}</View></View>}
+      {topics.length > 0 && <View style={s.focusSection}><View style={s.focusHeader}><Text style={s.sectionLabel}>YOUR CHOSEN HEALTH AREAS</Text><Pressable accessibilityRole="button" onPress={() => { const selectedTopic = selectedNode?.startsWith('topic:') ? selectedNode.slice('topic:'.length) : topics[0]?.id; router.push({ pathname: '/registry', params: selectedTopic ? { topicId: selectedTopic } : {} }); }}><Text style={s.focusOpenText}>OPEN WIKI ↗</Text></Pressable></View><Text style={s.focusIntro}>These are topics you selected, shown separately from dated records.</Text><View style={s.topicWrap}>{topics.map((topic, index) => { const topicId = `topic:${topic.id}`; const selected = selectedNode === topicId; return <Pressable key={topic.id} ref={(node) => { if (node) topicRefs.current.set(topicId, node); else topicRefs.current.delete(topicId); }} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSelectedNode(selected ? null : topicId); setExpanded(null); }} style={[s.topicChip, index % 3 === 1 && s.topicChipLilac, index % 3 === 2 && s.topicChipMint, selected && s.topicChipActive]}><Text style={s.topicChipText}>{topic.label}</Text></Pressable>; })}</View></View>}
       <Pressable style={s.addRecord} onPress={() => router.push('/intake')}><Text style={s.addRecordPlus}>＋</Text><Text style={s.addRecordText}>Add a health record</Text><Text style={s.addRecordArrow}>↗</Text></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Ask Nura about your whole health history" style={s.askHistory} onPress={() => router.push({ pathname: '/ask', params: { context: 'My complete saved health history' } })}><View style={s.askMark}><Text style={s.askMarkText}>✦</Text></View><View style={{ flex: 1 }}><Text style={s.askTitle}>Ask about this history</Text><Text style={s.askSub}>Nura will use your saved health context</Text></View><Text style={s.askArrow}>↑</Text></Pressable>
     </>}

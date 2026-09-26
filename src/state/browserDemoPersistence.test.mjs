@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
+import { removePolicyClarification, updatePolicyClarification } from '../services/policyClarification.mjs';
 
 function memoryStorage(seed = {}) {
   const values = new Map(Object.entries(seed));
@@ -13,7 +14,7 @@ function memoryStorage(seed = {}) {
 
 const fallback = {
   version: 1, demoOnly: true, name: '', birthday: '', country: '', email: '', phone: '',
-  topics: [], assets: [], intakeNotes: [], facts: [], treatments: [], treatmentEvents: [], visits: [], policyReplacements: [],
+  topics: [], assets: [], intakeNotes: [], facts: [], treatments: [], treatmentEvents: [], visits: [], policyReplacements: [], policyClarifications: [],
   visitEvents: [], links: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [],
 };
 
@@ -25,6 +26,46 @@ test('browser demo snapshot round-trips profile, facts, source links and agent h
   const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.equal(loaded.warning, null);
   assert.deepEqual(loaded.snapshot, snapshot);
+});
+
+test('browser demo snapshot round-trips user-reported insurer clarifications separately from policy facts', () => {
+  const storage = memoryStorage();
+  const clarification = {
+    id: 'reply-1', sourceId: 'policy-source', sourceClaimId: 'claim-7', sourceFactId: 'fact-7',
+    termLabel: 'Outpatient care', question: 'Which rate schedule is used?',
+    response: 'The insurer said it uses the 2026 published schedule.',
+    reportedAt: '2026-09-26T08:00:00.000Z', status: 'user_reported',
+  };
+  writeBrowserDemoSnapshot(storage, 'nura-demo', { ...fallback, policyClarifications: [clarification] });
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
+  assert.deepEqual(loaded.snapshot.policyClarifications, [clarification]);
+  assert.deepEqual(loaded.snapshot.facts, []);
+});
+
+test('browser snapshot persists insurer-note edits and deletion without changing source linkage or policy facts', () => {
+  const storage = memoryStorage();
+  const clarification = {
+    id: 'reply-1', sourceId: 'policy-source', sourceClaimId: 'claim-7', sourceFactId: 'fact-7',
+    termLabel: 'Outpatient care', question: 'Which rate schedule is used?',
+    response: 'The insurer said it uses the 2026 published schedule.',
+    reportedAt: '2026-09-26T08:00:00.000Z', status: 'user_reported',
+  };
+  const facts = [{ id: 'fact-7', label: 'Outpatient care', category: 'Insurance coverage', status: 'confirmed', sourceId: 'policy-source', sourceClaimId: 'claim-7' }];
+  const assets = [{ purpose: 'insurance', serverSourceId: 'policy-source' }];
+  const edited = updatePolicyClarification({ clarification, response: 'The insurer confirmed the 2026 schedule.', facts, assets });
+  writeBrowserDemoSnapshot(storage, 'nura-demo', { ...fallback, facts, policyClarifications: [edited] });
+  const afterEdit = readBrowserDemoSnapshot(storage, 'nura-demo', fallback).snapshot;
+  assert.deepEqual(afterEdit.policyClarifications, [edited]);
+  assert.equal(afterEdit.policyClarifications[0].sourceId, clarification.sourceId);
+  assert.equal(afterEdit.policyClarifications[0].sourceClaimId, clarification.sourceClaimId);
+  assert.equal(afterEdit.policyClarifications[0].sourceFactId, clarification.sourceFactId);
+  assert.deepEqual(afterEdit.facts, facts);
+
+  const deleted = removePolicyClarification(afterEdit.policyClarifications, clarification.id);
+  writeBrowserDemoSnapshot(storage, 'nura-demo', { ...afterEdit, policyClarifications: deleted });
+  const afterDelete = readBrowserDemoSnapshot(storage, 'nura-demo', fallback).snapshot;
+  assert.deepEqual(afterDelete.policyClarifications, []);
+  assert.deepEqual(afterDelete.facts, facts);
 });
 
 test('browser demo snapshot restores an unsaved health description for review', () => {
@@ -57,6 +98,7 @@ test('older version-one workspaces migrate with an empty policy relationship lis
   const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.equal(loaded.warning, null);
   assert.deepEqual(loaded.snapshot.policyReplacements, []);
+  assert.deepEqual(loaded.snapshot.policyClarifications, []);
   assert.equal(loaded.snapshot.name, '');
   assert.deepEqual(loaded.snapshot.intakeNotes, []);
 });

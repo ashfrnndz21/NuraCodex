@@ -8,6 +8,7 @@ import { getAgentStatus } from '../../src/services/agentClient';
 import { FeedActivity, FeedBrief, searchHealthFeed } from '../../src/services/feedClient';
 import { groupHealthFeedItems } from '../../src/services/feedDedupe.mjs';
 import { formatFeedRetrievalDate } from '../../src/services/feedDateLabels.mjs';
+import { feedSourceLinkVisibility } from '../../src/services/feedSourceActions.mjs';
 import { brandScenes, colors, motion, shadow } from '../../src/theme';
 
 type SearchStatus = 'checking' | 'ready' | 'unavailable';
@@ -22,6 +23,7 @@ function FeedCard({ item, index, reducedMotion, brief, showHidden, onSave, onDis
   const [detailsRise] = useState(() => new Animated.Value(8));
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsMounted, setDetailsMounted] = useState(false);
+  const sourceLinks = feedSourceLinkVisibility(detailsMounted);
   function toggleDetails() {
     const opening = !detailsOpen;
     if (opening) setDetailsMounted(true);
@@ -50,7 +52,7 @@ function FeedCard({ item, index, reducedMotion, brief, showHidden, onSave, onDis
       <View style={styles.articleTop}><View style={styles.sourceMark}><Text style={styles.sourceMarkText}>↗</Text></View><View style={styles.articleHeading}><Text style={styles.publisher}>{item.publisher}</Text><Pressable accessibilityRole="button" accessibilityState={{ expanded: detailsOpen }} accessibilityLabel={`${detailsOpen ? 'Close' : 'Read details for'} ${item.title}`} onPress={toggleDetails} style={styles.articleTitleButton}><Text style={styles.articleTitle}>{item.title}</Text><Text style={styles.detailToggle}>{detailsOpen ? 'Hide details' : 'Read details ↓'}</Text></Pressable></View><View style={styles.articleType}><Text style={styles.articleTypeText}>SOURCE</Text></View></View>
       <Text style={styles.articleDetail}>{item.detail || 'Open the publisher’s page for the full guidance.'}</Text>
       <View style={styles.articleWhy}><Text style={styles.whySpark}>✦</Text><Text style={styles.whyText}>Shown because you selected {item.topic}.</Text></View>
-      {detailsMounted && <Animated.View style={[styles.detailsPanel, { opacity: detailsOpacity, transform: [{ translateY: detailsRise }] }]}><View style={styles.detailsDivider} /><Text style={styles.detailsLabel}>SOURCE DETAILS</Text><Text style={styles.detailsCopy}>{item.detail || 'This source did not provide a preview. Open the publisher page to read the full item.'}</Text><View style={styles.detailsWhy}><Text style={styles.detailsLabel}>WHY THIS IS IN YOUR LIBRARY</Text><Text style={styles.detailsCopy}>You selected {item.topic}. Nura matched this item to that topic; it has not been added to your personal medical record.</Text></View>{brief?.summary ? <View style={styles.detailsBrief}><Text style={styles.detailsLabel}>NU﻿RA’S SEARCH BRIEF</Text><Text style={styles.detailsCopy}>{brief.summary}</Text><Text style={styles.detailsMeta}>Prepared from {brief.sourceIds.length} linked source{brief.sourceIds.length === 1 ? '' : 's'} in this search.</Text></View> : <Text style={styles.detailsMeta}>Nura has not created a topic brief for this item. The preview above is the source information available in the feed.</Text>}<Pressable accessibilityRole="link" onPress={onOpen} style={styles.detailsSourceButton}><Text style={styles.detailsSourceText}>READ THE FULL SOURCE</Text><Text style={styles.detailsSourceArrow}>↗</Text></Pressable></Animated.View>}
+      {sourceLinks.inDetails && <Animated.View style={[styles.detailsPanel, { opacity: detailsOpacity, transform: [{ translateY: detailsRise }] }]}><View style={styles.detailsDivider} /><Text style={styles.detailsLabel}>SOURCE DETAILS</Text><Text style={styles.detailsCopy}>{item.detail || 'This source did not provide a preview. Open the publisher page to read the full item.'}</Text><View style={styles.detailsWhy}><Text style={styles.detailsLabel}>WHY THIS IS IN YOUR LIBRARY</Text><Text style={styles.detailsCopy}>You selected {item.topic}. Nura matched this item to that topic; it has not been added to your personal medical record.</Text></View>{brief?.summary ? <View style={styles.detailsBrief}><Text style={styles.detailsLabel}>NU﻿RA’S SEARCH BRIEF</Text><Text style={styles.detailsCopy}>{brief.summary}</Text><Text style={styles.detailsMeta}>Prepared from {brief.sourceIds.length} linked source{brief.sourceIds.length === 1 ? '' : 's'} in this search.</Text></View> : <Text style={styles.detailsMeta}>Nura has not created a topic brief for this item. The preview above is the source information available in the feed.</Text>}<Pressable accessibilityRole="link" onPress={onOpen} style={styles.detailsSourceButton}><Text style={styles.detailsSourceText}>READ THE FULL SOURCE</Text><Text style={styles.detailsSourceArrow}>↗</Text></Pressable></Animated.View>}
       <View style={styles.sourceMeta}><Text style={styles.sourceMetaText}>Publication date not supplied by source</Text><Text style={styles.sourceMetaDot}>·</Text><Text style={styles.sourceMetaText}>{formatFeedRetrievalDate(item.retrievedAt)}</Text></View>
       <View style={styles.articleActions}>
         {showHidden ? <>
@@ -62,7 +64,7 @@ function FeedCard({ item, index, reducedMotion, brief, showHidden, onSave, onDis
           <Pressable accessibilityRole="button" onPress={onDismiss} style={styles.dismissButton}><Text style={styles.dismissText}>Hide</Text></Pressable>
         </>}
       </View>
-      <Pressable accessibilityRole="link" onPress={onOpen} style={styles.openSource}><Text style={styles.openSourceText}>Open original source</Text><Text style={styles.openSourceArrow}>↗</Text></Pressable>
+      {sourceLinks.compact && <Pressable accessibilityRole="link" onPress={onOpen} style={styles.openSource}><Text style={styles.openSourceText}>Open original source</Text><Text style={styles.openSourceArrow}>↗</Text></Pressable>}
     </Surface>
   </Animated.View>;
 }
@@ -124,7 +126,7 @@ export default function Services() {
         const existing = current.findIndex((item) => item.id === next.id);
         if (existing < 0) return [...current, next];
         const updated = current.slice(); updated[existing] = next; return updated;
-      }));
+      }), consent);
       mergeFeedItems(results.items);
       setBriefs(results.briefs);
       setFeedView('forYou');
@@ -144,7 +146,7 @@ export default function Services() {
     <View style={styles.topbar}><View><Label>YOUR HEALTH LIBRARY</Label><Text style={styles.title}>Useful, with a reason.</Text><Text style={styles.subtitle}>Reading from trusted health sources, connected to the areas you chose.</Text></View><View style={styles.orbMark}><Text style={styles.orbGlyph}>✦</Text></View></View>
 
     <Surface style={styles.consentCard}>
-      <View style={styles.consentTop}><View style={styles.consentIcon}><Text style={styles.consentIconText}>⌕</Text></View><View style={{ flex: 1 }}><Text style={styles.consentTitle}>Search the health topics you selected</Text><Text style={styles.consentBody}>Only the areas you select below are sent for this search. Your name, records, and contact details are not included.</Text></View></View>
+      <View style={styles.consentTop}><View style={styles.consentIcon}><Text style={styles.consentIconText}>⌕</Text></View><View style={{ flex: 1 }}><Text style={styles.consentTitle}>Search the health topics you selected</Text><Text style={styles.consentBody}>The selected topics are sent to Nura’s configured web-search provider to find public health sources. Your name, records, and contact details are not included.</Text></View></View>
       <View style={styles.topicLabelRow}><Label>SELECT UP TO THREE</Label><Text style={styles.selectedCount}>{selectedTopics.length} selected</Text></View>
       {topics.length ? <View style={styles.topicList}>{topics.map((topic) => { const selected = activeIds.includes(topic.id); return <Pill key={topic.id} selected={selected} onPress={() => toggleTopic(topic.id)}>{selected ? '✓  ' : '+  '}{topic.label}</Pill>; })}</View> : <View style={styles.noTopics}><Text style={styles.noTopicsText}>Choose health areas in your profile first. Nura won’t guess what matters to you.</Text><Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/profile')}><Text style={styles.inlineLink}>Choose health areas  →</Text></Pressable></View>}
       {topicLimitNote ? <Text style={styles.limitNote}>{topicLimitNote}</Text> : null}
@@ -155,7 +157,7 @@ export default function Services() {
     </Surface>
 
     <ActivityCard activity={activity} busy={busy} />
-    {error ? <View style={styles.errorCard}><Text style={styles.errorTitle}>The feed needs another try</Text><Text style={styles.errorBody}>{error}</Text>{serviceStatus === 'ready' && selectedTopics.length > 0 && <Pressable onPress={() => { setConsent(true); }}><Text style={styles.retryHint}>Review the consent above, then search again.</Text></Pressable>}</View> : null}
+    {error ? <View style={styles.errorCard}><Text style={styles.errorTitle}>The feed needs another try</Text><Text style={styles.errorBody}>{error}</Text>{serviceStatus === 'ready' && selectedTopics.length > 0 && <Text style={styles.retryHint}>To try again, review your selected areas and confirm consent for a new search.</Text>}</View> : null}
     {undoIds ? <View style={styles.undoBar}><Text style={styles.undoText}>{undoIds.length > 1 ? 'Related articles removed from your feed.' : 'Removed from your feed.'}</Text><Pressable accessibilityRole="button" onPress={undoDismiss} style={styles.undoActionButton}><Text style={styles.undoAction}>Undo</Text></Pressable></View> : null}
 
     {briefs.length > 0 && feedView === 'forYou' ? <View style={styles.briefList}>{briefs.map((brief) => <Surface key={brief.id} style={styles.briefCard}><Label>NU﻿RA’S SEARCH BRIEF</Label><Text style={styles.briefTitle}>{brief.topic}, in a nutshell.</Text><Text style={styles.briefText}>{brief.summary || `Nura found ${brief.sourceIds.length} trusted sources for ${brief.topic}. Open a source below to read its published guidance.`}</Text><Text style={styles.briefSources}>Based on {brief.sourceIds.length} linked source{brief.sourceIds.length === 1 ? '' : 's'} below</Text></Surface>)}</View> : null}

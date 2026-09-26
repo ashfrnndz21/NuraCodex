@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import { AccessibilityInfo, LayoutAnimation, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, LayoutAnimation, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Orb } from '../src/components/Orb';
 import { Label, Surface } from '../src/components/Surface';
 import { HealthFact, IntakeAsset, useNura } from '../src/state/NuraContext';
@@ -10,6 +10,7 @@ import { comparePolicyDocuments, resolvePolicyReplacementLinks, summarizePolicyD
 import { policyTermEvidenceTarget } from '../src/services/policyTermEvidence.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
 import { getSourceClaims } from '../src/services/intakeClient';
+import { isPolicyClarificationSourceCurrent } from '../src/services/policyClarification.mjs';
 import { colors, radius } from '../src/theme';
 
 function displayDate(value?: string | null) {
@@ -77,10 +78,20 @@ function TermEntry({ term, kind, value, evidenceLabel, onViewSource }: { term: H
 }
 
 export default function InsuranceRegistry() {
-  const { facts, assets, policyReplacements, addPolicyReplacement, removePolicyReplacement, reconcileSourceFactValue } = useNura();
+  const { facts, assets, policyReplacements, policyClarifications, addPolicyReplacement, removePolicyReplacement, addPolicyClarification, editPolicyClarification, removePolicyClarification, reconcileSourceFactValue } = useNura();
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
   const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
   const [expandedKeyDetails, setExpandedKeyDetails] = useState<string | null>(null);
+  const [replyForClaim, setReplyForClaim] = useState<string | null>(null);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [savingReplyClaim, setSavingReplyClaim] = useState<string | null>(null);
+  const [replyError, setReplyError] = useState<{ claimId: string; message: string } | null>(null);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [replyEdits, setReplyEdits] = useState<Record<string, string>>({});
+  const [savingReplyEditId, setSavingReplyEditId] = useState<string | null>(null);
+  const [confirmDeleteReplyId, setConfirmDeleteReplyId] = useState<string | null>(null);
+  const [deletingReplyId, setDeletingReplyId] = useState<string | null>(null);
+  const [replyManagementError, setReplyManagementError] = useState<{ id: string; message: string } | null>(null);
   const [replacementFor, setReplacementFor] = useState<string | null>(null);
   const [olderSourceChoice, setOlderSourceChoice] = useState<string | null>(null);
   const [savingReplacement, setSavingReplacement] = useState(false);
@@ -195,6 +206,61 @@ export default function InsuranceRegistry() {
     }
   }
 
+  async function saveInsurerReply(sourceId: string, term: HealthFact) {
+    const claimId = term.sourceClaimId;
+    if (!claimId || savingReplyClaim) return;
+    setSavingReplyClaim(claimId);
+    setReplyError(null);
+    try {
+      await addPolicyClarification({
+        sourceId,
+        sourceClaimId: claimId,
+        question: clarificationQuestion(term),
+        response: replyDrafts[claimId] ?? '',
+      });
+      if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setReplyDrafts((current) => ({ ...current, [claimId]: '' }));
+      setReplyForClaim(null);
+    } catch (error) {
+      setReplyError({ claimId, message: error instanceof Error ? error.message : 'Nura could not save your note. Please try again.' });
+    } finally {
+      setSavingReplyClaim(null);
+    }
+  }
+
+  async function saveReplyEdit(id: string) {
+    if (savingReplyEditId || !editingReplyId) return;
+    setSavingReplyEditId(id);
+    setReplyManagementError(null);
+    try {
+      await editPolicyClarification(id, replyEdits[id] ?? '');
+      if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setEditingReplyId(null);
+      setReplyEdits((current) => { const next = { ...current }; delete next[id]; return next; });
+    } catch (error) {
+      setReplyManagementError({ id, message: error instanceof Error ? error.message : 'Nura could not update this note. Please try again.' });
+    } finally {
+      setSavingReplyEditId(null);
+    }
+  }
+
+  async function deleteSavedReply(id: string) {
+    if (deletingReplyId) return;
+    setDeletingReplyId(id);
+    setReplyManagementError(null);
+    try {
+      await removePolicyClarification(id);
+      if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setConfirmDeleteReplyId(null);
+      if (editingReplyId === id) setEditingReplyId(null);
+      setReplyEdits((current) => { const next = { ...current }; delete next[id]; return next; });
+    } catch (error) {
+      setReplyManagementError({ id, message: error instanceof Error ? error.message : 'Nura could not remove this note. Please try again.' });
+    } finally {
+      setDeletingReplyId(null);
+    }
+  }
+
   async function removeReplacementLink(linkId: string, sourceId: string) {
     if (removingReplacement) return;
     if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -215,6 +281,43 @@ export default function InsuranceRegistry() {
     if (status === 'history_only') return 'Only earlier or removed terms are available.';
     if (status === 'source_saved') return 'The source file is saved, but no accepted terms are available yet.';
     return 'No saved source or accepted terms are available here.';
+  };
+  const renderPolicyReply = (reply: (typeof policyClarifications)[number], sourceTerm?: HealthFact) => {
+    const sourceCurrent = isPolicyClarificationSourceCurrent({ clarification: reply, facts, assets });
+    const editing = editingReplyId === reply.id;
+    const confirmingDelete = confirmDeleteReplyId === reply.id;
+    const busy = savingReplyEditId === reply.id || deletingReplyId === reply.id;
+    return <View key={reply.id} style={styles.userReplyItem}>
+      <Text style={styles.userReplyLabel}>{reply.termLabel} · {displayDate(reply.reportedAt) ?? 'date not recorded'}</Text>
+      <Text style={styles.replyPrompt}>QUESTION YOU RECORDED</Text>
+      <Text style={styles.userReplyText}>{reply.question}</Text>
+      <Text style={styles.replyPrompt}>YOUR NOTE ABOUT THE REPLY</Text>
+      {!editing ? <Text style={styles.userReplyText}>{reply.response}</Text> : <TextInput accessibilityLabel={`Edit your user-reported note for ${reply.termLabel}`} value={replyEdits[reply.id] ?? reply.response} onChangeText={(value) => setReplyEdits((current) => ({ ...current, [reply.id]: value }))} placeholder="What did the insurer tell you?" placeholderTextColor="#918A99" multiline maxLength={2000} textAlignVertical="top" style={styles.replyInput} />}
+      <Text style={styles.userReplyStatus}>USER-REPORTED · NOT POLICY WORDING</Text>
+      {!sourceCurrent && <Text style={styles.replyUnavailable}>This source or term has changed. You can keep or remove this note, but it can no longer be edited against the current policy record.</Text>}
+      {sourceTerm && sourceTerm.sourceId === reply.sourceId && sourceTerm.sourceClaimId === reply.sourceClaimId && evidenceActionLabel(sourceTerm, assets) ? <Pressable accessibilityRole="button" accessibilityLabel={`Open policy source quote for ${reply.termLabel}`} onPress={() => openPolicyTermEvidence(sourceTerm)}><Text style={styles.clarifySource}>OPEN LINKED POLICY QUOTE  ↗</Text></Pressable> : <Text style={styles.replyUnavailable}>The original quote link is unavailable.</Text>}
+      {editing && sourceCurrent && <>
+        <Text style={styles.replyEditPrivacy}>Editing changes only your note. Its original question and policy source link stay attached.</Text>
+        {replyManagementError?.id === reply.id && <Text accessibilityRole="alert" style={styles.replacementError}>{replyManagementError.message}</Text>}
+        <View style={styles.replyActions}>
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => void saveReplyEdit(reply.id)} style={[styles.replyActionPrimary, busy && styles.disabled]}><Text style={styles.replyActionPrimaryText}>{savingReplyEditId === reply.id ? 'SAVING…' : 'SAVE EDIT'}</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setEditingReplyId(null); setReplyManagementError(null); }} style={styles.replyActionButton}><Text style={styles.replyActionText}>CANCEL</Text></Pressable>
+        </View>
+      </>}
+      {!editing && !confirmingDelete && <View style={styles.replyActions}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !sourceCurrent }} disabled={!sourceCurrent || busy} onPress={() => { setReplyEdits((current) => ({ ...current, [reply.id]: reply.response })); setEditingReplyId(reply.id); setConfirmDeleteReplyId(null); setReplyManagementError(null); }} style={[styles.replyActionButton, !sourceCurrent && styles.disabled]}><Text style={styles.replyActionText}>EDIT NOTE</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setConfirmDeleteReplyId(reply.id); setReplyManagementError(null); }} style={styles.replyActionDelete}><Text style={styles.replyActionDeleteText}>REMOVE NOTE</Text></Pressable>
+      </View>}
+      {confirmingDelete && <View style={styles.replyDeleteConfirm}>
+        <Text style={styles.replyDeleteText}>Remove this user-reported note? The policy record will stay unchanged.</Text>
+        {replyManagementError?.id === reply.id && <Text accessibilityRole="alert" style={styles.replacementError}>{replyManagementError.message}</Text>}
+        <View style={styles.replyActions}>
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => setConfirmDeleteReplyId(null)} style={styles.replyActionButton}><Text style={styles.replyActionText}>KEEP NOTE</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => void deleteSavedReply(reply.id)} style={[styles.replyActionDelete, busy && styles.disabled]}><Text style={styles.replyActionDeleteText}>{deletingReplyId === reply.id ? 'REMOVING…' : 'REMOVE'}</Text></Pressable>
+        </View>
+      </View>}
+      {!editing && !confirmingDelete && replyManagementError?.id === reply.id && <Text accessibilityRole="alert" style={styles.replacementError}>{replyManagementError.message}</Text>}
+    </View>;
   };
 
   return <View style={styles.page}><ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -261,6 +364,7 @@ export default function InsuranceRegistry() {
     {policies.length ? policies.map((policy) => {
       const olderChoices = policies.filter((candidate) => candidate.sourceId !== policy.sourceId);
       const sourceLinks = policyReplacements.filter((link) => link.newerSourceId === policy.sourceId || link.olderSourceId === policy.sourceId);
+      const policyReplies = policyClarifications.filter((reply) => reply.sourceId === policy.sourceId);
       const snapshot = snapshotBySource.get(policy.sourceId) ?? buildInsuranceSnapshot(policy.currentTerms);
       return <Surface key={policy.sourceId} style={styles.policyCard}>
       <View style={styles.policyHead}><View style={styles.policyMark}><Text style={styles.policyMarkText}>▤</Text></View><View style={{ flex: 1 }}><Text style={styles.policyEyebrow}>POLICY SOURCE</Text><Text style={styles.policyName}>{policy.sourceName}</Text></View><Text style={styles.sourceLinked}>LINKED</Text></View>
@@ -286,7 +390,35 @@ export default function InsuranceRegistry() {
         <Text style={styles.notFoundSummaryBody}>These details may appear elsewhere in the full policy. Their absence here does not mean they are excluded.</Text>
       </View>}
       {snapshot.exclusions.length > 0 && <View style={styles.exclusionPanel}><View style={styles.snapshotHead}><Text style={styles.exclusionEyebrow}>EXPLICITLY EXCLUDED IN SAVED WORDING</Text><Text style={styles.exclusionCount}>{snapshot.exclusions.length}</Text></View>{snapshot.exclusions.map((term) => { const evidenceLabel = evidenceActionLabel(term, assets); return <View key={term.id} style={styles.exclusionItem}><Text style={styles.exclusionTitle}>{term.label}</Text><Text style={styles.exclusionValue}>{displayTermValue(term)}</Text>{evidenceLabel ? <Pressable accessibilityRole="button" accessibilityLabel={`${evidenceLabel} for ${term.label}`} onPress={() => openPolicyTermEvidence(term)} style={styles.exclusionSource}><Text style={styles.exclusionSourceText}>{evidenceLabel}  ↗</Text></Pressable> : <Text style={styles.quoteMissing}>Original source link unavailable. Check the policy file before relying on this detail.</Text>}</View>; })}<Text style={styles.exclusionFoot}>This reflects only the wording captured above. Confirm definitions, exceptions and applicability in the full contract.</Text></View>}
-      {snapshot.clarifications.length > 0 && <View style={styles.clarifyPanel}><Text style={styles.clarifyEyebrow}>WORDING TO CONFIRM</Text>{snapshot.clarifications.map((term) => { const evidenceLabel = evidenceActionLabel(term, assets); return <View key={term.id} style={styles.clarifyItem}><Text style={styles.clarifyTitle}>{term.label}</Text><Text style={styles.clarifyValue}>{displayTermValue(term)}</Text><Text style={styles.clarifyValue}>Ask the insurer: {clarificationQuestion(term)}</Text>{evidenceLabel ? <Pressable accessibilityRole="button" accessibilityLabel={`${evidenceLabel} for ${term.label}`} onPress={() => openPolicyTermEvidence(term)}><Text style={styles.clarifySource}>{evidenceLabel}  ↗</Text></Pressable> : <Text style={styles.quoteMissing}>Original source link unavailable. Check the policy file before relying on this detail.</Text>}</View>; })}</View>}
+      {snapshot.clarifications.length > 0 && <View style={styles.clarifyPanel}>
+        <Text style={styles.clarifyEyebrow}>WORDING TO CONFIRM</Text>
+        {snapshot.clarifications.map((term) => {
+          const evidenceLabel = evidenceActionLabel(term, assets);
+          const claimId = term.sourceClaimId;
+          const canRecordReply = Boolean(claimId && term.sourceId === policy.sourceId && evidenceLabel);
+          const formOpen = Boolean(canRecordReply && claimId && replyForClaim === claimId);
+          return <View key={term.id} style={styles.clarifyItem}>
+            <Text style={styles.clarifyTitle}>{term.label}</Text>
+            <Text style={styles.clarifyValue}>{displayTermValue(term)}</Text>
+            <Text style={styles.clarifyValue}>Ask the insurer: {clarificationQuestion(term)}</Text>
+            {evidenceLabel ? <Pressable accessibilityRole="button" accessibilityLabel={`${evidenceLabel} for ${term.label}`} onPress={() => openPolicyTermEvidence(term)}><Text style={styles.clarifySource}>{evidenceLabel}  ↗</Text></Pressable> : <Text style={styles.quoteMissing}>Original source link unavailable. Check the policy file before relying on this detail.</Text>}
+            {canRecordReply && claimId ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: formOpen }} onPress={() => { setReplyError(null); setReplyForClaim((current) => current === claimId ? null : claimId); }} style={styles.recordReplyButton}><Text style={styles.recordReplyButtonText}>{formOpen ? 'CLOSE REPLY NOTE' : 'RECORD AN INSURER REPLY  +'}</Text></Pressable> : <Text style={styles.replyUnavailable}>A saved source quote and extraction claim are required to link a reply to this term.</Text>}
+            {formOpen && claimId && <View style={styles.replyForm}>
+              <Text style={styles.replyPrompt}>QUESTION TO ASK</Text>
+              <Text style={styles.replyQuestion}>{clarificationQuestion(term)}</Text>
+              <TextInput accessibilityLabel={`Your note about the insurer reply for ${term.label}`} value={replyDrafts[claimId] ?? ''} onChangeText={(value) => setReplyDrafts((current) => ({ ...current, [claimId]: value }))} placeholder="What did the insurer tell you?" placeholderTextColor="#918A99" multiline maxLength={2000} textAlignVertical="top" style={styles.replyInput} />
+              <Text style={styles.replyPrivacy}>Saved in this Nura record only. It stays separate from policy wording and is not sent to Nura’s AI.</Text>
+              {replyError && replyError.claimId === claimId && <Text accessibilityRole="alert" style={styles.replacementError}>{replyError.message}</Text>}
+              <Pressable accessibilityRole="button" disabled={savingReplyClaim === claimId} onPress={() => void saveInsurerReply(policy.sourceId, term)} style={[styles.saveReplyButton, savingReplyClaim === claimId && styles.disabled]}><Text style={styles.saveReplyButtonText}>{savingReplyClaim === claimId ? 'SAVING YOUR NOTE…' : 'SAVE MY NOTE  →'}</Text></Pressable>
+            </View>}
+          </View>;
+        })}
+      </View>}
+      {policyReplies.length > 0 && <View style={styles.userReplyPanel}>
+        <Text style={styles.userReplyEyebrow}>INSURER REPLIES YOU RECORDED · {policyReplies.length}</Text>
+        <Text style={styles.userReplyNotice}>These are your notes about conversations with the insurer. They are not policy wording or an insurer decision verified by Nura.</Text>
+        {policyReplies.map((reply) => renderPolicyReply(reply, [...policy.currentTerms, ...policy.previousTerms, ...policy.removedTerms].find((term) => term.id === reply.sourceFactId && term.sourceClaimId === reply.sourceClaimId)))}
+      </View>}
       <View style={styles.breakdownHeading}><View><Label>POLICY BREAKDOWN</Label><Text style={styles.breakdownSub}>Tap a section to inspect saved terms and missing details.</Text></View></View>
       {snapshot.groups.filter((group) => group.id !== 'other' || group.terms.length > 0).map((group) => {
         const expanded = expandedSnapshot === `${policy.sourceId}:${group.id}`;
@@ -373,6 +505,12 @@ export default function InsuranceRegistry() {
       <View style={styles.emptySteps}><Text style={styles.step}>01  Add a policy PDF or photo</Text><Text style={styles.step}>02  Review quoted terms</Text><Text style={styles.step}>03  Ask what the evidence supports</Text></View>
     </Surface>}
 
+    {policyClarifications.some((reply) => !policyBySource.has(reply.sourceId)) && <View style={styles.userReplyPanel}>
+      <Text style={styles.userReplyEyebrow}>EARLIER INSURER NOTES · SOURCE UNAVAILABLE</Text>
+      <Text style={styles.userReplyNotice}>These remain your notes, even if the policy document or accepted term was removed. They are not policy wording or a verified insurer decision.</Text>
+      {policyClarifications.filter((reply) => !policyBySource.has(reply.sourceId)).map((reply) => renderPolicyReply(reply))}
+    </View>}
+
     <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/intake', params: { purpose: 'insurance' } })} style={styles.primary}><View style={{ flex: 1 }}><Text style={styles.primaryTitle}>ADD A POLICY DOCUMENT</Text><Text style={styles.primarySub}>PDF or clear page photo</Text></View><Text style={styles.primaryArrow}>↗</Text></Pressable>
     <Text style={styles.disclaimer}>Policy summaries are for organizing your records, not a coverage determination. Confirm important questions with your insurer.</Text>
   </ScrollView></View>;
@@ -390,6 +528,7 @@ const styles = StyleSheet.create({
   notFoundSummary: { backgroundColor: '#FBF5E9', borderWidth: 1, borderColor: '#EADBBF', borderRadius: 14, padding: 11, marginTop: 10 }, notFoundSummaryTitle: { color: '#8C6B31', fontSize: 9, fontWeight: '800', letterSpacing: .7 }, notFoundSummaryTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }, notFoundSummaryTag: { color: '#746348', backgroundColor: '#FFFDF8', borderWidth: 1, borderColor: '#E9DEC9', borderRadius: 9, overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 5, fontSize: 9 }, notFoundSummaryBody: { color: '#76684F', fontSize: 10, lineHeight: 15, marginTop: 8 },
   breakdownHeading: { marginTop: 15, marginBottom: 5 }, breakdownSub: { color: colors.muted, fontSize: 9, marginTop: 3 }, breakdownSection: { borderTopWidth: 1, borderTopColor: '#E4DCE8' }, breakdownToggle: { minHeight: 59, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 }, breakdownPressed: { opacity: .82 }, breakdownMark: { width: 33, height: 33, borderRadius: 12, backgroundColor: '#E8E0EF', alignItems: 'center', justifyContent: 'center' }, breakdownMarkMedical: { backgroundColor: '#E5EEFC' }, breakdownMarkLife: { backgroundColor: '#E6F1EB' }, breakdownMarkPremium: { backgroundColor: '#F8EDE2' }, breakdownMarkValue: { backgroundColor: '#E7EAF7' }, breakdownMarkText: { color: colors.violet, fontSize: 15, fontWeight: '700' }, breakdownCopy: { flex: 1 }, breakdownTitle: { color: colors.ink, fontSize: 12, fontWeight: '600' }, breakdownMeta: { color: colors.quiet, fontSize: 9, marginTop: 3 }, breakdownArrow: { color: colors.violet, width: 25, textAlign: 'center', fontSize: 20 }, breakdownBody: { paddingLeft: 10, paddingBottom: 10 }, notFoundBox: { backgroundColor: '#F2EDF5', borderWidth: 1, borderColor: '#E4D9EA', borderRadius: 11, padding: 10, marginTop: 9 }, notFoundEyebrow: { color: colors.violet, fontSize: 7, fontWeight: '800', letterSpacing: .8 }, notFoundItems: { color: colors.ink, fontSize: 9, lineHeight: 14, marginTop: 6 }, notFoundCopy: { color: colors.muted, fontSize: 8, lineHeight: 12, marginTop: 5 },
   exclusionPanel: { backgroundColor: '#FFF1EB', borderWidth: 1, borderColor: '#F0D4C9', borderRadius: 14, padding: 11, marginTop: 13 }, snapshotHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, exclusionEyebrow: { color: '#985847', fontSize: 7, fontWeight: '800', letterSpacing: .75, flex: 1 }, exclusionCount: { color: '#8C493D', backgroundColor: '#F4D9CF', borderRadius: 9, minWidth: 23, textAlign: 'center', overflow: 'hidden', paddingVertical: 3, fontSize: 8, fontWeight: '800' }, exclusionItem: { borderTopWidth: 1, borderTopColor: '#EBD5CD', marginTop: 8, paddingTop: 8 }, exclusionTitle: { color: colors.ink, fontSize: 11, fontWeight: '700' }, exclusionValue: { color: '#74534E', fontSize: 9, lineHeight: 13, marginTop: 3 }, exclusionSource: { alignSelf: 'flex-start', minHeight: 34, justifyContent: 'center', paddingRight: 8 }, exclusionSourceText: { color: '#9B5140', fontSize: 7, fontWeight: '800', letterSpacing: .45 }, exclusionFoot: { color: '#765B55', fontSize: 8, lineHeight: 12, marginTop: 4 }, clarifyPanel: { backgroundColor: '#FBF1DE', borderWidth: 1, borderColor: '#ECDAB8', borderRadius: 14, padding: 11, marginTop: 10 }, clarifyEyebrow: { color: '#946B27', fontSize: 7, fontWeight: '800', letterSpacing: .8 }, clarifyItem: { borderTopWidth: 1, borderTopColor: '#EDE0C8', marginTop: 8, paddingTop: 8 }, clarifyTitle: { color: colors.ink, fontSize: 11, fontWeight: '700' }, clarifyValue: { color: '#6E5A3A', fontSize: 9, lineHeight: 13, marginTop: 3 }, clarifySource: { color: '#946B27', fontSize: 7, fontWeight: '800', letterSpacing: .5, paddingVertical: 7 },
+  recordReplyButton: { alignSelf: 'flex-start', minHeight: 38, justifyContent: 'center', paddingHorizontal: 9, borderRadius: 10, backgroundColor: '#F5E7C9', marginTop: 4 }, recordReplyButtonText: { color: '#76581F', fontSize: 7, fontWeight: '800', letterSpacing: .5 }, replyUnavailable: { color: '#8C6C32', fontSize: 8, lineHeight: 12, marginTop: 6 }, replyForm: { backgroundColor: '#FFF9EF', borderWidth: 1, borderColor: '#EEDDBD', borderRadius: 12, padding: 10, marginTop: 8 }, replyPrompt: { color: '#946B27', fontSize: 7, fontWeight: '800', letterSpacing: .6, marginTop: 6 }, replyQuestion: { color: '#6E5A3A', fontSize: 9, lineHeight: 14, marginTop: 3 }, replyInput: { minHeight: 86, maxHeight: 180, borderWidth: 1, borderColor: '#DED6E1', borderRadius: 10, backgroundColor: '#FFFFFF', color: colors.ink, fontSize: 11, lineHeight: 16, padding: 10, marginTop: 8 }, replyPrivacy: { color: colors.muted, fontSize: 8, lineHeight: 12, marginTop: 7 }, saveReplyButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.cobalt, borderRadius: 10, marginTop: 9 }, saveReplyButtonText: { color: '#FFFFFF', fontSize: 8, fontWeight: '800', letterSpacing: .55 }, userReplyPanel: { backgroundColor: '#EEF5F0', borderWidth: 1, borderColor: '#CCDED1', borderRadius: 14, padding: 11, marginTop: 10 }, userReplyEyebrow: { color: '#367456', fontSize: 7, fontWeight: '800', letterSpacing: .7 }, userReplyNotice: { color: '#536D5B', fontSize: 8, lineHeight: 12, marginTop: 5 }, userReplyItem: { borderTopWidth: 1, borderTopColor: '#D6E4D9', marginTop: 8, paddingTop: 8 }, userReplyLabel: { color: colors.ink, fontSize: 10, fontWeight: '700' }, userReplyText: { color: colors.ink, fontSize: 9, lineHeight: 14, marginTop: 3 }, userReplyStatus: { alignSelf: 'flex-start', color: '#367456', backgroundColor: '#DCECE0', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 4, fontSize: 7, fontWeight: '800', letterSpacing: .4, marginTop: 7 },
   healthFitCard: { backgroundColor: '#F2EDF5', borderWidth: 1, borderColor: '#DED1E5', borderRadius: 15, padding: 12, marginTop: 14 }, healthFitOrb: { width: 35, height: 35, borderRadius: 13, backgroundColor: '#F0E1E6', alignItems: 'center', justifyContent: 'center' }, healthFitCopy: { marginTop: 8 }, healthFitEyebrow: { color: colors.violet, fontSize: 7, fontWeight: '800', letterSpacing: .8 }, healthFitTitle: { color: colors.ink, fontSize: 12, lineHeight: 16, fontWeight: '700', marginTop: 4 }, healthFitBody: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 4 }, healthFitButton: { minHeight: 43, backgroundColor: colors.cobalt, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 10 }, healthFitButtonText: { color: '#FFFFFF', fontSize: 8, fontWeight: '800', letterSpacing: .65 },
   sectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 10 }, sectionTitle: { color: colors.ink, fontSize: 17, fontWeight: '500', marginTop: 4 }, sectionCount: { color: '#918A99', fontSize: 11 }, policyCard: { marginBottom: 13, padding: 14 }, policyHead: { flexDirection: 'row', alignItems: 'center', gap: 9 }, policyMark: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.bluePale, alignItems: 'center', justifyContent: 'center' }, policyMarkText: { color: colors.cobalt, fontSize: 17 }, policyEyebrow: { color: '#92899A', fontSize: 7, fontWeight: '700', letterSpacing: 1.1 }, sourceLinked: { color: '#60456D', backgroundColor: '#F0E6F1', fontSize: 7, fontWeight: '700', letterSpacing: 0.7, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 9 }, sourceBand: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 10, backgroundColor: colors.bluePale, padding: 9, marginTop: 12 }, sourceBandIcon: { color: colors.cobalt, fontSize: 12 }, sourceBandText: { color: '#4A668D', fontSize: 9, fontWeight: '500', flex: 1 }, term: { borderTopWidth: 1, borderTopColor: '#EBE8EF', paddingTop: 12, marginTop: 12 }, previousTerm: { borderTopColor: '#E7DDEA' }, termTop: { flexDirection: 'row', alignItems: 'center', gap: 7 }, termLabel: { color: colors.ink, fontSize: 13, fontWeight: '600', flex: 1 }, termType: { color: colors.cobalt, backgroundColor: colors.bluePale, fontSize: 6, fontWeight: '700', letterSpacing: 0.6, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8 }, previousTermType: { color: '#684F71', backgroundColor: '#F0E6F1' }, termValue: { color: '#4C4854', fontSize: 11, lineHeight: 16, marginTop: 5 }, plainMeaning: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 6 }, plainMeaningLead: { color: colors.violet, fontSize: 7, fontWeight: '800', letterSpacing: .45 }, termEvidence: { alignSelf: 'flex-start', minHeight: 34, justifyContent: 'center', paddingRight: 8 }, termEvidenceText: { color: colors.cobalt, fontSize: 7, fontWeight: '800', letterSpacing: .45 }, sourceNote: { color: '#716A79', fontSize: 10, lineHeight: 15, backgroundColor: '#F5F2F6', padding: 9, borderRadius: 9, marginTop: 8 }, sourceNoteLead: { color: '#684F71', fontSize: 8, fontWeight: '700', letterSpacing: 0.5 }, quoteMissing: { color: '#8C6C32', fontSize: 9, lineHeight: 14, marginTop: 8 }, termMeta: { color: '#918A99', fontSize: 8, marginTop: 6 }, noCurrentTerms: { color: '#716A79', fontSize: 10, lineHeight: 15, marginTop: 12 }, historyToggle: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#E7DDEA', marginTop: 14, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F6EFF7' }, historyTogglePressed: { backgroundColor: '#EFE4F0' }, historyTitle: { color: '#5F4569', fontSize: 9, fontWeight: '800', letterSpacing: 0.8 }, historySubtitle: { color: '#817687', fontSize: 8, marginTop: 3 }, historyArrow: { color: '#5F4569', fontSize: 20, fontWeight: '500', marginLeft: 12 }, historyEntries: { paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#CFB6D0', marginLeft: 4 },
   relationshipNotice: { backgroundColor: '#F3EDF5', borderWidth: 1, borderColor: '#E3D6E8', borderRadius: 14, padding: 11, marginTop: 12 }, relationshipHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 }, relationshipTitle: { color: colors.violet, fontSize: 8, fontWeight: '800', letterSpacing: 0.75, lineHeight: 12 }, relationshipSource: { color: colors.ink, fontSize: 11, fontWeight: '700', lineHeight: 15, marginTop: 4 }, relationshipNote: { color: colors.muted, fontSize: 9, lineHeight: 13, marginTop: 5 }, relationSourceButton: { minHeight: 40, justifyContent: 'center', alignItems: 'center', borderRadius: 11, backgroundColor: colors.bluePale, borderWidth: 1, borderColor: '#C9DBFA', paddingHorizontal: 10, marginTop: 8 }, relationSourceButtonText: { color: colors.cobalt, fontSize: 8, fontWeight: '800', letterSpacing: 0.55 },
@@ -399,4 +538,14 @@ const styles = StyleSheet.create({
   linkOlderButton: { minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: '#EEE7F1', borderWidth: 1, borderColor: '#DED2E4', marginTop: 10 }, linkOlderButtonText: { color: colors.violet, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 }, linkChooser: { backgroundColor: '#F7F2F8', borderWidth: 1, borderColor: '#E4D9EA', borderRadius: 13, padding: 10, marginTop: 8 }, linkChooserTitle: { color: colors.ink, fontSize: 11, fontWeight: '700' }, linkChooserNote: { color: colors.muted, fontSize: 9, lineHeight: 13, marginTop: 4 }, olderChoice: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 9, marginTop: 7 }, olderChoiceSelected: { backgroundColor: colors.bluePale, borderColor: '#AAC9FF' }, olderChoiceTitle: { color: colors.ink, fontSize: 9, fontWeight: '700' }, olderChoiceMeta: { color: colors.muted, fontSize: 8, marginTop: 3 }, confirmReplacement: { minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: colors.cobalt, paddingHorizontal: 10, marginTop: 8 }, confirmReplacementText: { color: '#FFFFFF', fontSize: 7, fontWeight: '800', letterSpacing: 0.5, textAlign: 'center' }, disabled: { opacity: 0.6 }, replacementError: { color: '#8A3F32', backgroundColor: '#FFF0E8', borderWidth: 1, borderColor: '#F0CCBA', borderRadius: 10, padding: 8, marginTop: 8, fontSize: 9, lineHeight: 13 },
   askAction: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: '#F5F0F8', borderWidth: 1, borderColor: '#E5DCEB', borderRadius: 13, padding: 10, marginTop: 14 }, askOrb: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F4E6E6', alignItems: 'center', justifyContent: 'center' }, askTitle: { color: '#483250', fontSize: 11, fontWeight: '600' }, askSubtitle: { color: '#827A89', fontSize: 8, marginTop: 2 }, askArrow: { color: '#483250', fontSize: 17 },
   emptyCard: { alignItems: 'flex-start', padding: 17, marginBottom: 14 }, emptyIcon: { width: 43, height: 43, borderRadius: 15, backgroundColor: colors.bluePale, alignItems: 'center', justifyContent: 'center', marginBottom: 11 }, emptyGlyph: { color: colors.cobalt, fontSize: 22 }, emptyTitle: { color: colors.ink, fontSize: 16, fontWeight: '600' }, emptyBody: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 7 }, emptySteps: { width: '100%', borderTopWidth: 1, borderTopColor: '#ECE8EF', marginTop: 13, paddingTop: 9, gap: 8 }, step: { color: '#655D6B', fontSize: 9, fontWeight: '500' }, primary: { minHeight: 58, borderRadius: radius.md, backgroundColor: colors.cobalt, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }, primaryTitle: { color: '#FFF', fontSize: 10, fontWeight: '800', letterSpacing: 1 }, primarySub: { color: 'rgba(255,255,255,.78)', fontSize: 9, marginTop: 3 }, primaryArrow: { color: '#FFF', fontSize: 22 }, disclaimer: { color: colors.quiet, fontSize: 8, lineHeight: 13, textAlign: 'center', marginTop: 11 },
+  replyActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 9 },
+  replyActionButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 10, borderWidth: 1, borderColor: '#D8CEDB', backgroundColor: '#FFFFFF' },
+  replyActionText: { color: '#55495D', fontSize: 8, fontWeight: '800', letterSpacing: .45 },
+  replyActionPrimary: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.cobalt },
+  replyActionPrimaryText: { color: '#FFFFFF', fontSize: 8, fontWeight: '800', letterSpacing: .45 },
+  replyActionDelete: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 10, borderWidth: 1, borderColor: '#E7C7BA', backgroundColor: '#FFF5F1' },
+  replyActionDeleteText: { color: '#8C493D', fontSize: 8, fontWeight: '800', letterSpacing: .45 },
+  replyDeleteConfirm: { backgroundColor: '#FFF5F1', borderWidth: 1, borderColor: '#E9CFC4', borderRadius: 11, padding: 10, marginTop: 9 },
+  replyDeleteText: { color: '#72534C', fontSize: 9, lineHeight: 14 },
+  replyEditPrivacy: { color: '#6E6675', fontSize: 8, lineHeight: 12, marginTop: 6 },
 });

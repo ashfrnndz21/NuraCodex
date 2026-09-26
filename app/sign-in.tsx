@@ -17,7 +17,7 @@ export default function SignInScreen() {
   const [busy, setBusy] = useState(false);
   const [stepOpacity] = useState(() => new Animated.Value(1));
   const isCodeStep = challenge !== null;
-  const header = useMemo(() => isCodeStep ? 'Enter your preview code.' : 'Your health, understood.', [isCodeStep]);
+  const header = useMemo(() => isCodeStep ? 'Enter your access code.' : 'Your health, understood.', [isCodeStep]);
 
   useEffect(() => {
     if (ready && session) router.replace('/');
@@ -75,9 +75,9 @@ export default function SignInScreen() {
           </View>
 
           <Animated.View style={[styles.main, { opacity: stepOpacity }]}>
-            <Text style={styles.eyebrow}>{isCodeStep ? 'PREVIEW SIGN-IN' : 'WELCOME TO NURA'}</Text>
+            <Text style={styles.eyebrow}>{isCodeStep ? 'DEMO ACCESS' : 'WELCOME TO NURA'}</Text>
             <Text style={styles.title}>{header}</Text>
-            <Text style={styles.intro}>{isCodeStep ? `A local preview code is ready for ${challenge?.destination}.` : 'Sign in to begin a personal health record that stays connected to the sources you choose.'}</Text>
+            <Text style={styles.intro}>{isCodeStep ? 'Your access code is ready. Enter it below to open the demo.' : 'Sign in to begin a personal health record that stays connected to the sources you choose.'}</Text>
 
             {!isCodeStep ? (
               <>
@@ -104,7 +104,7 @@ export default function SignInScreen() {
                 />
                 <View style={styles.notice}>
                   <Text style={styles.noticeMark}>i</Text>
-                  <Text style={styles.noticeText}>This sample sign-in does not send an email or text and does not verify account ownership. Use the sample details shown here.</Text>
+                  <Text style={styles.noticeText}>Demo access uses the details shown here. No email or text message will be sent.</Text>
                 </View>
                 <Pressable accessibilityRole="button" onPress={sendPreviewCode} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
                   <Text style={styles.primaryText}>CONTINUE</Text><Text style={styles.arrow}>→</Text>
@@ -113,14 +113,14 @@ export default function SignInScreen() {
             ) : (
               <>
                 <View style={styles.previewCodeCard}>
-                  <Text style={styles.previewCodeLabel}>LOCAL PREVIEW CODE · EXPIRES IN 10 MINUTES</Text>
+                  <Text style={styles.previewCodeLabel}>DEMO ACCESS CODE · EXPIRES IN 10 MINUTES</Text>
                   <Text style={styles.previewCode}>{challenge?.code}</Text>
-                  <Text style={styles.previewCodeHelp}>No message was sent. This code is displayed only to let you try the flow.</Text>
+                  <Text style={styles.previewCodeHelp}>For this demo, enter the code shown here.</Text>
                 </View>
                 <Text style={styles.fieldLabel}>SIX-DIGIT CODE</Text>
                 <TextInput accessibilityLabel="Six-digit preview code" value={code} onChangeText={(value) => { setCode(value.replace(/\D/g, '').slice(0, 6)); setError(''); }} placeholder="Enter code" placeholderTextColor="#9B8FA1" style={styles.input} keyboardType="number-pad" maxLength={6} returnKeyType="done" />
                 <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={continueToApp} style={({ pressed }) => [styles.primaryButton, pressed && !busy && styles.pressed, busy && styles.disabled]}>
-                  {busy ? <ActivityIndicator color={colors.plum} /> : <Text style={styles.primaryText}>OPEN MY PREVIEW</Text>}{!busy ? <Text style={styles.arrow}>→</Text> : null}
+                  {busy ? <ActivityIndicator color={colors.plum} /> : <Text style={styles.primaryText}>CONTINUE</Text>}{!busy ? <Text style={styles.arrow}>→</Text> : null}
                 </Pressable>
                 <Pressable accessibilityRole="button" onPress={() => { setChallenge(null); setCode(''); setError(''); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Change email or mobile</Text></Pressable>
               </>

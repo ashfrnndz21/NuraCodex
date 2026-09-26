@@ -269,3 +269,44 @@ test('unconfirmed fact states never enter Ask retrieval', () => {
   assert.deepEqual(result.results.map((item) => item.id), ['fact:confirmed', 'fact:reviewed']);
   assert.equal(evidence.sources().length, 2);
 });
+
+
+test('memory proposals require a positive save request, not a recall or opt-out question', () => {
+  const candidate = { proposed: true, label: 'Synthetic preference', value: 'Riley Sample', reason: 'The user asked to remember it.', sourceReferences: [] };
+  const answerFor = (question, memoryProposal = candidate) => validateAnswer({
+    answer: 'I can help with that.', citations: [], unknowns: [], nextSteps: [], memoryProposal,
+  }, [], { key: 'profile', question }).memoryProposal;
+
+  assert.equal(answerFor('Do you remember which sample medicine I listed?'), null);
+  assert.equal(answerFor('Please do not remember this sample detail.'), null);
+  assert.deepEqual(answerFor('Please remember that my preferred name is Riley Sample.'), {
+    label: 'Synthetic preference', value: 'Riley Sample', reason: 'The user asked to remember it.', sourceKind: 'user_request', sourceReferences: [],
+  });
+  assert.equal(answerFor('Please remember this preference.', { ...candidate, value: '!!!' }), null, 'punctuation-only values are not direct user evidence');
+  assert.deepEqual(answerFor('Add this to my profile: I prefer morning appointments.', { ...candidate, value: 'morning appointments' }), {
+    label: 'Synthetic preference', value: 'morning appointments', reason: 'The user asked to remember it.', sourceKind: 'user_request', sourceReferences: [],
+  });
+});
+
+test('memory proposals need a directly stated value or a citeable personal source', () => {
+  const sources = [
+    { reference: 'R1', id: 'fact:fact-1', kind: 'user_record', category: 'Health', title: 'Synthetic lab value' },
+    { reference: 'R2', id: 'topic:topic-1', kind: 'chosen_topic', category: 'Health area', title: 'Cholesterol' },
+    { reference: 'R3', id: 'web:W1', kind: 'external_source', category: 'Education', title: 'Public article' },
+    { reference: 'R4', id: 'link:link-1', kind: 'user_link', category: 'Relationship', title: 'User link' },
+    { reference: 'R5', id: 'fact:policy-1', kind: 'user_record', category: 'Insurance coverage', title: 'Policy term' },
+  ];
+  const candidate = { proposed: true, label: 'Latest sample result', value: '4.8 mmol/L', reason: 'A saved report states this value.', sourceReferences: ['R1'] };
+  const validate = (proposal) => validateAnswer({
+    answer: 'The report shows a result.', citations: [], unknowns: [], nextSteps: [], memoryProposal: proposal,
+  }, sources, { key: 'profile', question: 'Please remember this value from my report.' });
+
+  const supported = validate(candidate);
+  assert.deepEqual(supported.memoryProposal, {
+    label: 'Latest sample result', value: '4.8 mmol/L', reason: 'A saved report states this value.', sourceKind: 'selected_record', sourceReferences: ['R1'],
+  });
+  assert.deepEqual(supported.citations, ['R1'], 'the supporting source is promoted into answer citations for visible evidence navigation');
+  assert.equal(validate({ ...candidate, sourceReferences: [] }).memoryProposal, null, 'an inferred proposal without evidence is withheld');
+  assert.equal(validate({ ...candidate, sourceReferences: ['R2', 'R3', 'R4', 'R5', 'R99'] }).memoryProposal, null, 'topics, external sources, user links, policy terms and unknown refs cannot support a personal memory write');
+  assert.deepEqual(sources.map((source) => source.reference), ['R1', 'R2', 'R3', 'R4', 'R5'], 'validation does not mutate the evidence registry');
+});

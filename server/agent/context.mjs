@@ -3,6 +3,7 @@ const MAX_ITEMS = 100;
 const MAX_PROFILE_SYNTHESIS_ITEMS = 32;
 const RETRIEVABLE_FACT_STATUSES = new Set(['confirmed', 'reviewed']);
 const LINK_RELATIONS = new Set(['same_source', 'happened_around', 'measured_during', 'treatment_for', 'related_by_me', 'user_note']);
+const MEMORY_EVIDENCE_KINDS = new Set(['user_record', 'treatment_record', 'care_visit', 'document_context']);
 const SOURCE_CONTEXT_KINDS = {
   dates: new Set(['report_date', 'collected_at', 'received_at', 'approved_at', 'issued_at', 'effective_period']),
   entities: new Set(['laboratory', 'provider', 'insurer', 'analyzer', 'technology']),
@@ -10,6 +11,8 @@ const SOURCE_CONTEXT_KINDS = {
 };
 const STOP_WORDS = new Set(['about', 'after', 'again', 'also', 'and', 'are', 'based', 'been', 'before', 'between', 'can', 'could', 'does', 'from', 'have', 'here', 'into', 'just', 'like', 'more', 'most', 'my', 'near', 'need', 'not', 'only', 'other', 'please', 'should', 'some', 'that', 'the', 'their', 'them', 'then', 'there', 'these', 'this', 'those', 'through', 'what', 'when', 'where', 'which', 'with', 'would', 'your']);
 const cleanText = (value, limit = 500) => typeof value === 'string' ? value.trim().slice(0, limit) : '';
+const normalizeEvidenceText = (value) => cleanText(value, 2000).normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const explicitlyRequestsMemory = (question) => /^\s*(?:(?:please|kindly)\s+|(?:can|could|would)\s+you\s+(?:please\s+)?|i want you to\s+|i(?:'d| would) like you to\s+)?(?:remember|save|add|put)\s+(?:that\s+)?(?:i\b|my\b|this\b|that\b|it\b)/i.test(question);
 const isPolicyTermSource = (source) => source?.kind === 'user_record' && /^(insurance coverage|coverage_term|coverage term)$/i.test(cleanText(source.category, 80));
 
 function sanitizeContextEntries(items, allowedKinds, maxItems, maxValueLength) {
@@ -238,7 +241,7 @@ export function validateAnswer(answer, sources, intent) {
     : [];
   const modelCitations = Array.isArray(answer?.citations) ? answer.citations.filter((value) => typeof value === 'string' && allowed.has(value)) : [];
   const coverageCitations = coverageAssessments.flatMap((item) => [item.policyReference, ...item.relatedHealthReferences]);
-  const citations = [...new Set([...modelCitations, ...coverageCitations])].slice(0, 20);
+  let citations = [...new Set([...modelCitations, ...coverageCitations])].slice(0, 20);
   const memory = answer?.memoryProposal;
   if (intent.key === 'symptom_support' && !modelCitations.some((reference) => sourceByReference.get(reference)?.kind === 'external_source')) {
     return {
@@ -249,10 +252,22 @@ export function validateAnswer(answer, sources, intent) {
       memoryProposal: null,
     };
   }
-  const mayProposeMemory = /\b(remember|save that|add this to my profile|put this in my profile)\b/i.test(intent.question);
-  const memoryProposal = mayProposeMemory && memory?.proposed === true && cleanText(memory?.label, 140) && cleanText(memory?.value, 300)
-    ? { label: cleanText(memory.label, 140), value: cleanText(memory.value, 300), reason: cleanText(memory.reason, 220) }
+  const mayProposeMemory = explicitlyRequestsMemory(intent.question);
+  const proposalValue = cleanText(memory?.value, 300);
+  const normalizedProposalValue = normalizeEvidenceText(proposalValue);
+  const proposalValueFromUserRequest = Boolean(normalizedProposalValue && normalizeEvidenceText(intent.question).includes(normalizedProposalValue));
+  const proposalSourceReferences = Array.isArray(memory?.sourceReferences)
+    ? [...new Set(memory.sourceReferences.filter((reference) => typeof reference === 'string' && allowed.has(reference) && MEMORY_EVIDENCE_KINDS.has(sourceByReference.get(reference)?.kind) && !isPolicyTermSource(sourceByReference.get(reference))))].slice(0, 8)
+    : [];
+  const memoryHasEvidence = proposalSourceReferences.length > 0 || proposalValueFromUserRequest;
+  const memoryProposal = mayProposeMemory && memory?.proposed === true && cleanText(memory?.label, 140) && normalizedProposalValue && memoryHasEvidence
+    ? {
+      label: cleanText(memory.label, 140), value: proposalValue, reason: cleanText(memory.reason, 220),
+      sourceKind: proposalSourceReferences.length ? 'selected_record' : 'user_request',
+      sourceReferences: proposalSourceReferences,
+    }
     : null;
+  if (memoryProposal?.sourceReferences.length) citations = [...new Set([...citations, ...memoryProposal.sourceReferences])].slice(0, 20);
   return {
     answer: cleanText(answer?.answer, 4000) || 'I could not form a clear answer from the selected information.',
     citations,

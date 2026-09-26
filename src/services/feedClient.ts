@@ -1,3 +1,5 @@
+import { createHealthFeedSearchPayload } from './feedSearchConsent.mjs';
+
 export type FeedTopic = { id: string; label: string };
 export type FeedResult = { id: string; title: string; detail: string; url: string; publisher: string; topic: string; retrievedAt: string };
 export type FeedBrief = { id: string; topic: string; summary: string; sourceIds: string[] };
@@ -6,8 +8,11 @@ type FeedEvent = { type: 'run_started'; runId: string } | ({ type: 'trace' } & F
 
 const baseUrl = (process.env.EXPO_PUBLIC_NURA_AGENT_URL || 'http://127.0.0.1:4175').replace(/\/$/, '');
 
-export function searchHealthFeed(topics: FeedTopic[], onActivity: (activity: FeedActivity) => void): Promise<{ items: FeedResult[]; briefs: FeedBrief[] }> {
+export function searchHealthFeed(topics: FeedTopic[], onActivity: (activity: FeedActivity) => void, consentConfirmed: boolean): Promise<{ items: FeedResult[]; briefs: FeedBrief[] }> {
   return new Promise((resolve, reject) => {
+    let payload: ReturnType<typeof createHealthFeedSearchPayload>;
+    try { payload = createHealthFeedSearchPayload(topics, consentConfirmed); }
+    catch (error) { reject(error); return; }
     const xhr = new XMLHttpRequest();
     let cursor = 0;
     let buffer = '';
@@ -66,6 +71,6 @@ export function searchHealthFeed(topics: FeedTopic[], onActivity: (activity: Fee
     xhr.onerror = () => fail('Nura could not reach the trusted health search service.');
     xhr.ontimeout = () => fail('The search took too long. Your saved profile was not changed.');
     xhr.onabort = () => fail('This search was stopped.');
-    xhr.send(JSON.stringify({ consentConfirmed: true, topics }));
+    xhr.send(JSON.stringify(payload));
   });
 }

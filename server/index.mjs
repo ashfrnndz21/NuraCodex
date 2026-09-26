@@ -10,6 +10,7 @@ import { addHealthFeedCandidate, uniqueHealthFeedItems } from './agent/feedResul
 import { localDemoRepository } from './adapters/localDemoRepository.mjs';
 import { createCandidateClaim, createDocumentContext, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from './contracts.mjs';
 import { allowedOriginsFromEnv, applyCorsHeaders, isAllowedOrigin } from './cors.mjs';
+import { createRateLimiter } from './rateLimit.mjs';
 
 const host = process.env.NURA_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.NURA_AGENT_PORT || 4175);
@@ -17,7 +18,7 @@ const allowedHosts = new Set(['127.0.0.1', 'localhost', '::1']);
 if (!allowedHosts.has(host)) throw new Error('The development agent server binds to loopback only. Add authenticated deployment infrastructure before exposing it to a network.');
 if (process.env.NODE_ENV === 'production') throw new Error('This development agent server cannot be started in production.');
 const allowedOrigins = allowedOriginsFromEnv(process.env.NURA_ALLOWED_ORIGINS);
-const rate = new Map();
+const rateLimited = createRateLimiter();
 const MAX_BODY_BYTES = 96_000;
 const configuredUploadCap = Number(process.env.NURA_MAX_INTAKE_BYTES || 15 * 1024 * 1024);
 const MAX_INTAKE_BYTES = Number.isSafeInteger(configuredUploadCap) ? Math.min(Math.max(configuredUploadCap, 64 * 1024), 15 * 1024 * 1024) : 15 * 1024 * 1024;
@@ -58,12 +59,6 @@ async function readBinaryBody(request) {
   }
   if (!size) throw new Error('The selected file is empty.');
   return Buffer.concat(chunks, size);
-}
-
-function rateLimited(ip) {
-  const now = Date.now(); const recent = (rate.get(ip) ?? []).filter((stamp) => now - stamp < 60_000);
-  if (recent.length >= 8) return true;
-  recent.push(now); rate.set(ip, recent); return false;
 }
 
 function cleanFilename(raw, contentType) {
@@ -364,13 +359,12 @@ const server = createServer(async (request, response) => {
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/intake/extract') {
-    if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
+    if (rateLimited(request.socket.remoteAddress ?? 'unknown', 20)) { json(response, 429, { error: 'rate_limited', message: 'You’ve reached the short-term limit for file processing. Please wait a moment before trying again.' }); return; }
     await handleExtraction(request, response);
     return;
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/intake/self-report') {
-    if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
     await handleSelfReport(request, response);
     return;
   }
@@ -387,7 +381,6 @@ const server = createServer(async (request, response) => {
   const decisionMatch = request.method === 'POST' && url.pathname.match(/^\/v1\/intake\/claims\/([a-zA-Z0-9-]+)\/decision$/);
   if (decisionMatch) {
     if (!DEMO_INTAKE_ENABLED) { json(response, 404, { error: 'not_found' }); return; }
-    if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
     let body;
     try { body = await readBody(request); } catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
     const existing = await localDemoRepository.getClaim(decisionMatch[1]);
@@ -404,7 +397,6 @@ const server = createServer(async (request, response) => {
   const correctionMatch = request.method === 'POST' && url.pathname.match(/^\/v1\/intake\/claims\/([a-zA-Z0-9-]+)\/correction$/);
   if (correctionMatch) {
     if (!DEMO_INTAKE_ENABLED) { json(response, 404, { error: 'not_found' }); return; }
-    if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
     let body;
     try { body = await readBody(request); } catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
     const existing = await localDemoRepository.getClaim(correctionMatch[1]);
@@ -429,7 +421,6 @@ const server = createServer(async (request, response) => {
   const retractionMatch = request.method === 'POST' && url.pathname.match(/^\/v1\/intake\/claims\/([a-zA-Z0-9-]+)\/retraction$/);
   if (retractionMatch) {
     if (!DEMO_INTAKE_ENABLED) { json(response, 404, { error: 'not_found' }); return; }
-    if (rateLimited(request.socket.remoteAddress ?? 'unknown')) { json(response, 429, { error: 'rate_limited', message: 'Please wait a moment before trying again.' }); return; }
     let body;
     try { body = await readBody(request); } catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
     const existing = await localDemoRepository.getClaim(retractionMatch[1]);

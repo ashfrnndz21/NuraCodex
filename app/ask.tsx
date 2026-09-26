@@ -205,7 +205,7 @@ export default function Ask() {
       await runNuraAgent({ runId, question: cleanQuestion, consentConfirmed: true, history: previous, externalSearchConsent: shareExternalSearch && !coverageQuestion, treatmentContextConsent: shareTreatments, visitContextConsent: shareVisits, sourceContextConsent: sourceContextSelected && linkedDocumentContexts.length > 0, context: { ...selectedContext, treatments: shareTreatments ? scopedContext.treatments : [], visits: shareVisits ? scopedContext.visits : [], documentSources: sourceContextSelected ? linkedDocumentContexts : [] } }, (event: AgentEvent) => {
         if (!mounted.current || controller.signal.aborted) return;
         const gated = runGate.receive(event);
-        if (gated.kind === 'ignored' || gated.kind === 'pending') {
+        if (gated.kind === 'ignored' || gated.kind === 'pending' || gated.kind === 'pending_finish') {
           if (gated.kind === 'pending') dispatchRunEvent('TEXT_MESSAGE_START');
           return;
         }
@@ -214,15 +214,6 @@ export default function Ask() {
           setAnswer(null);
           setSources([]);
           setError(gated.message);
-          return;
-        }
-        if (gated.kind === 'complete') {
-          finalAnswer = gated.answer;
-          const cited = runSources.filter((source) => finalAnswer?.citations.includes(source.reference));
-          setSources(cited);
-          setAnswer(finalAnswer);
-          addAgentMessage({ runId, role: 'assistant', text: finalAnswer.answer, citations: cited, trace: runTrace.map((item) => ({ ...item, status: 'complete' })), coverageAssessments: finalAnswer.coverageAssessments });
-          dispatchRunEvent('RUN_FINISHED');
           return;
         }
         const progressEvent = gated.event;
@@ -236,6 +227,16 @@ export default function Ask() {
           setSources(progressEvent.sources);
         }
       }, controller.signal);
+      const transportResult = runGate.completeTransport();
+      if (transportResult.kind !== 'complete') {
+        throw new Error(transportResult.kind === 'failed' ? transportResult.message : 'Nura could not finish this answer. Please try again.');
+      }
+      finalAnswer = transportResult.answer;
+      const cited = runSources.filter((source) => finalAnswer?.citations.includes(source.reference));
+      setSources(cited);
+      setAnswer(finalAnswer);
+      addAgentMessage({ runId, role: 'assistant', text: finalAnswer.answer, citations: cited, trace: runTrace.map((item) => ({ ...item, status: 'complete' })), coverageAssessments: finalAnswer.coverageAssessments });
+      dispatchRunEvent('RUN_FINISHED');
     } catch (caught) {
       const message = controller.signal.aborted
         ? 'This run was stopped. You can try again when you’re ready.'

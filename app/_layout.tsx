@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { DefaultTheme, Stack, ThemeProvider, usePathname } from 'expo-router';
+import { DefaultTheme, router, Stack, ThemeProvider, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AccessibilityInfo, ActivityIndicator, Animated, Platform, StyleSheet, View } from 'react-native';
-import { NuraProvider } from '../src/state/NuraContext';
+import { NuraProvider, useNura } from '../src/state/NuraContext';
 import { AIStateProvider } from '../src/state/AIStateContext';
 import { PreviewIdentityProvider, usePreviewIdentity } from '../src/state/PreviewIdentityContext';
 import { colors } from '../src/theme';
+import { shouldRedirectToProfileSetup } from '../src/services/profileRouteGate.mjs';
+import type { ReactNode } from 'react';
 
 const NuraNavigationTheme = {
   ...DefaultTheme,
@@ -57,7 +59,20 @@ function SessionNavigator({ reducedMotion }: { reducedMotion: boolean }) {
     <Stack.Protected guard={!session}><Stack.Screen name="sign-in" /></Stack.Protected>
     {appRoutes}
   </Stack>;
-  return session ? <NuraProvider><AIStateProvider>{stack}</AIStateProvider></NuraProvider> : stack;
+  return session ? <NuraProvider><AIStateProvider><ProfileSetupGate>{stack}</ProfileSetupGate></AIStateProvider></NuraProvider> : stack;
+}
+
+function ProfileSetupGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const { ready, name, country, birthday, topics, facts, assets, treatments, visits } = useNura();
+  const redirectToSetup = ready && shouldRedirectToProfileSetup(pathname, { name, country, birthday, topics, facts, assets, treatments, visits });
+
+  useEffect(() => {
+    if (redirectToSetup) router.replace('/');
+  }, [redirectToSetup]);
+
+  if (!ready || redirectToSetup) return <View style={styles.loading}><ActivityIndicator color={colors.violet} /></View>;
+  return <>{children}</>;
 }
 const styles = StyleSheet.create({
   nativeStage: { flex: 1, backgroundColor: colors.bg },

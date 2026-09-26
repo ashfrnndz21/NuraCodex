@@ -3,7 +3,7 @@ const arrayFields = [
   'visitEvents', 'links', 'feedItems', 'savedQuestions', 'agentMessages', 'registryBriefs',
 ];
 const stringFields = ['name', 'birthday', 'country', 'email', 'phone'];
-const optionalArrayFields = ['policyReplacements', 'intakeNotes'];
+const optionalArrayFields = ['policyReplacements', 'policyClarifications', 'intakeNotes'];
 const legacySeededTopics = [
   { id: 'bp-topic', label: 'Blood pressure' },
   { id: 'cholesterol', label: 'Cholesterol' },
@@ -97,7 +97,12 @@ export function readBrowserDemoSnapshot(storage, key, fallback) {
       && arrayFields.every((field) => Array.isArray(parsed[field]))
       && optionalArrayFields.every((field) => parsed[field] === undefined || Array.isArray(parsed[field]));
     if (!valid) return { snapshot: fallback, warning: 'Saved browser demo data could not be read. The sample workspace is open; your saved copy was left untouched.' };
-    const snapshot = { ...fallback, ...parsed, policyReplacements: parsed.policyReplacements ?? fallback.policyReplacements ?? [] };
+    const snapshot = {
+      ...fallback,
+      ...parsed,
+      policyReplacements: parsed.policyReplacements ?? fallback.policyReplacements ?? [],
+      policyClarifications: parsed.policyClarifications ?? fallback.policyClarifications ?? [],
+    };
     return { snapshot: migrateRedundantSeedExamples(migrateUnchangedLegacySeed(snapshot, fallback)), warning: null };
   } catch {
     return { snapshot: fallback, warning: 'Browser storage could not be read. Changes may not survive a refresh.' };

@@ -10,7 +10,8 @@ const answer = {
 test('an answer and its memory proposal remain provisional until run_finished', () => {
   const gate = createAgentRunEventGate();
   assert.deepEqual(gate.receive(answer), { kind: 'pending' });
-  const complete = gate.receive({ type: 'run_finished', runId: 'synthetic-run' });
+  assert.deepEqual(gate.receive({ type: 'run_finished', runId: 'synthetic-run' }), { kind: 'pending_finish' });
+  const complete = gate.completeTransport();
   assert.equal(complete.kind, 'complete');
   assert.equal(complete.answer.answer, answer.answer);
   assert.equal(complete.answer.memoryProposal.value, answer.memoryProposal.value);
@@ -23,17 +24,27 @@ test('run_error clears a streamed answer and prevents a stale memory proposal', 
   assert.deepEqual(gate.receive({ type: 'run_finished', runId: 'synthetic-run' }), { kind: 'ignored' });
 });
 
-test('cancellation discards a provisional answer and ignores late answer events', () => {
+test('cancellation after server finish but before transport close discards the provisional answer', () => {
   const gate = createAgentRunEventGate();
   gate.receive(answer);
+  gate.receive({ type: 'run_finished', runId: 'synthetic-run' });
   assert.equal(gate.cancel().kind, 'failed');
   assert.deepEqual(gate.receive(answer), { kind: 'ignored' });
-  assert.deepEqual(gate.receive({ type: 'run_finished', runId: 'synthetic-run' }), { kind: 'ignored' });
+  assert.deepEqual(gate.completeTransport(), { kind: 'ignored' }, 'a late successful transport cannot restore the canceled proposal');
+});
+
+test('a late run_error after run_finished discards the proposal before transport completion', () => {
+  const gate = createAgentRunEventGate();
+  gate.receive(answer);
+  gate.receive({ type: 'run_finished', runId: 'synthetic-run' });
+  assert.deepEqual(gate.receive({ type: 'run_error', message: 'Synthetic late failure.' }), { kind: 'failed', message: 'Synthetic late failure.' });
+  assert.deepEqual(gate.completeTransport(), { kind: 'ignored' });
 });
 
 test('a finish without an answer is a failure, never an empty completed result', () => {
   const gate = createAgentRunEventGate();
-  assert.deepEqual(gate.receive({ type: 'run_finished', runId: 'synthetic-run' }), {
+  assert.deepEqual(gate.receive({ type: 'run_finished', runId: 'synthetic-run' }), { kind: 'pending_finish' });
+  assert.deepEqual(gate.completeTransport(), {
     kind: 'failed', message: 'Nura could not finish this answer. Please try again.',
   });
 });

@@ -1,11 +1,13 @@
 /** Keeps an answer provisional until the server confirms the run completed. */
 export function createAgentRunEventGate() {
   let terminal = false;
+  let sawFinish = false;
   let pendingAnswer = null;
 
   return {
     receive(event) {
       if (terminal) return { kind: 'ignored' };
+      if (sawFinish && event?.type !== 'run_error') return { kind: 'ignored' };
 
       if (event?.type === 'answer') {
         pendingAnswer = {
@@ -20,11 +22,8 @@ export function createAgentRunEventGate() {
       }
 
       if (event?.type === 'run_finished') {
-        terminal = true;
-        if (!pendingAnswer) return { kind: 'failed', message: 'Nura could not finish this answer. Please try again.' };
-        const answer = pendingAnswer;
-        pendingAnswer = null;
-        return { kind: 'complete', answer };
+        sawFinish = true;
+        return { kind: 'pending_finish' };
       }
 
       if (event?.type === 'run_error') {
@@ -41,6 +40,15 @@ export function createAgentRunEventGate() {
       terminal = true;
       pendingAnswer = null;
       return { kind: 'failed', message };
+    },
+
+    completeTransport() {
+      if (terminal) return { kind: 'ignored' };
+      terminal = true;
+      if (!sawFinish || !pendingAnswer) return { kind: 'failed', message: 'Nura could not finish this answer. Please try again.' };
+      const answer = pendingAnswer;
+      pendingAnswer = null;
+      return { kind: 'complete', answer };
     },
   };
 }

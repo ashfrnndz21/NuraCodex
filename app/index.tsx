@@ -22,6 +22,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Orb } from '../src/components/Orb';
 import { useNura, HealthTopic } from '../src/state/NuraContext';
 import { brandScenes, motion } from '../src/theme';
+import { ageFromDateOfBirth, hasExistingProfileEvidence, validateRequiredProfileDetails } from '../src/services/profileDemographics.mjs';
+import { createProfileMapLayout } from '../src/services/profileMapLayout.mjs';
 
 type Signal = { id: string; label: string };
 type FocusArea = {
@@ -80,20 +82,6 @@ const domains = [
 
 const stepOrder: OnboardingStep[] = ['welcome', 'identity', 'focus'];
 const stepNames = ['WELCOME', 'YOU', 'AREAS'];
-
-function ageFromBirthday(value: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-  const now = new Date();
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day || date > now) return null;
-  let age = now.getFullYear() - year;
-  if (now.getMonth() < month - 1 || (now.getMonth() === month - 1 && now.getDate() < day)) age -= 1;
-  return age >= 0 && age <= 120 ? age : null;
-}
 
 function topicFor(area: FocusArea): HealthTopic {
   return { id: area.id, label: area.label };
@@ -244,28 +232,9 @@ function LiveProfileMap({
 }) {
   const [width, setWidth] = useState(320);
   const visible = areas;
-  const expanded = visible.length > 4;
-  const columnWidth = width / 3;
-  const centerX = width / 2;
-  const centerY = expanded ? 78 : 82;
-  const left = 2;
-  const right = width - 80;
-  const middle = centerX - 39;
-  const compactRows = Math.ceil(visible.length / 3);
-  const graphHeight = expanded ? 92 + compactRows * 78 : 185;
-  const slots = expanded
-    ? visible.map((_, index) => ({ left: (index % 3) * columnWidth, top: 92 + Math.floor(index / 3) * 78 }))
-    : visible.length < 2
-      ? [{ left: middle, top: 0 }]
-      : visible.length === 2
-        ? [{ left, top: 0 }, { left: right, top: 0 }]
-        : visible.length === 3
-          ? [{ left, top: 0 }, { left: right, top: 0 }, { left: middle, top: 127 }]
-          : [{ left, top: 0 }, { left: right, top: 0 }, { left, top: 127 }, { left: right, top: 127 }];
+  const { expanded, graphHeight, centerX, centerY, nodeWidth, nodeDiameter, slots } = createProfileMapLayout(visible.length, width);
   const connectors = visible.map((area, index) => {
     const slot = slots[index];
-    const nodeWidth = expanded ? columnWidth : 78;
-    const nodeDiameter = expanded ? 36 : 42;
     const x2 = slot.left + nodeWidth / 2;
     const y2 = slot.top + nodeDiameter / 2;
     const dx = x2 - centerX;
@@ -302,7 +271,7 @@ function LiveProfileMap({
         {visible.map((area, index) => {
           const count = topics.filter((topic) => topic.id.startsWith(area.id + '::')).length;
           const slot = slots[index];
-          return <MapNode key={area.id} area={area} left={slot.left} top={slot.top} width={expanded ? columnWidth : 78} compact={expanded} count={count} reducedMotion={reducedMotion} onPress={() => onAreaPress(area)} />;
+          return <MapNode key={area.id} area={area} left={slot.left} top={slot.top} width={expanded ? nodeWidth : 78} compact={expanded} count={count} reducedMotion={reducedMotion} onPress={() => onAreaPress(area)} />;
         })}
         <View style={[styles.mapOrbRing, expanded && styles.mapOrbRingExpanded]}><Orb size={expanded ? 34 : 40} state="idle" /></View>
         <Text numberOfLines={1} style={[styles.mapYou, expanded && styles.mapYouExpanded]}>{name.trim() || 'Your profile'}</Text>
@@ -391,8 +360,8 @@ function CountryPicker({
 
 export default function ProfileSetup() {
   const {
-    name, birthday, country, email, phone, updateProfile, topics, toggleTopic,
-    facts, treatments, assets, addFact, correctFact, commitProfileSetup,
+    ready, name, birthday, country, updateProfile, topics, toggleTopic,
+    facts, treatments, assets, visits, addFact, correctFact, commitProfileSetup,
   } = useNura();
   const { width: viewportWidth } = useWindowDimensions();
   const compactHeader = viewportWidth < 420;
@@ -401,25 +370,36 @@ export default function ProfileSetup() {
   const [customArea, setCustomArea] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
-  const [optionalDetailsOpen, setOptionalDetailsOpen] = useState(false);
-  const [optionalDetailsMounted, setOptionalDetailsMounted] = useState(false);
+  const [measurementsOpen, setMeasurementsOpen] = useState(false);
+  const [measurementsMounted, setMeasurementsMounted] = useState(false);
   const [customCountry, setCustomCountry] = useState('');
+  const [customCountryEdited, setCustomCountryEdited] = useState(false);
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [error, setError] = useState('');
   const [moving, setMoving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const sceneScrollRef = useRef<ScrollView | null>(null);
+  const [existingProfileAtLoad, setExistingProfileAtLoad] = useState(false);
+  const initialBirthdayAtLoad = useRef('');
+  const profileLoadChecked = useRef(false);
   const panelOpacity = useMemo(() => new Animated.Value(1), []);
   const panelX = useMemo(() => new Animated.Value(0), []);
   const panelScale = useMemo(() => new Animated.Value(1), []);
-  const optionalDetailsOpacity = useMemo(() => new Animated.Value(0), []);
-  const optionalDetailsY = useMemo(() => new Animated.Value(7), []);
+  const measurementsOpacity = useMemo(() => new Animated.Value(0), []);
+  const measurementsY = useMemo(() => new Animated.Value(7), []);
   const sceneIndex = stepOrder.indexOf(step);
 
   useEffect(() => {
     sceneScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [step]);
+
+  useEffect(() => {
+    if (!ready || profileLoadChecked.current) return;
+    profileLoadChecked.current = true;
+    initialBirthdayAtLoad.current = birthday;
+    setExistingProfileAtLoad(hasExistingProfileEvidence({ name, birthday, country, topics, facts, assets, treatments, visits }));
+  }, [assets.length, birthday, country, facts.length, name, ready, topics.length, treatments.length, visits.length]);
 
   useEffect(() => {
     let active = true;
@@ -429,36 +409,36 @@ export default function ProfileSetup() {
   }, []);
 
   useEffect(() => {
-    if (!optionalDetailsMounted) return;
-    const targetOpacity = optionalDetailsOpen ? 1 : 0;
-    const targetY = optionalDetailsOpen ? 0 : 7;
+    if (!measurementsMounted) return;
+    const targetOpacity = measurementsOpen ? 1 : 0;
+    const targetY = measurementsOpen ? 0 : 7;
     if (reducedMotion) {
-      optionalDetailsOpacity.setValue(targetOpacity);
-      optionalDetailsY.setValue(targetY);
+      measurementsOpacity.setValue(targetOpacity);
+      measurementsY.setValue(targetY);
       return;
     }
-    optionalDetailsOpacity.setValue(optionalDetailsOpen ? 0 : 1);
-    optionalDetailsY.setValue(optionalDetailsOpen ? 7 : 0);
+    measurementsOpacity.setValue(measurementsOpen ? 0 : 1);
+    measurementsY.setValue(measurementsOpen ? 7 : 0);
     const animation = Animated.parallel([
-      Animated.timing(optionalDetailsOpacity, { toValue: targetOpacity, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
-      Animated.timing(optionalDetailsY, { toValue: targetY, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(measurementsOpacity, { toValue: targetOpacity, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
+      Animated.timing(measurementsY, { toValue: targetY, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: true }),
     ]);
-    animation.start(({ finished }) => { if (finished && !optionalDetailsOpen) setOptionalDetailsMounted(false); });
+    animation.start(({ finished }) => { if (finished && !measurementsOpen) setMeasurementsMounted(false); });
     return () => animation.stop();
-  }, [optionalDetailsMounted, optionalDetailsOpen, optionalDetailsOpacity, optionalDetailsY, reducedMotion]);
+  }, [measurementsMounted, measurementsOpen, measurementsOpacity, measurementsY, reducedMotion]);
 
-  function toggleOptionalDetails() {
-    const next = !optionalDetailsOpen;
-    setOptionalDetailsOpen(next);
-    if (next) setOptionalDetailsMounted(true);
-    else if (reducedMotion) setOptionalDetailsMounted(false);
+  function toggleMeasurements() {
+    const next = !measurementsOpen;
+    setMeasurementsOpen(next);
+    if (next) setMeasurementsMounted(true);
+    else if (reducedMotion) setMeasurementsMounted(false);
   }
 
   const selectedAreas = useMemo(() => focusAreas.filter((area) => topics.some((topic) => topic.id === area.id)), [topics]);
   const currentFacts = useMemo(() => facts.filter((fact) => !fact.validUntil), [facts]);
   const activeArea = focusAreas.find((area) => area.id === activeAreaId) ?? null;
   const countryIsCustom = country === 'Other' || (!!country && !countries.includes(country));
-  const age = ageFromBirthday(birthday);
+  const age = ageFromDateOfBirth(birthday);
 
   function transitionTo(next: OnboardingStep) {
     if (moving || next === step) return;
@@ -532,11 +512,24 @@ export default function ProfileSetup() {
   function continueIdentity() {
     Keyboard.dismiss();
     const profileName = name.trim();
-    if (!profileName) {
-      setError('Enter a name or nickname to continue.');
+    const profileCountry = customCountry.trim() || country.trim();
+    const validationCountry = customCountryEdited && countryIsCustom && !customCountry.trim() ? '' : country;
+    const validationError = validateRequiredProfileDetails({
+      name: profileName,
+      country: validationCountry,
+      customCountry,
+      birthday,
+      requireName: !existingProfileAtLoad,
+      requireCountry: !existingProfileAtLoad,
+      validateBirthday: !existingProfileAtLoad || birthday.trim() !== initialBirthdayAtLoad.current.trim(),
+    });
+    if (validationError) {
+      setError(validationError);
       return;
     }
-    if (profileName !== name) updateProfile({ name: profileName });
+    if (profileName !== name || profileCountry !== country.trim() || birthday.trim() !== birthday) {
+      updateProfile({ name: profileName, country: profileCountry, birthday: birthday.trim() });
+    }
     saveMeasurement('Height', height, 'cm');
     saveMeasurement('Weight', weight, 'kg');
     setError('');
@@ -606,43 +599,38 @@ export default function ProfileSetup() {
     if (step === 'identity') {
       return (
         <View>
-          {stepIntro('01  ·  YOUR PROFILE', 'The person behind the profile.', 'Choose the name you want Nura to use. Other details can wait until they are useful.')}
+          {stepIntro('01  ·  YOUR PROFILE', 'The person behind the profile.', 'Choose a display name and country to set up your health profile. Your country sets local context for care and insurance details. Birth date is optional and only used to calculate the age shown here.')}
           <View style={styles.identityCard}>
             <View style={styles.cardHeadingRow}>
               <View style={styles.cardIcon}><Text style={styles.cardIconText}>01</Text></View>
-              <View style={{ flex: 1 }}><Text style={styles.cardOverline}>PROFILE DETAILS</Text><Text style={styles.cardTitle}>What should Nura call this profile?</Text></View>
+              <View style={{ flex: 1 }}><Text style={styles.cardOverline}>PROFILE DETAILS</Text><Text style={styles.cardTitle}>Set up your health profile</Text></View>
             </View>
-            <Text style={styles.fieldLabel}>DISPLAY NAME · REQUIRED</Text>
+            <Text style={styles.fieldLabel}>DISPLAY NAME · {existingProfileAtLoad ? 'OPTIONAL FOR EXISTING PROFILES' : 'REQUIRED'}</Text>
             <TextInput value={name} onChangeText={(value) => { updateProfile({ name: value }); setError(''); }} placeholder="Name or nickname" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Profile display name" autoComplete="name" returnKeyType="done" />
             <Text style={styles.fieldHelper}>A name or nickname is enough; you don’t need to use a legal name.</Text>
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: optionalDetailsOpen }} onPress={toggleOptionalDetails} style={styles.optionalDetailsButton}>
-              <View style={{ flex: 1 }}><Text style={styles.optionalDetailsTitle}>{optionalDetailsOpen ? 'Hide optional details' : 'Add optional details'}</Text><Text style={styles.optionalDetailsHint}>Country, birth date, contact and measurements</Text></View>
-              <Text style={styles.optionalDetailsMark}>{optionalDetailsOpen ? '−' : '+'}</Text>
+            <Text style={styles.fieldLabel}>COUNTRY · REQUIRED FOR NEW PROFILES</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={country ? 'Country: ' + country + '. Change country' : 'Select your country'} onPress={() => setCountryPickerOpen(true)} style={styles.countryButton}>
+              <Text style={[styles.countryButtonText, !country && styles.countryPlaceholder]}>{countryIsCustom ? customCountry || (country === 'Other' ? 'Enter your country' : country) : country || 'Select your country'}</Text><Text style={styles.countryChevron}>⌄</Text>
             </Pressable>
-            {optionalDetailsMounted ? (
-              <Animated.View style={[styles.optionalDetailsPanel, { opacity: optionalDetailsOpacity, transform: [{ translateY: optionalDetailsY }] }]}>
-                <Text style={styles.fieldLabel}>COUNTRY</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel={country ? 'Country: ' + country + '. Change country' : 'Select your country'} onPress={() => setCountryPickerOpen(true)} style={styles.countryButton}>
-                  <Text style={[styles.countryButtonText, !country && styles.countryPlaceholder]}>{countryIsCustom ? customCountry || (country === 'Other' ? 'Enter your country' : country) : country || 'Select your country'}</Text><Text style={styles.countryChevron}>⌄</Text>
-                </Pressable>
-                {countryIsCustom ? <TextInput value={customCountry} onChangeText={(value) => { setCustomCountry(value); updateProfile({ country: value }); }} placeholder="Enter country name" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.customCountryInput]} accessibilityLabel="Enter another country" /> : null}
-                <Text style={styles.fieldLabel}>BIRTH DATE</Text>
-                <TextInput value={birthday} onChangeText={(value) => updateProfile({ birthday: value })} placeholder="YYYY-MM-DD" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Birth date" keyboardType="numbers-and-punctuation" maxLength={10} />
-                {age !== null ? <View style={styles.ageReadout}><View style={[styles.liveSignalDot, { backgroundColor: palette.blue }]} /><Text style={styles.ageReadoutText}>{age} years old · calculated from the date you entered</Text></View> : null}
-                <Text style={styles.fieldLabel}>CONTACT</Text>
-                <View style={styles.contactFields}>
-                  <TextInput value={phone} onChangeText={(value) => updateProfile({ phone: value })} placeholder="Phone number" placeholderTextColor="#8D8792" keyboardType="phone-pad" style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Phone number" autoComplete="tel" />
-                  <TextInput value={email} onChangeText={(value) => updateProfile({ email: value })} placeholder="Email address" placeholderTextColor="#8D8792" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} style={[styles.fieldInput, styles.contactInput]} accessibilityLabel="Email address" autoComplete="email" returnKeyType="done" />
-                </View>
-                <Text style={styles.fieldLabel}>MEASUREMENTS</Text>
+            {countryIsCustom ? <TextInput value={customCountryEdited ? customCountry : country === 'Other' ? '' : country} onChangeText={(value) => { setCustomCountry(value); setCustomCountryEdited(true); setError(''); }} placeholder="Enter country name" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.customCountryInput]} accessibilityLabel="Enter another country" autoComplete="postal-address-country" /> : null}
+            <Text style={styles.fieldLabel}>DATE OF BIRTH · OPTIONAL</Text>
+            <TextInput value={birthday} onChangeText={(value) => { updateProfile({ birthday: value }); setError(''); }} placeholder="YYYY-MM-DD" placeholderTextColor="#8D8792" style={styles.fieldInput} accessibilityLabel="Date of birth" keyboardType="numbers-and-punctuation" maxLength={10} autoComplete="birthdate-full" />
+            <Text style={styles.fieldHelper}>Used only to calculate the age shown below. Leave blank if you prefer not to share it.</Text>
+            {age !== null ? <View style={styles.ageReadout}><View style={[styles.liveSignalDot, { backgroundColor: palette.blue }]} /><Text style={styles.ageReadoutText}>{age} years old · calculated from the date you entered</Text></View> : null}
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: measurementsOpen }} onPress={toggleMeasurements} style={styles.optionalDetailsButton}>
+              <View style={{ flex: 1 }}><Text style={styles.optionalDetailsTitle}>{measurementsOpen ? 'Hide optional measurements' : 'Add optional measurements'}</Text><Text style={styles.optionalDetailsHint}>Height and weight, if useful to you</Text></View>
+              <Text style={styles.optionalDetailsMark}>{measurementsOpen ? '−' : '+'}</Text>
+            </Pressable>
+            {measurementsMounted ? (
+              <Animated.View style={[styles.optionalDetailsPanel, { opacity: measurementsOpacity, transform: [{ translateY: measurementsY }] }]}>
+                <Text style={styles.fieldLabel}>MEASUREMENTS · OPTIONAL</Text>
                 <View style={styles.contactFields}>
                   <View style={styles.measureInputRow}><TextInput value={height} onChangeText={setHeight} placeholder="Height · e.g. 168" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Height in centimetres" keyboardType="decimal-pad" /><Text style={styles.unitLabel}>cm</Text></View>
                   <View style={styles.measureInputRow}><TextInput value={weight} onChangeText={setWeight} placeholder="Weight · e.g. 62" placeholderTextColor="#8D8792" style={[styles.fieldInput, styles.measureInput]} accessibilityLabel="Weight in kilograms" keyboardType="decimal-pad" /><Text style={styles.unitLabel}>kg</Text></View>
                 </View>
-                <Text style={styles.fieldHelper}>Measurements are saved as self-reported details. Every field here is optional.</Text>
+                <Text style={styles.fieldHelper}>Optional. If entered, these appear in your profile as self-reported measurements and may be included when you choose to share profile context.</Text>
               </Animated.View>
             ) : null}
-            <Text style={styles.fieldHelper}>You can edit this display name later. All other profile details are optional.</Text>
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
           <Pressable accessibilityRole="button" onPress={continueIdentity} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
@@ -737,7 +725,9 @@ export default function ProfileSetup() {
           onClose={() => setCountryPickerOpen(false)}
           onSelect={(selectedCountry) => {
             updateProfile({ country: selectedCountry });
-            if (selectedCountry !== 'Other') setCustomCountry('');
+            setCustomCountry('');
+            setCustomCountryEdited(false);
+            setError('');
             setCountryPickerOpen(false);
           }}
         />
