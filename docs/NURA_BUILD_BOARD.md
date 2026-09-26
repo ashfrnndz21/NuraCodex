@@ -637,3 +637,5 @@ The user should review a stable story slice, not act as the team's error detecto
 - **Acceptance:** still **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. M1, M3, M4 and M5 have additional verified slices but remain partial. Provider-backed identity/owner isolation and each story’s complete normal app journey remain open; all P1–P8 gates remain open.
 - **Next slice:** internally run M1 as one synthetic in-app journey from sign-in through required profile setup, a multi-file plus note intake, explicit consent, review decisions, save, and source-linked month/year history. Then continue the highest-priority unfinished acceptance check. A route or service test alone does not make M1 ready for user review.
 - **Connectivity:** continue local work and verification offline. Push, remote provider checks and deployment checks are deferred until connectivity returns; no work is paused.
+
+- **Git checkpoint:** committed and pushed to `origin/main` as `fd4e038`; subsequent local work should continue from that commit.

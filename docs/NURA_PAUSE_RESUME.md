@@ -5,10 +5,10 @@
 ## Current handoff — 26 September 2026
 
 - **Repository:** `/Users/ashleyfernandez/Projects/NuraCodex`, branch `main`.
-- **Last published checkpoint before this slice:** `ebf4ab5` (`Checkpoint Nura recovery and verified slices`). The current UI/profile work and two parallel acceptance fixes are being consolidated; check Git status and the newest commit before resuming.
+- **Most recent published checkpoint:** `fd4e038` (`Build Nura offline continuity and verified interaction slices`), pushed to `origin/main` before connectivity loss. Continue from current `main`; preserve any later local work.
 - **Build acceptance:** **0/11 accepted user stories, 0/8 passed production gates, 0/19 accepted packages (0%)**. This strict count does not convert partial code into completion.
-- **Current slice:** require both name and country before first-run profile routes unlock; give Explore topic-specific live activity, a concise expandable source-backed brief, event-timed motion and a stronger web route transition; animate real document-review activity while honoring reduced motion. Two independent synthetic slices are in progress for durable Ask memory approval (M5) and policy-answer grounding (M3).
-- **Last consolidated verification:** repository tests **214/214**, latest-slice tests **53/53**, TypeScript typecheck passed, lint passed with **0 errors and one existing warning at `app/index.tsx:402`**, and `git diff --check` passed. Rerun after agent patches and before calling this checkpoint complete.
+- **Current slice:** M1 first-profile route gating is tightened; M3 policy findings require evidence-matched categories and exact quotes; M4 activity and concise briefs reflect real events; M5 memory approval awaits durable save and remains retryable. All four are partial story work.
+- **Last consolidated verification:** repository tests **220/220**, latest-slice tests **53/53**, TypeScript typecheck passed, lint passed with **0 errors and one existing warning at `app/index.tsx:402`**, and `git diff --check` passed. These checks correspond to the pushed `fd4e038` checkpoint.
 - **Preview:** the in-app browser remains on the Nura start route at `http://localhost:8094/`; the local agent service is expected at `http://127.0.0.1:4175/healthz`. Check availability before relying on either. The `/services` route loaded in a separate preview with no selected topics. No search provider, model, or file upload was used in that inspection.
 - **Sensitive data:** use synthetic health, profile, policy, and contact information only. Never display or copy `.env` values, and never send a real health record to any provider.
 
@@ -40,7 +40,8 @@ When ready, say: **“Internet is back. Resume Nura from `docs/NURA_PAUSE_RESUME
 
 This section supersedes the earlier in-progress counts above. **The build remains active through an internet outage; there is no planned pause or handoff gap.** Continue implementation, synthetic-only checks and evidence updates locally. Do not wait for internet to resume local work.
 
-- **Repository:** `/Users/ashleyfernandez/Projects/NuraCodex`, branch `main`; base checkpoint `ebf4ab5`. Current implementation and evidence are in the working tree and must be checkpointed locally after consolidation. Never reset or discard them.
+- **Repository:** `/Users/ashleyfernandez/Projects/NuraCodex`, branch `main`; verified implementation checkpoint `fd4e038` is committed and pushed. The worktree was clean at checkpoint. Never reset or discard later work.
+- **Checkpoint:** commit `fd4e038` is available on `origin/main`. If connectivity drops, continue locally and commit the next coherent verified slice on the same branch; push it when the connection returns.
 - **Latest verification:** repo tests **220/220 passed**, latest slices **53/53 passed**, typecheck passed, lint passed with zero errors and one pre-existing warning at `app/index.tsx:402`, and diff check passed. The full suite needed permission for its synthetic loopback-only integration servers; it made no provider calls.
 - **Current acceptance status:** **0/11 user stories, 0/8 production gates, 0/19 overall**. M1/M3/M4/M5 have partial verified work only. No complete in-app user-test milestone is ready.
 - **Next local slice:** one internally verified synthetic M1 app journey: sign-in → required profile setup → multi-file and self-report intake → consent → review/adjust/reject/resolve → save → linked year/month history and re-entry. Continue independent offline-safe work after that. Do not ask the user to diagnose unfinished screens.
