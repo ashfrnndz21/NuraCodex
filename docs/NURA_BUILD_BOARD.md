@@ -679,3 +679,11 @@ The user should review a stable story slice, not act as the team's error detecto
 - Published checkpoint: fa36a6b (Add precise Ask consent and safe note parsing) was pushed to origin/main.
 - Status: 0/11 accepted stories, 0/8 passed production gates, 0/19 accepted packages (0%). No user-test handoff is ready. M1 remains partial: multi-file UI selection, all edit/reject/unresolved paths on a fresh file batch, native/reduced-motion/device checks, verified OTP/recovery and person-level isolation remain open.
 - Next slice: recover a usable native file chooser or establish a supported file-input test path, then run one true multi-file first-profile batch through review and save. Keep other acceptance work moving if that UI limitation persists.
+
+
+### Numeric-date self-report safety follow-up — 26 September 2026, 16:03 +08
+
+- The regression test reproduced `01/15/2025` being parsed as a glucose value. The local-only organizer now masks numeric dates using slash, hyphen, and dot separators before it extracts measurement candidates.
+- Verified: self-report focused tests **10/10**, repository tests **237/237**, latest-slice tests **66/66**, typecheck passed, lint **0 errors / 1 pre-existing warning at `app/index.tsx:403`**. This deterministic local preview organizer did not invoke an AI provider.
+- Full-app acceptance remains **0/11 stories, 0/8 gates, 0/19 packages**. M1 is still the highest-priority open journey; the native file picker was unavailable from the locked desktop session, so an in-app multi-file run has not passed.
+- **Next:** use a supported test environment/file-input path for a multi-file first-run batch and verify one consent, per-file activity, review edits/rejections/unclear items, save, source/date grouping, and re-entry. User test: **none ready**.

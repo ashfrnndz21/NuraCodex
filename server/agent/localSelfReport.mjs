@@ -15,6 +15,7 @@ function withoutCalendarDates(text) {
   const naturalDate = new RegExp('\\b(?:\\d{1,2}(?:st|nd|rd|th)?\\s+' + month + '\\.?\\s*,?\\s+\\d{4}|' + month + '\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?\\s*,?\\s+\\d{4})\\b', 'gi');
   return text
     .replace(/\b\d{4}-\d{2}-\d{2}\b/g, (date) => ' '.repeat(date.length))
+    .replace(/\b\d{1,2}([/. -])\d{1,2}\1\d{2,4}\b/g, (date) => ' '.repeat(date.length))
     .replace(naturalDate, (date) => ' '.repeat(date.length));
 }
 

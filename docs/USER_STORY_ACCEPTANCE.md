@@ -122,3 +122,10 @@ The resumed code slices also add a 360-character expandable first view for long 
 - The native multiple-file picker did not surface in the locked desktop session. The M1 integration test did pass batch consent/retry/cancel and source-decision behavior, but the in-app multi-file path remains unverified.
 - Full verification: repository suite 236/236, latest slices 66/66, typecheck passed, lint 0 errors / 1 pre-existing warning at app/index.tsx:403, and git diff --check passed.
 - This is partial evidence for Stories 1, 2 and 5 only. Overall remains 0/11 stories, 0/8 production gates, 0/19 packages (0%). No user-test milestone is ready.
+
+
+### Numeric-date measurement guard — 26 September 2026, 16:03 +08
+
+- The local-only self-report organizer now masks numeric dates (`MM/DD/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`) before measurement matching. Regression coverage confirms a date is not emitted as a glucose value, while the existing decimal measurement case stays intact.
+- Verification: focused self-report **10/10**, repository **237/237**, latest slices **66/66**, typecheck passed; lint has **0 errors and 1 pre-existing warning at `app/index.tsx:403`**.
+- Story 1 remains partial; this does not complete any story or gate. Counts remain **0/11, 0/8, 0/19 (0%)**. No user-test handoff is ready. The next M1 acceptance work is the unverified in-app multi-file batch and the full review/save/re-entry path.

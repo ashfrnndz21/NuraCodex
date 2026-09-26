@@ -179,3 +179,10 @@ Never describe a plan as completed work, a screen as a completed story, a config
 - Verification: repository 236/236; latest slices 66/66; TypeScript typecheck passed; lint 0 errors / one existing warning at app/index.tsx:403; diff check passed.
 - Completion status remains 0/11 stories, 0/8 production gates, 0/19 packages (0%). The full scope still requires all 11 user journeys and all eight production gates. No user test is ready for handoff.
 - Next: complete a supported in-app multi-file batch review with edit/reject/unclear/save and re-entry, then continue the next open story and production-gate acceptance.
+
+### Numeric-date parsing regression — 26 September 2026, 16:03 +08
+
+- Added numeric calendar-date masking to the local-only self-report organizer. Dates in `MM/DD/YYYY`, `DD-MM-YYYY`, and `DD.MM.YYYY` forms are no longer proposed as measurements (for example, a date fragment such as `01/15` is not saved as a glucose reading).
+- The focused self-report suite passes **10/10**. Full verification passes: repository **237/237**, latest slices **66/66**, typecheck passed, lint **0 errors / 1 existing warning at `app/index.tsx:403`**. No provider call or real health data was involved.
+- This is a focused M1 safety improvement, not a completed story. Acceptance stays **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. M1 still needs a real multi-file first-run app journey, all review decisions/recovery, source-linked re-entry, production identity/isolation, and native/reduced-motion/device checks.
+- Next slice: establish a usable supported multi-file picker test path and run the batch through consent, per-file activity, source-linked review, edits/rejections/unclear status, one save, and history re-entry. No user-test handoff is ready.

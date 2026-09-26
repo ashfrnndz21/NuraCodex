@@ -79,3 +79,11 @@ This section supersedes the earlier in-progress counts above. **The build remain
 - Still open: native multiple-file picker could not be surfaced from this locked desktop IAB session. The multi-file server integration test passed, but M1’s in-app batch, all claim decisions, device/reduced-motion matrix, cold restart and verified account/person isolation are still not accepted. All other story and P1–P8 checks remain open.
 - Acceptance: 0/11 stories, 0/8 production gates, 0/19 packages (0%). No user-test handoff is ready.
 - Next local slice: complete an actual multi-file app batch through one consent, per-file activity, source matching, edit/reject/unclear decisions, one save, and history re-entry. Continue independent story/gate slices if native picker access remains blocked.
+
+## Numeric-date safety checkpoint — 26 September 2026, 16:03 +08
+
+- Resume on `/Users/ashleyfernandez/Projects/NuraCodex`, branch `main`. The code and evidence from the reconnect run are local and ready to checkpoint; first inspect `git status` and preserve the date-parser changes.
+- The local-only self-report organizer masks slash-, hyphen-, and dot-separated numeric dates before extracting measurements. Its regression test reproduced the former false glucose value and now passes.
+- Checks passed: focused self-report **10/10**, repository **237/237**, latest slices **66/66**, typecheck; lint **0 errors / one pre-existing warning at `app/index.tsx:403`**.
+- Strict acceptance: **0/11 user stories, 0/8 production gates, 0/19 accepted packages (0%)**. No user test is ready. M1 remains partial; the native multi-file picker journey was not verified in the locked desktop session.
+- Next: run a supported in-app multi-file first-profile batch through consent, extraction activity, review decisions, single save and source-linked history re-entry. Keep all data fictional; do not expose `.env` values.

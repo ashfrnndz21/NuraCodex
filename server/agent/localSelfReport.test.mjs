@@ -37,11 +37,20 @@ test('a calendar date is not mistaken for a glucose measurement', () => {
   ]);
 });
 
-test('a real numeric result remains extractable when the same sentence includes a natural-language date', () => {
-  const result = organizeSelfReportLocally('My glucose result was 6.3 mmol/L on 15 January 2025.');
-  assert.equal(result.claims.length, 1);
-  assert.equal(result.claims[0].value, '6.3');
-  assert.equal(result.claims[0].unit, 'mmol/L');
+test('numeric calendar dates are not mistaken for glucose measurements', () => {
+  for (const date of ['01/15/2025', '15-01-2025', '15.01.2025']) {
+    const result = organizeSelfReportLocally(`I have checked glucose readings since ${date}.`);
+    assert.deepEqual(result.claims, [], `date ${date} must not become a measurement`);
+  }
+});
+
+test('a real numeric result remains extractable when the same sentence includes a calendar date', () => {
+  for (const date of ['15 January 2025', '01/15/2025', '15-01-2025', '15.01.2025']) {
+    const result = organizeSelfReportLocally(`My glucose result was 6.3 mmol/L on ${date}.`);
+    assert.equal(result.claims.length, 1, `measurement on ${date} must remain extractable`);
+    assert.equal(result.claims[0].value, '6.3');
+    assert.equal(result.claims[0].unit, 'mmol/L');
+  }
 });
 
 test('unclear and unrecognized passages are never promoted into claims', async () => {
