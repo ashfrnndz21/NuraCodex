@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const routeSource = await readFile(new URL('../../app/review.tsx', import.meta.url), 'utf8');
 const intakeClientSource = await readFile(new URL('./intakeClient.ts', import.meta.url), 'utf8');
+const localFixtureSource = await readFile(new URL('./localSampleFixtures.mjs', import.meta.url), 'utf8');
 
 test('saving staged review decisions leaves unresolved suggestions pending', () => {
   assert.match(routeSource, /function isPendingReviewClaim\(claim: CandidateClaim\)\s*\{\s*return claim\.evidenceState === 'needs_review' \|\| claim\.evidenceState === 'candidate';\s*\}/);
@@ -34,7 +35,7 @@ test('review avoids uncalibrated AI confidence percentages and states how to ver
 
 test('review activity shows a completed marker for completed intake milestones', () => {
   assert.match(routeSource, /item\.status === 'progress'/);
-  assert.match(intakeClientSource, /source_received: 'File ready for reading'/);
+  assert.match(intakeClientSource, /source_received: localSample \? 'Sample report verified locally' : 'File ready for reading'/);
 });
 
 test('review keeps source claims grouped and collapsed behind accessible source-detail rows', () => {
@@ -50,4 +51,16 @@ test('file extraction uses one event-backed activity surface with its stop actio
   assert.match(routeSource, /\(extracting \|\| activity\.length > 0\) && <Surface style=\{styles\.activity\}/);
   assert.match(routeSource, /styles\.activityStatusRow/);
   assert.doesNotMatch(routeSource, /Nura is reviewing your files/);
+});
+
+test('bundled sample review is distinguished from provider-backed file consent', () => {
+  assert.match(routeSource, /function isBuiltInLocalSample\(asset: IntakeAsset\)/);
+  assert.match(routeSource, /Local sample · /);
+  assert.match(routeSource, /Connected AI · /);
+  assert.match(routeSource, /If one does not match, it stops without being sent/);
+  assert.match(routeSource, /isLocalSampleFixtureId\(asset\.localSampleFixtureId\)/);
+  assert.match(intakeClientSource, /asset\.localSampleFixtureId/);
+  assert.match(intakeClientSource, /isLocalSampleFixtureId\(asset\.localSampleFixtureId\)/);
+  assert.match(intakeClientSource, /x-nura-local-sample-fixture/);
+  assert.match(localFixtureSource, /fixtureIds = new Set\(\['lipid-panel-jan-2025', 'lipid-panel-apr-2025'\]\)/);
 });

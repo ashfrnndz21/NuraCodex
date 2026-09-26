@@ -3,14 +3,15 @@ import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import { browserAssetId, readBrowserAsset } from '../state/browserAssetStore.mjs';
 import { sourceSha256Matches } from './sourceIdentity.mjs';
+import { isLocalSampleFixtureId } from './localSampleFixtures.mjs';
 
 export type DocumentContextEntry = { kind: string; value: string; page: number | null; quote: string | null };
 export type DocumentContext = { documentType: string | null; dates: DocumentContextEntry[]; entities: DocumentContextEntry[]; notes: DocumentContextEntry[] };
-export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only'; origin?: 'user_entered' | 'document_extraction'; documentContext?: DocumentContext | null };
+export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only'; origin?: 'user_entered' | 'document_extraction'; processingMode?: 'local_sample_fixture' | 'connected_ai_provider' | 'local_rule_based' | null; documentContext?: DocumentContext | null };
 export type CandidateClaim = {
   id: string; sourceId: string; kind: string; label: string; value: string; unit: string | null;
   referenceRange?: string | null; method?: string | null;
-  effectiveAt: string | null; confidence: number | null; sourceLocation: { page: number | null; quote: string | null; timestampSeconds?: number | null; locationConfidence?: 'model_suggested' | 'server_sampled' | 'not_available' };
+  effectiveAt: string | null; confidence: number | null; sourceLocation: { page: number | null; quote: string | null; timestampSeconds?: number | null; locationConfidence?: 'model_suggested' | 'server_sampled' | 'verified_fixture' | 'not_available' };
   evidenceState: 'candidate' | 'needs_review' | 'user_confirmed' | 'rejected' | 'superseded' | 'user_retracted'; acceptedAssertionId: string | null;
   retractedAt?: string | null; retractionReason?: 'not_personal' | null;
   originalExtraction?: { label: string; value: string; unit: string | null; effectiveAt: string | null };
@@ -98,14 +99,18 @@ export class IntakeCancelledError extends Error {
   }
 }
 function activityFromEvent(type: string, data: Record<string, unknown>, sequence: number): IntakeActivity | null {
+  const localSample = data.processingMode === 'local_sample_fixture';
   const labels: Record<string, string> = {
-    intake_started: 'Preparing your file', source_received: 'File ready for reading',
+    intake_started: localSample ? 'Checking the built-in sample' : 'Preparing your file', source_received: localSample ? 'Sample report verified locally' : 'File ready for reading',
     duplicate_detected: 'This file is already in your records', extraction_started: 'Reading your document',
     video_sampling_started: 'Finding clear moments in the video', video_frames_ready: `${typeof data.frameCount === 'number' ? data.frameCount : 'Selected'} moments ready`, video_extraction_started: 'Reading visible details from those moments',
-    extraction_completed: 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} details are ready for your review`,
+    extraction_completed: localSample ? 'Sample details ready to review' : 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} details are ready for your review`,
     intake_completed: 'Your file is ready', intake_cancelled: 'Reading stopped at your request', run_error: 'Nura couldn’t read this file. Check it and try again.',
   };
-  const label = labels[type];
+  const label = localSample && type === 'extraction_started' ? 'Organizing sample details locally'
+    : data.safeCode === 'sample_processing_conflict' ? 'This sample is already saved from another review path'
+    : data.safeCode === 'local_sample_mismatch' ? 'This file did not match the built-in sample'
+    : labels[type];
   if (!label) return null;
   const status = type === 'intake_cancelled' ? 'cancelled'
     : type === 'run_error' ? 'failed'
@@ -139,7 +144,7 @@ export async function analyzeSelfReport(input: { noteId: string; text: string; t
   if (!response.ok || !body.source) throw new Error(body.message || 'Nura could not organize this description.');
   return { source: body.source, claims: body.claims ?? [], duplicate: body.duplicate ?? false };
 }
-export async function extractPickedFile(asset: { uri: string; name: string; mimeType?: string; size?: number }, onActivity?: (activity: IntakeActivity) => void, purpose: 'medical' | 'insurance' = 'medical', signal?: AbortSignal): Promise<IntakeResult> {
+export async function extractPickedFile(asset: { uri: string; name: string; mimeType?: string; size?: number; localSampleFixtureId?: string }, onActivity?: (activity: IntakeActivity) => void, purpose: 'medical' | 'insurance' = 'medical', signal?: AbortSignal): Promise<IntakeResult> {
   const mimeType = resolveIntakeMediaType(asset);
   if (!INTAKE_MEDIA_TYPES.has(mimeType)) throw new Error('Choose a PDF, JPG, PNG, WebP, MP4, MOV or WebM file.');
   if (purpose === 'insurance' && mimeType.startsWith('video/')) throw new Error('Choose a PDF or image for your Insurance Registry.');
@@ -166,7 +171,9 @@ export async function extractPickedFile(asset: { uri: string; name: string; mime
         if (eventName === 'intake_completed' && typeof data.sourceId === 'string') { completedSource = data.sourceId; duplicate = data.state === 'duplicate_exact'; }
         if (eventName === 'run_error') failed = true;
         if (eventName === 'intake_cancelled') cancelled = true;
-        if (eventName === 'run_error') failureMessage = 'Nura couldn’t read this file. Please check it and try again.';
+        if (eventName === 'run_error') failureMessage = ['local_sample_mismatch', 'sample_processing_conflict'].includes(String(data.safeCode)) && typeof data.message === 'string'
+          ? data.message
+          : 'Nura couldn’t read this file. Please check it and try again.';
       } catch { failed = true; }
       eventName = ''; dataLines = [];
     };
@@ -206,6 +213,8 @@ export async function extractPickedFile(asset: { uri: string; name: string; mime
     xhr.setRequestHeader('x-nura-file-name', encodeURIComponent(asset.name));
     xhr.setRequestHeader('x-nura-consent-confirmed', 'true');
     xhr.setRequestHeader('x-nura-document-purpose', purpose);
+    const localSampleFixture = purpose === 'medical' && mimeType === 'application/pdf' && isLocalSampleFixtureId(asset.localSampleFixtureId) ? asset.localSampleFixtureId : undefined;
+    if (localSampleFixture) xhr.setRequestHeader('x-nura-local-sample-fixture', localSampleFixture);
     xhr.setRequestHeader('accept', 'text/event-stream');
     xhr.timeout = 120_000;
     xhr.onprogress = consume;

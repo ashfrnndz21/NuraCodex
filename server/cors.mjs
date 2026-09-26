@@ -22,5 +22,5 @@ export function applyCorsHeaders(origin, response, allowedOrigins) {
     response.setHeader('vary', 'Origin');
   }
   response.setHeader('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  response.setHeader('access-control-allow-headers', 'content-type, accept, x-nura-file-name, x-nura-consent-confirmed, x-nura-document-purpose');
+  response.setHeader('access-control-allow-headers', 'content-type, accept, x-nura-file-name, x-nura-consent-confirmed, x-nura-document-purpose, x-nura-local-sample-fixture');
 }

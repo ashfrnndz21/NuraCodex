@@ -14,8 +14,8 @@ function makeId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 
 const SAMPLE_REPORT_NAME = 'PL0005-sample-lipid-profile.pdf';
 const SAMPLE_FOLLOW_UP_NAME = 'EXAMPLE-lipid-follow-up.pdf';
 const SAMPLE_REPORT_SET = [
-  { name: SAMPLE_REPORT_NAME, module: require('../assets/samples/PL0005-sample-lipid-profile.pdf'), size: 62447 },
-  { name: SAMPLE_FOLLOW_UP_NAME, module: require('../assets/samples/EXAMPLE-lipid-follow-up.pdf'), size: 2859 },
+  { name: SAMPLE_REPORT_NAME, fixtureId: 'lipid-panel-jan-2025', module: require('../assets/samples/PL0005-sample-lipid-profile.pdf'), size: 62447 },
+  { name: SAMPLE_FOLLOW_UP_NAME, fixtureId: 'lipid-panel-apr-2025', module: require('../assets/samples/EXAMPLE-lipid-follow-up.pdf'), size: 2859 },
 ] as const;
 const SAMPLE_PREVIEW_ENABLED = __DEV__ || process.env.EXPO_PUBLIC_SAMPLE_PREVIEW === 'true';
 export default function Intake() {
@@ -24,7 +24,7 @@ export default function Intake() {
   const firstRun = purpose === 'medical' && params.firstRun === 'true';
   const { assets, topics, intakeNotes, addAssets, saveIntakeNote } = useNura();
   const purposeAssets = assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && isReviewableIntakeAsset(asset, purpose));
-  const sampleReportCount = purposeAssets.filter((asset) => SAMPLE_REPORT_SET.some((report) => report.name === asset.name)).length;
+  const sampleReportCount = purposeAssets.filter((asset) => SAMPLE_REPORT_SET.some((report) => report.fixtureId === asset.localSampleFixtureId)).length;
   const sampleReportSetComplete = sampleReportCount === SAMPLE_REPORT_SET.length;
   const [addingSampleSet, setAddingSampleSet] = useState(false);
   const pendingMedicalNote = useMemo(() => intakeNotes[0], [intakeNotes]);
@@ -34,7 +34,7 @@ export default function Intake() {
   const selfReportTopicId = selfReportTopicOverride ?? pendingMedicalNote?.topicId ?? '';
   const [continuing, setContinuing] = useState(false);
   const [intakeError, setIntakeError] = useState('');
-  const accept = (name: string, uri: string, mimeType?: string, size?: number): Omit<IntakeAsset, 'addedAt'> => { const normalizedType = resolveIntakeMediaType({ name, mimeType }); return { id: makeId(), name, uri, mimeType: normalizedType || mimeType, size, purpose, kind: normalizedType === 'application/pdf' ? 'pdf' : normalizedType.startsWith('video/') ? 'video' : normalizedType.startsWith('image/') ? 'image' : 'file' }; };
+  const accept = (name: string, uri: string, mimeType?: string, size?: number, localSampleFixtureId?: IntakeAsset['localSampleFixtureId']): Omit<IntakeAsset, 'addedAt'> => { const normalizedType = resolveIntakeMediaType({ name, mimeType }); return { id: makeId(), name, uri, mimeType: normalizedType || mimeType, size, purpose, ...(localSampleFixtureId ? { localSampleFixtureId } : {}), kind: normalizedType === 'application/pdf' ? 'pdf' : normalizedType.startsWith('video/') ? 'video' : normalizedType.startsWith('image/') ? 'image' : 'file' }; };
   async function chooseFiles() {
     try { const types = purpose === 'insurance' ? ['application/pdf', 'image/*'] : ['application/pdf', 'image/*', 'video/*']; const result = await DocumentPicker.getDocumentAsync({ type: types, multiple: true, copyToCacheDirectory: true }); if (!result.canceled) await addAssets(result.assets.map((asset) => accept(asset.name, asset.uri, asset.mimeType, asset.size))); } catch { Alert.alert('Could not open files', 'Try choosing the file again.'); }
   }
@@ -46,8 +46,8 @@ export default function Intake() {
   }
   async function addSampleReportSet() {
     if (addingSampleSet) return;
-    const alreadyAdded = new Set(purposeAssets.map((asset) => asset.name));
-    const missing = SAMPLE_REPORT_SET.filter((report) => !alreadyAdded.has(report.name));
+    const alreadyAdded = new Set(purposeAssets.map((asset) => asset.localSampleFixtureId).filter(Boolean));
+    const missing = SAMPLE_REPORT_SET.filter((report) => !alreadyAdded.has(report.fixtureId));
     if (!missing.length) return;
     setAddingSampleSet(true);
     try {
@@ -56,7 +56,7 @@ export default function Intake() {
         const asset = loaded[index];
         const uri = Platform.OS === 'web' ? asset?.uri : asset?.localUri ?? asset?.uri;
         if (!uri) throw new Error('A sample report could not be opened.');
-        return accept(report.name, uri, 'application/pdf', report.size);
+        return accept(report.name, uri, 'application/pdf', report.size, report.fixtureId);
       });
       await addAssets(staged);
     } catch (error) {

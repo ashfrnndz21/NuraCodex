@@ -9,6 +9,7 @@ import { DocumentContextCard } from '../src/components/DocumentContextCard';
 import { useNura } from '../src/state/NuraContext';
 import type { IntakeAsset } from '../src/state/NuraContext';
 import { colors, motion, radius } from '../src/theme';
+import { isLocalSampleFixtureId } from '../src/services/localSampleFixtures.mjs';
 import { CandidateClaim, IntakeActivity, LocalSource, analyzeSelfReport, correctCandidate, decideCandidate, describeSourceLocation, extractPickedFile, formatVideoTimestamp, getSourceClaims, resolveIntakeMediaType, retractAcceptedCandidate, sourceMatchesAsset, sourceMatchesText } from '../src/services/intakeClient';
 import { findMisdatedAcceptedClaims, findMissingAcceptedClaims, findMissingRetractions } from '../src/services/sourceClaimReconciliation.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
@@ -26,6 +27,11 @@ type StagedReviewDecision = { decision: 'accept' | 'edit' | 'reject'; editedValu
 
 function isPendingReviewClaim(claim: CandidateClaim) {
   return claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate';
+}
+
+function isBuiltInLocalSample(asset: IntakeAsset) {
+  return (asset.purpose ?? 'medical') === 'medical' && asset.kind === 'pdf'
+    && isLocalSampleFixtureId(asset.localSampleFixtureId);
 }
 
 function IntakeActivityRow({ item, reducedMotion, latest }: { item: IntakeActivity; reducedMotion: boolean; latest: boolean }) {
@@ -101,6 +107,10 @@ export default function Review() {
     : selected?.serverSourceId ?? '';
   const filesNeedingReview = readable.filter((asset) => !asset.serverSourceId);
   const consentFiles = readable.filter((asset) => consentAssetIds.includes(asset.id));
+  const localSampleConsentFiles = consentFiles.filter(isBuiltInLocalSample);
+  const connectedConsentFiles = consentFiles.filter((asset) => !isBuiltInLocalSample(asset));
+  const localSampleOnlyConsent = consentFiles.length > 0 && localSampleConsentFiles.length === consentFiles.length;
+  const mixedProcessingConsent = localSampleConsentFiles.length > 0 && connectedConsentFiles.length > 0;
   const linkedSourceKey = useMemo(() => linkedSourceAssets.map((asset) => `${asset.id}:${asset.serverSourceId ?? ''}`).join('|'), [linkedSourceAssets]);
   const batchSourceReviews = useMemo(() => batchReviewRun.key === linkedSourceKey ? batchReviewRun.reviews : [], [batchReviewRun, linkedSourceKey]);
   const batchFindings = useMemo<IntakeBatchFinding[]>(() => analyzeIntakeBatch(batchSourceReviews.filter((item) => item.status === 'verified' && item.source).map((item) => ({
@@ -257,7 +267,7 @@ export default function Review() {
     setFileStates((current) => ({ ...current, ...Object.fromEntries(batch.map((asset) => [asset.id, { status: 'queued' as const }])) }));
     try {
       const results = await processIntakeBatch(batch, async (asset) => {
-        const result = await extractPickedFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size }, (item) => setActivity((current) => appendIntakeActivity(current, item, asset.id, asset.name)), purpose, controller.signal);
+        const result = await extractPickedFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size, localSampleFixtureId: asset.localSampleFixtureId }, (item) => setActivity((current) => appendIntakeActivity(current, item, asset.id, asset.name)), purpose, controller.signal);
         await attachSourceToAsset(asset.id, result.source.id);
         return { claimsCount: result.claims.length };
       }, { signal: controller.signal, onStatus: (event) => {
@@ -583,7 +593,7 @@ export default function Review() {
     {stagedReviewCount > 0 && <Surface style={styles.batchSave}><Label>{stagedReviewCount} ITEM{stagedReviewCount === 1 ? '' : 'S'} READY TO SAVE</Label><Text style={styles.batchIntro}>Your choices stay in review until you save. Approved details and selected self-reported notes will be added together.{undecidedClaimCount ? ` Leave any of the ${undecidedClaimCount} undecided suggestion${undecidedClaimCount === 1 ? '' : 's'} untouched to keep it pending; it will not be added.` : ''}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Save ${stagedReviewCount} reviewed item${stagedReviewCount === 1 ? '' : 's'}`} accessibilityHint="Saves only the choices you staged. Suggestions left undecided stay pending." accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void saveReviewBatch()} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Saving reviewed items…' : 'Save reviewed items'}</Text><Text style={styles.arrow}>→</Text></Pressable></Surface>}
     {Boolean(sourceToOpen) && !source && !error && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Opening your saved review</Text><Text style={styles.noticeBody}>The suggestions for this file are loading. The original won’t be sent again.</Text></Surface>}
     {(extracting || activity.length > 0) && <Surface style={styles.activity}>
-      {extracting && <View style={styles.activityStatusRow}><ActivityIndicator size="small" color={colors.violet} /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>Reading selected files</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP</Text></Pressable></View>}
+    {extracting && <View style={styles.activityStatusRow}><ActivityIndicator size="small" color={colors.violet} /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>{localSampleOnlyConsent ? 'Organizing built-in reports locally' : 'Reading selected files'}</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP</Text></Pressable></View>}
       <Label>{extracting ? 'LIVE FILE ACTIVITY' : 'FILE REVIEW ACTIVITY'}</Label>
       {activity.map((item, index) => <IntakeActivityRow key={item.id} item={item} reducedMotion={reducedMotion} latest={index === activity.length - 1} />)}
       {activitySummary ? <Text accessibilityLiveRegion="polite" aria-live="polite" style={styles.activitySummary}>{activitySummary}</Text> : null}
@@ -595,7 +605,7 @@ export default function Review() {
       <Label>{source.origin === 'user_entered' ? 'YOUR DESCRIPTION' : 'YOUR SOURCE'} · {claims.length} DETAILS</Label>
       <Text style={styles.sourceName}>{source.displayName}</Text>
       {sourceReviewSummary ? <Text style={styles.sourceSub}>{sourceReviewSummary}</Text> : null}
-      <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Local organization · no AI provider was called' : `Duplicate check complete · ${new Date(source.importedAt).toLocaleDateString()}`}</Text>
+      <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Local organization · no AI provider was called' : source.processingMode === 'local_sample_fixture' ? 'Built-in sample mapping · verified locally · no AI provider was called' : source.processingMode === 'connected_ai_provider' ? `Connected AI service review · ${new Date(source.importedAt).toLocaleDateString()}` : `Saved source review · ${new Date(source.importedAt).toLocaleDateString()}`}</Text>
       <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Your full description stays on this device. The local preview stores source metadata, quoted suggestions, and short quoted passages it could not organize.' : 'The original file remains saved on this device.'}</Text>
       {source.origin === 'user_entered' ? <View style={styles.unknownPassages}>
         {(source.documentContext?.notes ?? []).filter((item) => item.kind === 'unresolved_self_report').length > 0 ? <>
@@ -634,7 +644,7 @@ export default function Review() {
         </View>}
         {claim.id === focusClaimId && <Text style={styles.focusNotice}>OPENED FROM POLICY COMPARISON</Text>}
         {claim.sourceLocation.quote ? <Text style={styles.quote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · page ${claim.sourceLocation.page}` : typeof claim.sourceLocation.timestampSeconds === 'number' ? ` · video ${formatVideoTimestamp(claim.sourceLocation.timestampSeconds)}` : ''}</Text> : <Text style={styles.quote}>No source quote was found. Check the original before saving this detail.</Text>}
-        <Text style={styles.confidence}>{source?.origin === 'user_entered' ? 'Local rule-based suggestion · review against your exact words' : claim.sourceLocation.quote ? 'Automated suggestion · check the value and result date against this source' : 'No exact source wording found · keep this pending or open the original'}</Text>
+        <Text style={styles.confidence}>{source?.origin === 'user_entered' ? 'Local rule-based suggestion · review against your exact words' : source?.processingMode === 'local_sample_fixture' ? 'Fixed sample mapping · exact PDF checked locally; review the result and date before saving' : claim.sourceLocation.quote ? 'Automated suggestion · check the value and result date against this source' : 'No exact source wording found · keep this pending or open the original'}</Text>
         {pending && stagedDecision && <View><Text accessibilityLiveRegion="polite" aria-live="polite" style={styles.stagedHint}>{stagedDecision.decision === 'reject' ? 'Marked to dismiss when you save this review.' : stagedDecision.decision === 'edit' ? 'Your edited details are staged for save. The original quote stays attached.' : 'Marked to add when you save this review. It is not in your registry yet.'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Undo staged choice for ${claim.label}`} accessibilityHint="Removes this choice and leaves the suggestion pending." accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => undoReviewDecision(claim)} style={styles.undoChoice}><Text style={styles.undoChoiceText}>Undo choice · leave pending</Text></Pressable></View>}
         {retracted && <View style={styles.retractedNote}><Text style={styles.retractedText}>{purpose === 'insurance' ? 'Removed from the Insurance Registry. The original policy file, source quote and review history remain available.' : 'Removed from your active profile. The original file, source quote and review history remain available.'}</Text></View>}
         {claim.originalExtraction && <View style={styles.versionHistory}><Text style={styles.historyTitle}>WHAT NURA FIRST READ</Text><Text style={styles.historyCopy}>{claim.originalExtraction.label}: {formatClaimValue(claim.originalExtraction.value, claim.originalExtraction.unit)} · kept with the source quote</Text></View>}
@@ -658,7 +668,7 @@ export default function Review() {
     {firstRun && <Pressable accessibilityRole="button" onPress={() => router.push('/profile-summary')} style={styles.firstRunSummary}><Text style={styles.firstRunSummaryText}>Review a profile summary with Nura · optional</Text></Pressable>}
     <Text style={styles.footer}>Sample preview · Use sample files only. Do not upload personal health records.</Text>
   </ScrollView>
-  {consentOpen && <View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalEyebrow}>ONE APPROVAL · {consentFiles.length} FILE{consentFiles.length === 1 ? '' : 'S'}</Text><Text style={styles.modalTitle}>{purpose === 'insurance' ? 'Review these policy files?' : 'Review these health files?'}</Text><Text style={styles.modalBody}>{consentFiles.map((asset) => `• ${asset.name}`).join('\n')}{consentFiles.some((asset) => asset.kind === 'video') ? '\n\nFor video, Nura selects up to six still images from clips up to three minutes long. Video audio is not analyzed.' : ''}{'\n\nThe connected Nura AI service reads these files one at a time. Its privacy practices apply. Each file keeps its own source and suggestions; nothing is saved to your registry until you choose.'}</Text><Pressable onPress={() => void readSelectedBatch()} style={styles.primary}><Text style={styles.primaryText}>Approve and read {consentFiles.length} {consentFiles.length === 1 ? 'file' : 'files'}</Text><Text style={styles.arrow}>→</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={styles.cancel}><Text style={styles.secondaryText}>Not now</Text></Pressable></View></View>}
+  {consentOpen && <View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalEyebrow}>ONE APPROVAL · {consentFiles.length} FILE{consentFiles.length === 1 ? '' : 'S'}</Text><Text style={styles.modalTitle}>{purpose === 'insurance' ? 'Review these policy files?' : 'Review these health files?'}</Text><Text style={styles.modalBody}>{consentFiles.map((asset) => `${isBuiltInLocalSample(asset) ? '• Local sample · ' : '• Connected AI · '}${asset.name}`).join('\n')}{consentFiles.some((asset) => asset.kind === 'video') ? '\n\nFor video, Nura selects up to six still images from clips up to three minutes long. Video audio is not analyzed.' : ''}{localSampleOnlyConsent ? '\n\nThese bundled samples will be matched to their exact contents and organized on this device. If one does not match, it stops without being sent. No AI provider is called for these samples.' : mixedProcessingConsent ? '\n\nBundled samples will be matched and organized on this device. Other listed files are sent to the connected Nura AI service. If a sample does not match, it stops without being sent. Nothing is saved until you choose.' : '\n\nThe connected Nura AI service reads these files one at a time. Its privacy practices apply. Each file keeps its own source and suggestions; nothing is saved to your registry until you choose.'}</Text><Pressable onPress={() => void readSelectedBatch()} style={styles.primary}><Text style={styles.primaryText}>{localSampleOnlyConsent ? 'Approve local sample review' : mixedProcessingConsent ? 'Approve selected files' : `Approve and read ${consentFiles.length} ${consentFiles.length === 1 ? 'file' : 'files'}`}</Text><Text style={styles.arrow}>→</Text></Pressable><Pressable onPress={() => setConsentOpen(false)} style={styles.cancel}><Text style={styles.secondaryText}>Not now</Text></Pressable></View></View>}
   {selfReportConsentNote && <View style={styles.modalShade}><View style={styles.modal}>
     <Text style={styles.modalEyebrow}>ONE DESCRIPTION · LOCAL PREVIEW</Text>
     <Text style={styles.modalTitle}>Organize your words?</Text>

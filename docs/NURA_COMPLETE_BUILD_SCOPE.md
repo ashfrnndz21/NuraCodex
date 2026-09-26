@@ -4,7 +4,7 @@
 
 **Scope baseline:** 24 September 2026. The existing [mobile storyboard](NURA_MOBILE_STORYBOARDS.md), [agentic foundation](NURA_AGENTIC_FOUNDATION.md), and [story acceptance contract](USER_STORY_ACCEPTANCE.md) remain detailed design/architecture references. This document joins them into one completion and testing plan.
 
-**Latest checkpoint:** 27 September 2026, 04:04 +08. Strict acceptance remains **0/11 user stories, 0/8 production gates, 0/19 packages (0%)**. A verified slice or route does not count as a complete package. M1 now has a repeatable preview-only two-PDF intake set and a visually checked, single approval sheet naming both files; no document processing was approved in this checkpoint. The complete M1 journey remains open.
+**Latest checkpoint:** 27 September 2026, 07:14 +08. Strict acceptance remains **0/11 user stories, 0/8 production gates, 0/19 packages (0%)**. A verified slice or route does not count as a complete package. The exact two-PDF M1 sample batch passes a provider-free service integration using hash-verified fixed mappings, dated source-linked claims, explicit accept/edit/reject decisions, safe mismatch rejection, and duplicate-path checks. Typecheck, lint, repository **273/273**, latest slices **80/80**, review accessibility **7/7**, and `git diff --check` pass. The Mac is locked, so this is not yet a visually verified in-app journey; M1 remains open.
 
 ## What “100% complete” means
 

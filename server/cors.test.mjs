@@ -39,4 +39,5 @@ test('CORS headers echo only an allowed origin', () => {
   applyCorsHeaders('http://localhost:9999', response, allowed);
   assert.equal(headers.has('access-control-allow-origin'), false);
   assert.equal(headers.get('access-control-allow-methods'), 'GET, POST, PUT, DELETE, OPTIONS');
+  assert.match(headers.get('access-control-allow-headers'), /x-nura-local-sample-fixture/);
 });

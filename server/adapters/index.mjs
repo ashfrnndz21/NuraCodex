@@ -1,6 +1,7 @@
 import { createResponse as openAIResponse, extractDocumentClaims as openAIExtract, extractVideoFrameClaims as openAIVideoExtract, getOpenAIStatus, searchHealthSources as openAISearch } from './openaiResponses.mjs';
 import { LanguageModelUnavailableError } from '../ports/LanguageModel.mjs';
 import { sampleVideoFrames } from './videoProcessor.mjs';
+import { extractLocalSampleReport, LocalSampleMismatchError, resolveLocalSampleReport, verifyLocalSampleReport } from './localSampleReports.mjs';
 
 export function getLanguageModel() {
   const provider = process.env.NURA_LLM_PROVIDER || 'openai';
@@ -14,6 +15,10 @@ export function getLanguageModelStatus() {
 }
 
 export function extractDocumentClaims(input) { return openAIExtract(input); }
+export function extractLocalSampleDocument(input) { return resolveLocalSampleReport(input); }
+export function verifyLocalSampleDocument(input) { return verifyLocalSampleReport(input); }
+export function mapLocalSampleDocument(input) { return extractLocalSampleReport(input); }
+export { LocalSampleMismatchError };
 export async function extractVideoClaims({ bytes, mediaType, purpose = 'medical', signal, onFramesReady }) {
   if (purpose !== 'medical') throw new Error('Video review is only available for medical records.');
   const sampled = await sampleVideoFrames({ bytes, mediaType, signal });

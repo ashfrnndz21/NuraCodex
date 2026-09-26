@@ -49,6 +49,16 @@ test('browser demo snapshot round-trips profile, facts, source links and agent h
   assert.deepEqual(loaded.snapshot, snapshot);
 });
 
+test('browser re-entry preserves which bundled sample must use the local-only review path', () => {
+  const storage = memoryStorage();
+  const assets = [
+    { id: 'sample-jan', name: 'PL0005-sample-lipid-profile.pdf', purpose: 'medical', localSampleFixtureId: 'lipid-panel-jan-2025' },
+    { id: 'sample-apr', name: 'EXAMPLE-lipid-follow-up.pdf', purpose: 'medical', localSampleFixtureId: 'lipid-panel-apr-2025' },
+  ];
+  writeBrowserDemoSnapshot(storage, 'nura-demo', { ...fallback, assets });
+  assert.deepEqual(readBrowserDemoSnapshot(storage, 'nura-demo', fallback).snapshot.assets, assets);
+});
+
 test('browser demo snapshot round-trips user-reported insurer clarifications separately from policy facts', () => {
   const storage = memoryStorage();
   const clarification = {

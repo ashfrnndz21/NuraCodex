@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { getLanguageModelStatus, extractDocumentClaims, extractVideoClaims, searchHealthSources } from './adapters/index.mjs';
+import { getLanguageModelStatus, extractDocumentClaims, mapLocalSampleDocument, verifyLocalSampleDocument, LocalSampleMismatchError, extractVideoClaims, searchHealthSources } from './adapters/index.mjs';
 import { runAgent } from './agent/orchestrator.mjs';
 import { sanitizeRunBody } from './agent/context.mjs';
 import { interpretSelfReportRequest } from './agent/selfReport.mjs';
@@ -80,6 +80,17 @@ function statusForEvent(type, data) {
 }
 
 function displayForEvent(type, data) {
+  if (data?.processingMode === 'local_sample_fixture') {
+    const sampleLabels = {
+      intake_started: 'Checking a built-in sample locally',
+      source_received: 'Built-in sample verified locally',
+      extraction_started: 'Organizing sample details locally',
+      extraction_completed: 'Sample details are ready to review',
+      claims_ready_for_review: 'Sample suggestions are ready for your review',
+      intake_completed: 'Local sample review is ready',
+    };
+    if (sampleLabels[type]) return sampleLabels[type];
+  }
   const labels = {
     run_started: 'Nura started this request', run_finished: 'Nura completed this request', run_error: 'Nura could not complete this request', feed_items: 'Trusted health sources are ready',
     intake_started: 'Preparing the selected source', source_received: 'Source received for this local demo', duplicate_detected: 'An exact duplicate was found',
@@ -113,7 +124,7 @@ function openSse(response, runId) {
 
 async function handleExtraction(request, response) {
   if (!DEMO_INTAKE_ENABLED) { json(response, 404, { error: 'not_found' }); return; }
-  if (request.headers['x-nura-consent-confirmed'] !== 'true') { json(response, 400, { error: 'consent_required', message: 'Confirm that this selected file may be sent to the configured AI provider for this one extraction.' }); return; }
+  if (request.headers['x-nura-consent-confirmed'] !== 'true') { json(response, 400, { error: 'consent_required', message: 'Confirm before Nura reads this selected file.' }); return; }
   const contentType = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
   if (!MIME_EXTENSIONS.has(contentType)) { json(response, 415, { error: 'unsupported_media_type', message: 'Choose a PDF, JPEG, PNG, WEBP, MP4, MOV or WEBM file.' }); return; }
   const purposeHeader = String(request.headers['x-nura-document-purpose'] || 'medical');
@@ -122,32 +133,54 @@ async function handleExtraction(request, response) {
   let filename;
   try { filename = cleanFilename(String(request.headers['x-nura-file-name'] || ''), contentType); }
   catch (error) { json(response, 400, { error: 'invalid_file_name', message: error.message }); return; }
-  if (!getLanguageModelStatus().configured) { json(response, 503, { error: 'service_unavailable', message: 'The local extraction service needs a configured server-side OpenAI API key.' }); return; }
+  const fixtureId = String(request.headers['x-nura-local-sample-fixture'] || '');
+  if (!fixtureId && !getLanguageModelStatus().configured) { json(response, 503, { error: 'service_unavailable', message: 'The local extraction service needs a configured server-side AI service for regular uploads.' }); return; }
 
   const runId = randomUUID();
   const abortController = new AbortController();
   response.on('close', () => { if (!response.writableEnded) abortController.abort(); });
   const { emit, flush } = openSse(response, runId);
-  emit('intake_started', { mediaType: contentType });
+  const processingMode = fixtureId ? 'local_sample_fixture' : 'connected_ai_provider';
+  emit('intake_started', { mediaType: contentType, processingMode });
   let sourceId = null;
   try {
     const bytes = await readBinaryBody(request);
     const sha256 = createHash('sha256').update(bytes).digest('hex');
+    let localSample;
+    try {
+      localSample = verifyLocalSampleDocument({ bytes, filename, mediaType: contentType, purpose: purposeHeader, fixtureId });
+    } catch (error) {
+      if (!(error instanceof LocalSampleMismatchError)) throw error;
+      emit('run_error', { sourceId: null, safeCode: 'local_sample_mismatch', processingMode, message: error.message });
+      return;
+    }
     const duplicate = await localDemoRepository.findSourceByHash(DEMO_PROFILE_ID, sha256);
+    if (duplicate && localSample && duplicate.processingMode !== localSample.processingMode) {
+      emit('run_error', {
+        sourceId: duplicate.id,
+        safeCode: 'sample_processing_conflict',
+        processingMode,
+        message: 'An earlier copy of this exact sample is already saved through another review path. This attempt did not send it again or change that review. Open the saved source, or clear the local preview repository before using the local sample path.',
+      });
+      return;
+    }
     if (duplicate && duplicate.state !== 'failed') {
-      emit('duplicate_detected', { sourceId: duplicate.id, duplicateOfSourceId: duplicate.id, sha256, exactMatch: true });
-      emit('intake_completed', { sourceId: duplicate.id, state: 'duplicate_exact', exactMatch: true });
+      const savedProcessingMode = duplicate.processingMode ?? 'unknown';
+      emit('duplicate_detected', { sourceId: duplicate.id, duplicateOfSourceId: duplicate.id, sha256, exactMatch: true, processingMode: savedProcessingMode, requestedProcessingMode: processingMode });
+      emit('intake_completed', { sourceId: duplicate.id, state: 'duplicate_exact', exactMatch: true, processingMode: savedProcessingMode, requestedProcessingMode: processingMode });
       return;
     }
 
-    const source = duplicate ?? createSourceRecord({ displayName: filename, mediaType: contentType, sizeBytes: bytes.length, sha256 });
+    const source = duplicate ?? createSourceRecord({ displayName: filename, mediaType: contentType, sizeBytes: bytes.length, sha256, processingMode: localSample?.processingMode ?? 'connected_ai_provider' });
     sourceId = source.id;
     if (!duplicate) await localDemoRepository.createSource(source);
-    emit('source_received', { sourceId, sha256, sizeBytes: bytes.length, storage: 'device_original_only' });
+    emit('source_received', { sourceId, sha256, sizeBytes: bytes.length, storage: 'device_original_only', processingMode });
     await localDemoRepository.setSourceState(sourceId, 'extracting');
     const isVideo = contentType.startsWith('video/');
-    emit('extraction_started', { sourceId, mediaType: isVideo ? 'video' : 'document', provider: 'openai_responses', realProviderCall: true });
-    let extraction;
+    emit('extraction_started', localSample
+      ? { sourceId, mediaType: 'document', processingMode, processor: 'local_sample_fixture', externalProviderCall: false }
+      : { sourceId, mediaType: isVideo ? 'video' : 'document', processingMode, provider: 'openai_responses', realProviderCall: true });
+    let extraction = localSample ? mapLocalSampleDocument({ fixtureId: localSample.fixtureId }) : undefined;
     if (isVideo) {
       emit('video_sampling_started', { sourceId, limitSeconds: 180, maxMoments: 6 });
       extraction = await extractVideoClaims({
@@ -157,7 +190,7 @@ async function handleExtraction(request, response) {
           emit('video_extraction_started', { sourceId, frameCount: details.frameCount });
         },
       });
-    } else extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: purposeHeader, signal: abortController.signal });
+    } else if (!localSample) extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: purposeHeader, signal: abortController.signal });
     if (abortController.signal.aborted) {
       await localDemoRepository.setSourceState(sourceId, 'failed');
       emit('intake_cancelled', { sourceId, state: 'failed' });
@@ -167,14 +200,14 @@ async function handleExtraction(request, response) {
       sourceId, kind: claim.kind, label: claim.label, value: claim.value, unit: claim.unit,
       referenceRange: claim.referenceRange, method: claim.method,
       effectiveAt: claim.effectiveAt, confidence: claim.confidence,
-      sourceLocation: { page: claim.page, timestampSeconds: claim.timestampSeconds, quote: claim.quote, locationConfidence: claim.timestampSeconds === null || claim.timestampSeconds === undefined ? 'model_suggested' : 'server_sampled' },
+      sourceLocation: { page: claim.page, timestampSeconds: claim.timestampSeconds, quote: claim.quote, locationConfidence: localSample ? 'verified_fixture' : claim.timestampSeconds === null || claim.timestampSeconds === undefined ? 'model_suggested' : 'server_sampled' },
     })).filter(Boolean);
     const documentContext = createDocumentContext(extraction.documentContext);
     await localDemoRepository.saveCandidateClaims(claims);
     await localDemoRepository.setSourceState(sourceId, claims.length ? 'candidate_review' : 'extracted_empty', { documentContext });
-    emit('extraction_completed', { sourceId, candidateCount: claims.length, state: claims.length ? 'candidate_review' : 'extracted_empty' });
-    if (claims.length) emit('claims_ready_for_review', { sourceId, claimIds: claims.map((claim) => claim.id), count: claims.length });
-    emit('intake_completed', { sourceId, state: claims.length ? 'candidate_review' : 'extracted_empty' });
+    emit('extraction_completed', { sourceId, candidateCount: claims.length, state: claims.length ? 'candidate_review' : 'extracted_empty', processingMode });
+    if (claims.length) emit('claims_ready_for_review', { sourceId, claimIds: claims.map((claim) => claim.id), count: claims.length, processingMode });
+    emit('intake_completed', { sourceId, state: claims.length ? 'candidate_review' : 'extracted_empty', processingMode });
   } catch (error) {
     if (sourceId) await localDemoRepository.setSourceState(sourceId, 'failed').catch(() => {});
     const message = abortController.signal.aborted ? 'This extraction was stopped. No claim was added to the profile.' : error instanceof Error ? error.message : 'The selected document could not be processed.';
@@ -336,6 +369,7 @@ const server = createServer(async (request, response) => {
     json(response, 200, { ok: true, service: 'nura-agent-dev', mode: 'local_demo_synthetic_only', provider, capabilities: {
       askProfile: provider.configured,
       documentExtraction: DEMO_INTAKE_ENABLED && provider.configured,
+      localSampleDocuments: DEMO_INTAKE_ENABLED,
       trustedHealthSearch: process.env.NURA_HEALTH_SEARCH_ENABLED === 'true' && process.env.NURA_ENABLE_DEMO_WEB_SEARCH === 'true' && provider.configured,
       persistentDemoRepository: true,
     } });

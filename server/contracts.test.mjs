@@ -23,6 +23,13 @@ test('empty document context remains absent on an unprocessed or legacy source',
   assert.equal(source.documentContext, null);
 });
 
+test('source records retain an explicit processing mode without changing legacy defaults', () => {
+  const sample = createSourceRecord({ displayName: 'sample.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'a'.repeat(64), processingMode: 'local_sample_fixture' });
+  assert.equal(sample.processingMode, 'local_sample_fixture');
+  const ordinary = createSourceRecord({ displayName: 'report.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'b'.repeat(64), processingMode: 'unknown' });
+  assert.equal(ordinary.processingMode, null);
+});
+
 test('video source timestamps are retained as server-sampled locations', () => {
   const claim = createCandidateClaim({
     sourceId: 'source-video', kind: 'measurement', label: 'Heart rate', value: '72', unit: 'bpm',
