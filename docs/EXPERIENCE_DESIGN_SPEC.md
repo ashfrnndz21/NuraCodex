@@ -49,6 +49,19 @@ Use purposeful motion:
 
 Animation is not evidence of intelligence. A loader, state label, count-up, progress line, or orb change must be driven by the underlying persisted state or a real service event. Never play through fake extraction or delayed sample results.
 
+## Health explanations and AI conversation presentation
+
+Use the supplied health and AI interface references as composition guidance, not as a source of clinical claims. The useful pattern is a concise, readable result with supporting evidence close at hand:
+
+- Start with a plain-language heading and a short answer. Break the rest into small, named sections such as **What your record shows**, **What this can mean**, **What is unclear**, and **Sources**. Keep a longer explanation collapsed until the person asks to read it.
+- Give every personal claim its value, unit, date, source and review state. Make a source action easy to find. Distinguish a measured fact from an educational explanation and from an unknown; do not turn a selected topic into a diagnosis.
+- Use small translucent or tinted cards to group related information and follow-up actions. Keep the text on a stable high-contrast surface; translucency is decorative and never reduces readability. Pair status color with words or icons.
+- Show analysis as a short sequence of real work, such as **Checking your permission**, **Reading report 1 of 2**, and **Preparing your review**, only when the service emits those events. Do not invent source counts, show hidden model reasoning, or keep a thinking animation running after the operation ends. Provide clear stopped, failed and waiting states with a next action.
+- Use trends only when multiple dated, comparable measurements support them. Do not predict future values or present an overall health score without a validated method and appropriate review. Write neutral explanations; do not copy the mockups' personal treatment recommendations.
+- Keep the main explanation scannable on a phone. A result card should answer “what did you find?”, “where did it come from?”, and “what should I review?” before asking someone to read a long narrative.
+
+The supplied references support a warm paper/plum visual language, restrained category colors, grouped evidence, compact explanations and visible source context. They do not establish that Nura has processed real lab markers or that any depicted recommendation is clinically valid.
+
 ## Implementation gate
 
 The blueprint's fictional names, diagnoses, measurements, medicines, providers, insurance terms, answers, and recommendations are design examples only and must never become seeded user health data. Some backend-dependent journeys now have local demo services: Ask, consent-gated PDF/image extraction, policy comparison, and public health search. Show their active states only while the corresponding service is actually running, and label the local-demo boundary. The browser preview uses synthetic in-memory state; native persistence uses the on-device encrypted database. Production identity, cloud storage, account-level privacy controls, and clinical governance are not connected, so real health data must not be used in the local demo.

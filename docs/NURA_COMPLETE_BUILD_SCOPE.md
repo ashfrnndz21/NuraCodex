@@ -4,6 +4,8 @@
 
 **Scope baseline:** 24 September 2026. The existing [mobile storyboard](NURA_MOBILE_STORYBOARDS.md), [agentic foundation](NURA_AGENTIC_FOUNDATION.md), and [story acceptance contract](USER_STORY_ACCEPTANCE.md) remain detailed design/architecture references. This document joins them into one completion and testing plan.
 
+**Latest checkpoint:** 27 September 2026, 00:26 +08. Strict acceptance remains **0/11 user stories, 0/8 production gates, 0/19 packages (0%)**. A verified slice or route does not count as a complete package.
+
 ## What “100% complete” means
 
 Nura is **100% build-complete** only when (a) all eleven user stories below pass their full in-app journeys and (b) all eight production-readiness gates in this document pass. Synthetic/demo readiness is an intermediate milestone, not 100%. No story counts as complete solely because its route, screen, or prototype exists.
@@ -18,6 +20,10 @@ Each story must pass all six gates:
 6. **Acceptance evidence:** the exact route and scripted journey pass on the app, with typecheck, lint, relevant repository/integration checks, and a phone-sized visual check recorded here. The user is asked to test only after the slice passes internal checks.
 
 A story moves through **Not started → In progress → Internally verified → Ready for user review → Accepted**. Only **Accepted** counts toward 100%. A fix after user review returns that story to In progress and repeats the same test journey.
+
+### Design and writing guardrails from the supplied references
+
+The references inform presentation only. Nura should use compact, source-linked result cards with a short plain-language summary, distinct evidence/meaning/unknown/source sections, and expandable detail. Translucent category surfaces may group related information, but text must remain high-contrast and status must not rely on color alone. Analysis progress should show only real service events, with clear cancellation/error/wait states and no hidden model reasoning. Trends require multiple dated, comparable measurements; no invented forecasts, scores, diagnoses or personal treatment recommendations may be copied from mockups. See [EXPERIENCE_DESIGN_SPEC.md](EXPERIENCE_DESIGN_SPEC.md) for the full interaction contract.
 
 **Completion math:** report three numbers every time: `accepted stories / 11`, `passed production gates / 8`, and `overall accepted packages / 19`. The overall percentage is `(accepted stories + passed production gates) / 19`; a package counts only after its full acceptance criteria pass. Also report partial work separately so implementation progress is visible without rounding an unfinished story or production capability up to complete. At this audit baseline, **0/11 stories and 0/8 production gates are accepted (0/19 overall)**. This is a strict acceptance baseline, not a claim that no code or partial capability exists.
 
