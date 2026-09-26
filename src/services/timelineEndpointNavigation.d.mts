@@ -2,6 +2,10 @@ export type TimelineEndpointEntry = {
   id: string;
   nodeId: string;
   kind: string;
+  source?: string;
+  sourceId?: string;
+  sourceClaimId?: string;
+  validUntil?: string | null;
 };
 
 export type TimelineEndpointEvent<T extends TimelineEndpointEntry = TimelineEndpointEntry> = T & {

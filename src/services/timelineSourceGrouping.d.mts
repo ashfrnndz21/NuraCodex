@@ -4,6 +4,9 @@ export type TimelineSourceEntry = {
   nodeId?: string;
   kind: 'fact' | 'asset' | string;
   sourceId?: string;
+  sourceClaimId?: string;
+  source?: string;
+  validUntil?: string | null;
   eventDateKey?: string | null;
   category?: string;
   [key: string]: unknown;
@@ -12,4 +15,5 @@ export type GroupedSourceFactEvent<T extends TimelineSourceEntry> = T & { member
 
 export declare function resolveTimelineSourceAsset<T extends TimelineSourceAsset>(sourceId: string | undefined, assets: readonly T[]): T | null;
 export declare function omitAssetsRepresentedByDetails<T extends TimelineSourceEntry>(entries: readonly T[], assets?: readonly TimelineSourceAsset[]): T[];
+export declare function omitSelfReportNotesRepresentedByAcceptedClaims<T extends TimelineSourceEntry>(entries: readonly T[], assets?: readonly TimelineSourceAsset[]): T[];
 export declare function groupSourceFactEvents<T extends TimelineSourceEntry>(entries: readonly T[], assets?: readonly TimelineSourceAsset[]): GroupedSourceFactEvent<T>[];

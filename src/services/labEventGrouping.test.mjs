@@ -93,3 +93,25 @@ test('keeps an analyzed source represented once while leaving standalone files a
   assert.equal(resolveTimelineSourceAsset('source-report', [sourceAsset]), sourceAsset);
   assert.equal(resolveTimelineSourceAsset('report-local', [sourceAsset]), sourceAsset);
 });
+
+test('does not repeat a saved self-report as a separate timeline event when accepted details represent its source', async () => {
+  const { omitSelfReportNotesRepresentedByAcceptedClaims } = await import('./timelineSourceGrouping.mjs');
+  const sourceAsset = { id: 'note-local', serverSourceId: 'note-source', name: 'Self-reported note' };
+  const note = { ...fact('written-note', { sourceId: 'note-source', eventDateKey: '2026-09-27', category: 'Blood pressure' }), source: 'Written by you', title: 'Blood pressure · your note' };
+  const acceptedDetail = { ...fact('bp-reading', { sourceId: 'note-local', eventDateKey: '2026-01-12', category: 'Vital' }), sourceClaimId: 'claim-bp' };
+  const unrelated = { ...fact('other-source', { sourceId: 'another-note' }), source: 'Written by you' };
+  const rejectedOrUnlinked = { ...fact('pending-only', { sourceId: 'pending-note' }), source: 'Written by you' };
+
+  assert.deepEqual(
+    omitSelfReportNotesRepresentedByAcceptedClaims([note, acceptedDetail, unrelated, rejectedOrUnlinked], [sourceAsset]),
+    [acceptedDetail, unrelated, rejectedOrUnlinked],
+  );
+});
+
+test('keeps a self-report timeline entry when its extracted claim is only historical', async () => {
+  const { omitSelfReportNotesRepresentedByAcceptedClaims } = await import('./timelineSourceGrouping.mjs');
+  const note = { ...fact('written-note', { sourceId: 'note-source', eventDateKey: '2026-09-27' }), source: 'Written by you' };
+  const earlier = { ...fact('earlier-claim', { sourceId: 'note-source', eventDateKey: '2026-01-12' }), sourceClaimId: 'claim-bp', validUntil: '2026-02-01T00:00:00.000Z' };
+
+  assert.deepEqual(omitSelfReportNotesRepresentedByAcceptedClaims([note, earlier]), [note, earlier]);
+});

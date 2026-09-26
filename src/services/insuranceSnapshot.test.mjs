@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInsuranceSnapshot, clarificationQuestion, classifyInsuranceTerm, interpretInsuranceTerm } from './insuranceSnapshot.mjs';
+import { buildInsuranceRegistryOverview, buildInsuranceSnapshot, clarificationQuestion, classifyInsuranceTerm, interpretInsuranceTerm } from './insuranceSnapshot.mjs';
 
 const term = (label, value) => ({ label, value });
 
@@ -118,6 +118,28 @@ test('keeps the full requested policy summary fields available for the expandabl
     'cash-value', 'non-guaranteed-value', 'guaranteed-value', 'surrender-value', 'maturity-value',
   ]);
   assert.equal(snapshot.keyDetails.length, terms.length);
+});
+
+test('builds a compact coverage overview without folding exclusions or unclear wording into coverage', () => {
+  const annualLimit = { id: 'annual', label: 'Annual medical limit', value: 'MYR 80,000' };
+  const criticalIllness = { id: 'ci', label: 'Critical illness cover', value: 'MYR 20,000' };
+  const excluded = { id: 'excluded', label: 'Cancer treatment', value: 'Excluded under this policy' };
+  const unclear = { id: 'unclear', label: 'Pre-existing condition', value: 'Subject to insurer confirmation' };
+  const nonCoverage = { id: 'premium', label: 'Current premium', value: 'MYR 300 monthly' };
+  const overview = buildInsuranceRegistryOverview([annualLimit, criticalIllness, excluded, unclear, nonCoverage]);
+
+  assert.deepEqual(overview.coverageDetails.map(({ id }) => id), ['ci', 'annual']);
+  assert.deepEqual(overview.exclusions.map(({ id }) => id), ['excluded']);
+  assert.deepEqual(overview.clarifications.map(({ id }) => id), ['unclear']);
+  assert.ok(overview.missingDetails.some(({ label }) => label === 'Room & board limit'));
+  assert.ok(!overview.coverageDetails.some(({ id }) => ['excluded', 'unclear', 'premium'].includes(id)));
+});
+
+test('deduplicates overlapping life and medical terms in the compact overview', () => {
+  const sharedTerm = { id: 'rider', label: 'Critical illness medical rider', value: 'MYR 20,000' };
+  const overview = buildInsuranceRegistryOverview([sharedTerm]);
+
+  assert.equal(overview.coverageDetails.filter(({ id }) => id === 'rider').length, 1);
 });
 
 test('keeps annual visit caps distinct from annual and lifetime medical limits', () => {

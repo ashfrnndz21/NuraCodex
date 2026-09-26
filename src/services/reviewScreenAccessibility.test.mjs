@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const routeSource = await readFile(new URL('../../app/review.tsx', import.meta.url), 'utf8');
+const intakeClientSource = await readFile(new URL('./intakeClient.ts', import.meta.url), 'utf8');
 
 test('saving staged review decisions leaves unresolved suggestions pending', () => {
   assert.match(routeSource, /function isPendingReviewClaim\(claim: CandidateClaim\)\s*\{\s*return claim\.evidenceState === 'needs_review' \|\| claim\.evidenceState === 'candidate';\s*\}/);
@@ -23,4 +24,30 @@ test('review decisions expose accessible names, states, edited-field labels and 
   assert.match(routeSource, /AccessibilityInfo\.announceForAccessibility\(announcement\)/);
   assert.match(routeSource, /accessibilityLiveRegion="polite" aria-live="polite" style=\{styles\.noticeBody\}/);
   assert.match(routeSource, /accessibilityLiveRegion="assertive" aria-live="assertive" style=\{styles\.noticeBody\}/);
+});
+
+test('review avoids uncalibrated AI confidence percentages and states how to verify a suggestion', () => {
+  assert.doesNotMatch(routeSource, /AI confidence estimate/);
+  assert.match(routeSource, /Automated suggestion · check the value and result date against this source/);
+  assert.match(routeSource, /No exact source wording found · keep this pending or open the original/);
+});
+
+test('review activity shows a completed marker for completed intake milestones', () => {
+  assert.match(routeSource, /item\.status === 'progress'/);
+  assert.match(intakeClientSource, /source_received: 'File ready for reading'/);
+});
+
+test('review keeps source claims grouped and collapsed behind accessible source-detail rows', () => {
+  assert.match(routeSource, /groupReviewClaims\(claims\)/);
+  assert.match(routeSource, /accessibilityState=\{\{ expanded \}\}/);
+  assert.match(routeSource, /accessibilityHint="Opens the source quote, date context and review actions\."/);
+  assert.match(routeSource, /expandedClaimIds\[claim\.id\] \?\? \(claim\.id === focusClaimId\)/);
+  assert.match(routeSource, /current\[claim\.id\] \?\? \(claim\.id === focusClaimId\)/);
+  assert.match(routeSource, /Review details ↓/);
+});
+
+test('file extraction uses one event-backed activity surface with its stop action', () => {
+  assert.match(routeSource, /\(extracting \|\| activity\.length > 0\) && <Surface style=\{styles\.activity\}/);
+  assert.match(routeSource, /styles\.activityStatusRow/);
+  assert.doesNotMatch(routeSource, /Nura is reviewing your files/);
 });

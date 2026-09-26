@@ -35,6 +35,28 @@ export function omitAssetsRepresentedByDetails(entries, assets = []) {
   });
 }
 
+/** Keep a written description available through its accepted source details, without repeating it as a second health event. */
+export function omitSelfReportNotesRepresentedByAcceptedClaims(entries, assets = []) {
+  const sourceAliases = new Map();
+  for (const asset of assets) {
+    const canonical = asset.serverSourceId || asset.id;
+    sourceAliases.set(asset.id, canonical);
+    if (asset.serverSourceId) sourceAliases.set(asset.serverSourceId, canonical);
+  }
+  const canonicalSource = (sourceId) => sourceAliases.get(sourceId) ?? sourceId;
+  const representedSources = new Set(entries
+    .filter((entry) => entry.kind === 'fact' && entry.sourceId && entry.sourceClaimId && !entry.validUntil)
+    .map((entry) => canonicalSource(entry.sourceId)));
+
+  return entries.filter((entry) => {
+    const isStandaloneWrittenNote = entry.kind === 'fact'
+      && entry.source === 'Written by you'
+      && !entry.sourceClaimId
+      && entry.sourceId;
+    return !isStandaloneWrittenNote || !representedSources.has(canonicalSource(entry.sourceId));
+  });
+}
+
 /**
  * Show accepted facts from one source and event date as a single report event.
  * Facts with different dates remain separate, even when they came from the same file.

@@ -16,18 +16,34 @@ export function resolveTimelineEndpointNavigation(targetId, entries, timelineEve
     };
   }
 
-  const entry = entries.find((item) => item.nodeId === targetId);
+  let entry = entries.find((item) => item.nodeId === targetId);
   if (!entry) return null;
 
   const isAsset = entry.kind === 'asset';
+  let resolvedTargetId = targetId;
+  if (!isAsset && entry.kind === 'fact' && entry.source === 'Written by you' && !entry.sourceClaimId && entry.sourceId) {
+    const representedEvent = timelineEvents.find((item) => {
+      const members = item.members ?? [item];
+      return members.some((member) => member.kind === 'fact'
+        && member.sourceId === entry?.sourceId
+        && member.sourceClaimId
+        && !member.validUntil);
+    });
+    const representedFact = representedEvent?.members?.find((member) => member.sourceId === entry?.sourceId && member.sourceClaimId && !member.validUntil)
+      ?? (representedEvent?.sourceId === entry.sourceId ? representedEvent : null);
+    if (representedFact) {
+      entry = representedFact;
+      resolvedTargetId = representedFact.nodeId;
+    }
+  }
   const event = isAsset ? null : timelineEvents.find((item) =>
-    item.nodeId === targetId || item.members?.some((member) => member.nodeId === targetId));
+    item.nodeId === resolvedTargetId || item.members?.some((member) => member.nodeId === resolvedTargetId));
   const targetRenderId = isAsset ? entry.id : event?.id ?? entry.id;
 
   return {
     filter: isAsset ? 'Documents' : 'Everything',
     expandedId: targetRenderId,
-    selectedNodeId: targetId,
+    selectedNodeId: resolvedTargetId,
     targetKind: 'entry',
     targetRenderId,
   };

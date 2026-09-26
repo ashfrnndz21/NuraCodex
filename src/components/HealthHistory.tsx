@@ -8,7 +8,7 @@ import { profileMapSummary } from '../services/profileMapSummary.mjs';
 import type { HealthFact, HealthLink, HealthLinkRelation, HealthTopic, HealthVisit, IntakeAsset, TreatmentRecord } from '../state/NuraContext';
 import { formatVideoTimestamp, getSourceClaims, sourceMatchesAsset, type CandidateClaim, type LocalSource } from '../services/intakeClient';
 import { findMisdatedAcceptedClaims } from '../services/sourceClaimReconciliation.mjs';
-import { groupSourceFactEvents, omitAssetsRepresentedByDetails, resolveTimelineSourceAsset } from '../services/timelineSourceGrouping.mjs';
+import { groupSourceFactEvents, omitAssetsRepresentedByDetails, omitSelfReportNotesRepresentedByAcceptedClaims, resolveTimelineSourceAsset } from '../services/timelineSourceGrouping.mjs';
 import { groupTimelineByYear } from '../services/timelineYearSections.mjs';
 import { resolveTimelineEndpointNavigation, type TimelineEndpointNavigation } from '../services/timelineEndpointNavigation.mjs';
 import { DocumentContextCard } from './DocumentContextCard';
@@ -210,7 +210,10 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
     if (!initialFilter || initialFilter === 'Everything') return [...timelineFilters];
     return ['Everything', initialFilter, ...timelineFilters.filter((item) => item !== 'Everything' && item !== initialFilter)];
   }, [initialFilter]);
-  const timelineEntries = useMemo(() => omitAssetsRepresentedByDetails(entries, assets), [entries, assets]);
+  const timelineEntries = useMemo(
+    () => omitSelfReportNotesRepresentedByAcceptedClaims(omitAssetsRepresentedByDetails(entries, assets), assets),
+    [entries, assets],
+  );
   const timelineEvents = useMemo(() => groupSourceFactEvents(timelineEntries, assets), [timelineEntries, assets]);
   const profileSummaryText = useMemo(() => {
     const selectedAreas = topics.filter((topic) => !topic.id.includes('::')).length;

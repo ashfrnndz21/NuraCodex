@@ -331,16 +331,16 @@ export default function Ask() {
         <Text style={[s.messageLabel, message.role === 'user' && s.userMessageLabel]}>{message.role === 'user' ? 'YOU' : 'NURA'}</Text>
         {message.role === 'assistant' ? <PresentedAnswer text={registryBriefDisplayText(message.text)} textStyle={s.messageText} reducedMotion={reducedMotion} /> : <Text style={[s.messageText, s.userMessageText]}>{message.text}</Text>}
         {message.role === 'assistant' && message.coverageAssessments?.length ? <CoveragePanel assessments={message.coverageAssessments} sources={message.citations} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} /> : null}
+        {message.role === 'assistant' && message.citations.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>EVIDENCE USED</Text>{message.citations.map((citation) => <EvidenceSourceCard key={citation.id} source={citation} target={evidenceTarget(citation)} onPress={() => openEvidenceSource(citation)} />)}</View>}
         {message.role === 'assistant' && message.trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{message.trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
-        {message.role === 'assistant' && message.citations.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES USED</Text>{message.citations.map((citation) => <EvidenceSourceCard key={citation.id} source={citation} target={evidenceTarget(citation)} onPress={() => openEvidenceSource(citation)} />)}</View>}
       </View>)}
       {busy && <View style={s.liveCard}><View style={s.liveHeader}><Orb size={30} /><View style={{ flex: 1 }}><Text style={s.liveTitle}>{aiState === 'responding' ? 'Nura is preparing an answer' : 'Nura is working with your records'}</Text><Text style={s.liveSub}>Live activity · only actions and evidence</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop this Ask Nura run" onPress={stopCurrentRun} style={s.stopRunButton}><Text style={s.stopRunText}>Stop</Text></Pressable></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><View style={[s.traceMark, item.status === 'complete' && s.traceMarkDone]}><Text style={[s.traceMarkText, item.status === 'complete' && s.traceMarkTextDone]}>{item.status === 'complete' ? '✓' : '·'}</Text></View><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail && <Text style={s.traceDetail}>{item.detail}</Text>}</View></View>)}</View>}
       {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><PresentedAnswer text={registryBriefDisplayText(answer.answer)} textStyle={s.answerText} reducedMotion={reducedMotion} />
         {answer.coverageAssessments !== undefined && <CoveragePanel assessments={answer.coverageAssessments} sources={sources} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} />}
-        {!busy && trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
-        {sources.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>SOURCES REVIEWED</Text>{sources.map((source) => <EvidenceSourceCard key={source.id} source={source} target={evidenceTarget(source)} onPress={() => openEvidenceSource(source)} />)}</View>}
+        {answer.citations.length > 0 ? sources.length > 0 ? <View style={s.citationWrap}><Text style={s.traceHeading}>EVIDENCE USED · {sources.length}</Text>{sources.map((source) => <EvidenceSourceCard key={source.id} source={source} target={evidenceTarget(source)} onPress={() => openEvidenceSource(source)} />)}</View> : <View style={s.evidenceNote}><Text style={s.evidenceNoteText}>Nura cited source references, but they are unavailable in this review.</Text></View> : <View style={s.evidenceNote}><Text style={s.evidenceNoteText}>No sources were cited for this answer.</Text></View>}
         {answer.unknowns.length > 0 && <View style={s.unknownBox}><Text style={s.unknownTitle}>{answer.coverageAssessments !== undefined ? 'POLICY DETAIL NOT SHOWN HERE' : 'NOT FOUND IN THIS REVIEW'}</Text>{answer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}{answer.coverageAssessments === undefined && <Text style={s.unknownScope}>This reflects only information selected for this answer. Other saved areas, files or records may not have been included.</Text>}</View>}
         {answer.nextSteps.length > 0 && <View style={s.nextBox}><Text style={s.nextTitle}>{answer.coverageAssessments !== undefined ? 'QUESTIONS TO CONFIRM WITH YOUR INSURER' : 'POSSIBLE NEXT STEP'}</Text>{answer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.nextText}>•  {item}</Text>)}</View>}
+        {!busy && trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
         {registryBriefMode && !busy && <View style={s.registrySave}><Text style={s.registrySaveTitle}>SAVE TO MEDICAL REGISTRY</Text><Text style={s.registrySaveBody}>This saves the answer, its stated unknowns and only the sources it cited. The summary will be marked out of date if linked records change.</Text>{registryBriefSaveError ? <Text style={s.registrySaveError}>{registryBriefSaveError}</Text> : null}<Pressable accessibilityRole="button" disabled={registryBriefSaved || registryBriefSaving || answer.citations.length === 0} onPress={() => void saveRegistrySummary()} style={[s.registrySaveButton, (registryBriefSaved || registryBriefSaving || answer.citations.length === 0) && { opacity: .5 }]}><Text style={s.registrySaveButtonText}>{registryBriefSaved ? 'SAVED TO MEDICAL REGISTRY' : registryBriefSaving ? 'SAVING ON THIS DEVICE…' : 'SAVE CITED SUMMARY'}</Text></Pressable></View>}
         {answer.memoryProposal && <View style={s.proposal}><Text style={s.proposalTitle}>NURA SUGGESTED A PROFILE UPDATE</Text><Text style={s.proposalText}>{answer.memoryProposal.label}: {answer.memoryProposal.value}</Text>{answer.memoryProposal.reason ? <Text style={s.proposalReason}>{answer.memoryProposal.reason}</Text> : null}{answer.memoryProposal.sourceReferences?.length ? <View style={s.proposalSources}><Text style={s.proposalSourceHeading}>SUPPORTING RECORDS</Text>{answer.memoryProposal.sourceReferences.map((reference) => { const source = sources.find((item) => item.reference === reference); if (!source) return <Text key={reference} style={s.proposalSourceUnavailable}>Supporting record {reference} is unavailable in this review.</Text>; const target = evidenceTarget(source); return <Pressable key={reference} accessibilityRole="button" accessibilityState={{ disabled: !target }} disabled={!target} onPress={() => openEvidenceSource(source)} style={[s.proposalSourceLink, !target && s.proposalSourceLinkDisabled]}><Text style={s.proposalSourceRef}>{reference}</Text><View style={{ flex: 1 }}><Text style={s.proposalSourceTitle}>{source.title}</Text><Text style={s.proposalSourceAction}>{target ? 'OPEN SUPPORTING RECORD ↗' : 'SOURCE UNAVAILABLE'}</Text></View></Pressable>; })}</View> : answer.memoryProposal.sourceKind === 'user_request' ? <Text style={s.proposalReason}>Based on your explicit request in this conversation.</Text> : null}{proposalSaveError ? <Text accessibilityRole="alert" style={s.proposalSaveError}>{proposalSaveError}</Text> : null}<Pressable onPress={() => void acceptMemoryProposal()} disabled={proposalSaved || proposalSaving} style={[s.proposalButton, proposalSaved && s.proposalSaved, (proposalSaved || proposalSaving) && { opacity: .8 }]}><Text style={[s.proposalButtonText, proposalSaved && s.proposalSavedText]}>{proposalSaved ? 'ADDED · CONFIRMED BY YOU' : proposalSaving ? 'SAVING TO YOUR PROFILE…' : proposalSaveError ? 'TRY AGAIN' : 'REVIEW AND ADD TO MY PROFILE'}</Text></Pressable></View>}
         <Text style={s.medicalNote}>{answer.coverageAssessments !== undefined ? 'This is an evidence summary, not an insurer decision. Confirm important coverage questions with your insurer.' : 'Nura helps organize your records; this is not a diagnosis or a substitute for care from a clinician.'}</Text>
@@ -369,6 +369,7 @@ function PresentedAnswer({ text, textStyle, reducedMotion }: { text: string; tex
     setExpanded((current) => !current);
   };
   return <View>
+    <Text style={s.answerSummaryLabel}>SHORT ANSWER</Text>
     <Text style={textStyle}>{expanded || !firstView.expandable ? text : `${firstView.text}…`}</Text>
     {firstView.expandable ? <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={expanded ? 'Show less of Nura’s answer' : 'Read the full Nura answer'} onPress={toggle} style={s.answerDisclosure}><Text style={s.answerDisclosureText}>{expanded ? 'SHOW LESS ↑' : 'READ FULL ANSWER ↓'}</Text></Pressable> : null}
   </View>;
@@ -469,7 +470,7 @@ const s = StyleSheet.create({
   citationRef: { color: C.blue, fontSize: 9, fontWeight: '700', width: 22 },
   citationTitle: { color: C.ink, fontSize: 10, fontWeight: '600' },
   citationDetail: { color: C.muted, fontSize: 8, marginTop: 2 },
-  citationEvidence: { color: C.faint, fontSize: 8, lineHeight: 12, marginTop: 4 },
+  citationEvidence: { color: C.faint, fontSize: 10, lineHeight: 15, marginTop: 4 },
   citationOpen: { color: C.blue, fontSize: 7, fontWeight: '700', letterSpacing: .55, marginTop: 4 },
   citationUnavailable: { color: C.faint, fontSize: 7, fontWeight: '600', letterSpacing: .45, marginTop: 4 },
 
@@ -489,13 +490,16 @@ const s = StyleSheet.create({
 
   answerCard: { backgroundColor: C.surface, borderRadius: 20, borderWidth: 1, borderColor: C.line, padding: 15, marginTop: 12 },
   answerLabel: { color: C.plum, fontSize: 8, fontWeight: '700', letterSpacing: 1.25 },
-  answerText: { color: C.ink, fontSize: 13, lineHeight: 20, marginTop: 7 },
-  answerDisclosure: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 8 },
+  answerSummaryLabel: { color: C.faint, fontSize: 8, fontWeight: '700', letterSpacing: 0.8, marginTop: 8 },
+  answerText: { color: C.ink, fontSize: 15, lineHeight: 23, marginTop: 7 },
+  answerDisclosure: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingVertical: 9, paddingRight: 8 },
   answerDisclosureText: { color: C.blue, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
+  evidenceNote: { backgroundColor: C.surface, borderRadius: 11, borderWidth: 1, borderColor: C.line, padding: 10, marginTop: 10 },
+  evidenceNoteText: { color: C.muted, fontSize: 11, lineHeight: 17 },
   unknownBox: { backgroundColor: C.amber, padding: 10, borderRadius: 12, marginTop: 11 },
-  unknownTitle: { color: C.amberInk, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
-  unknownText: { color: C.ink, fontSize: 10, lineHeight: 15, marginTop: 5 },
-  unknownScope: { color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 7 },
+  unknownTitle: { color: C.amberInk, fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
+  unknownText: { color: C.ink, fontSize: 12, lineHeight: 18, marginTop: 6 },
+  unknownScope: { color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 8 },
   nextBox: { backgroundColor: C.bluePale, padding: 10, borderRadius: 12, marginTop: 9 },
   nextTitle: { color: C.blue, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
   nextText: { color: C.ink, fontSize: 10, lineHeight: 15, marginTop: 5 },
@@ -575,9 +579,9 @@ const s = StyleSheet.create({
   coverageItemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 },
   coverageKind: { color: C.ink, fontSize: 8, fontWeight: '700', letterSpacing: 0.5, flex: 1 },
   coveragePill: { overflow: 'hidden', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 3, fontSize: 7, fontWeight: '700' },
-  coverageDetail: { color: C.ink, fontSize: 10, lineHeight: 15, marginTop: 6 },
+  coverageDetail: { color: C.ink, fontSize: 12, lineHeight: 18, marginTop: 6 },
   coverageSourceAction: { alignSelf: 'flex-start' },
-  coverageSource: { color: C.blue, fontSize: 8, marginTop: 6 },
+  coverageSource: { color: C.blue, fontSize: 10, marginTop: 6 },
   coverageRelatedRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   coverageRelatedPrefix: { color: C.muted, fontSize: 8, lineHeight: 13 },
   coverageRelated: { color: C.blue, fontSize: 8, lineHeight: 13 },

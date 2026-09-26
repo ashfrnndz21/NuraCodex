@@ -99,7 +99,7 @@ export class IntakeCancelledError extends Error {
 }
 function activityFromEvent(type: string, data: Record<string, unknown>, sequence: number): IntakeActivity | null {
   const labels: Record<string, string> = {
-    intake_started: 'Preparing your file', source_received: 'File ready for review',
+    intake_started: 'Preparing your file', source_received: 'File ready for reading',
     duplicate_detected: 'This file is already in your records', extraction_started: 'Reading your document',
     video_sampling_started: 'Finding clear moments in the video', video_frames_ready: `${typeof data.frameCount === 'number' ? data.frameCount : 'Selected'} moments ready`, video_extraction_started: 'Reading visible details from those moments',
     extraction_completed: 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} details are ready for your review`,

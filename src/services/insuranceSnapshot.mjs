@@ -137,3 +137,23 @@ export function buildInsuranceSnapshot(terms) {
   });
   return { groups, exclusions, clarifications, notFoundMedicalDetails, keyDetails };
 }
+
+/**
+ * Build the compact registry overview from approved policy entries only.
+ * A term is a stated coverage detail only when it belongs to life/medical
+ * wording and is not classified as excluded or needing clarification.
+ */
+export function buildInsuranceRegistryOverview(terms) {
+  const snapshot = buildInsuranceSnapshot(terms);
+  const coverageDetails = [...new Set(snapshot.groups
+    .filter((group) => group.id === 'life' || group.id === 'medical')
+    .flatMap((group) => group.terms))]
+    .filter((term) => classifyInsuranceTerm(term) === 'stated' && !/exclusion|limitation/i.test(String(term?.label ?? '')));
+
+  return {
+    coverageDetails,
+    exclusions: snapshot.exclusions,
+    clarifications: snapshot.clarifications,
+    missingDetails: snapshot.notFoundMedicalDetails,
+  };
+}

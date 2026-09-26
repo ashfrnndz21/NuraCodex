@@ -13,6 +13,8 @@ import { CandidateClaim, IntakeActivity, LocalSource, analyzeSelfReport, correct
 import { findMisdatedAcceptedClaims, findMissingAcceptedClaims, findMissingRetractions } from '../src/services/sourceClaimReconciliation.mjs';
 import { formatClaimValue } from '../src/services/claimValue.mjs';
 import { processIntakeBatch } from '../src/services/intakeBatch.mjs';
+import { appendIntakeActivity } from '../src/services/intakeActivity.mjs';
+import { groupReviewClaims } from '../src/services/reviewClaimGroups.mjs';
 import { analyzeIntakeBatch } from '../src/services/intakeBatchAnalysis.mjs';
 import type { IntakeBatchFinding } from '../src/services/intakeBatchAnalysis.mjs';
 import { commitReviewBatch } from '../src/services/reviewBatch.mjs';
@@ -36,11 +38,14 @@ function IntakeActivityRow({ item, reducedMotion, latest }: { item: IntakeActivi
       Animated.timing(rise, { toValue: 0, duration: motion.statusIn, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
     ]).start();
   }, [item.id, opacity, reducedMotion, rise]);
-  const symbol = item.status === 'complete' ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '';
-  return <Animated.View accessible accessibilityRole="text" accessibilityLabel={`File review: ${item.label}`} accessibilityState={{ busy: item.status === 'started' }} accessibilityLiveRegion={latest ? 'polite' : 'none'} aria-live={latest ? 'polite' : 'off'} style={[styles.activityRow, { opacity, transform: [{ translateY: rise }] }]}>
-    <Text style={[styles.activityMark, item.status === 'complete' && styles.activityDone, item.status === 'failed' && styles.activityFailed, item.status === 'cancelled' && styles.activityCancelled]}>{symbol || '·'}</Text>
+  const active = latest && item.status === 'started';
+  const resolved = !latest && item.status === 'started';
+  const completed = item.status === 'complete' || item.status === 'progress' || resolved;
+  const symbol = completed ? '✓' : item.status === 'failed' ? '!' : item.status === 'cancelled' ? '×' : '';
+  return <Animated.View accessible accessibilityRole="text" accessibilityLabel={`File review: ${item.label}`} accessibilityState={{ busy: active }} accessibilityLiveRegion={latest ? 'polite' : 'none'} aria-live={latest ? 'polite' : 'off'} style={[styles.activityRow, { opacity, transform: [{ translateY: rise }] }]}>
+    <Text style={[styles.activityMark, completed && styles.activityDone, item.status === 'failed' && styles.activityFailed, item.status === 'cancelled' && styles.activityCancelled]}>{symbol || '·'}</Text>
     <Text style={styles.activityText}>{item.label}</Text>
-    {item.status === 'started' && <ActivityIndicator size="small" color={colors.violet} />}
+    {active && <ActivityIndicator size="small" color={colors.violet} />}
   </Animated.View>;
 }
 
@@ -105,7 +110,16 @@ export default function Review() {
   const stagedNoteIds = Object.keys(notesToInclude).filter((id) => notesToInclude[id] && intakeNotes.some((note) => note.id === id));
   const stagedReviewCount = Object.keys(reviewDecisions).length + stagedNoteIds.length;
   const allReviewClaims = useMemo(() => [...new Map([...claims, ...batchSourceReviews.flatMap((item) => item.claims)].map((claim) => [claim.id, claim])).values()], [batchSourceReviews, claims]);
+  const reviewGroups = useMemo(() => groupReviewClaims(claims), [claims]);
   const undecidedClaimCount = allReviewClaims.filter((claim) => isPendingReviewClaim(claim) && !reviewDecisions[claim.id]).length;
+  const [expandedClaimIds, setExpandedClaimIds] = useState<Record<string, boolean>>({});
+  const activitySummary = !extracting && activity.length > 0 && (notice.includes(' processed') || notice.startsWith('Reading stopped at your request')) ? notice : '';
+  const sourceReviewSummary = [
+    claims.filter((claim) => isPendingReviewClaim(claim) && !reviewDecisions[claim.id]).length ? `${claims.filter((claim) => isPendingReviewClaim(claim) && !reviewDecisions[claim.id]).length} need review` : '',
+    Object.keys(reviewDecisions).filter((id) => claims.some((claim) => claim.id === id)).length ? `${Object.keys(reviewDecisions).filter((id) => claims.some((claim) => claim.id === id)).length} staged to save` : '',
+    claims.filter((claim) => claim.evidenceState === 'user_confirmed').length ? `${claims.filter((claim) => claim.evidenceState === 'user_confirmed').length} in your record` : '',
+    claims.filter((claim) => claim.evidenceState === 'rejected' || claim.evidenceState === 'user_retracted').length ? `${claims.filter((claim) => claim.evidenceState === 'rejected' || claim.evidenceState === 'user_retracted').length} dismissed or removed` : '',
+  ].filter(Boolean).join(' · ');
 
   useEffect(() => () => extractionAbort.current?.abort(), []);
 
@@ -243,7 +257,7 @@ export default function Review() {
     setFileStates((current) => ({ ...current, ...Object.fromEntries(batch.map((asset) => [asset.id, { status: 'queued' as const }])) }));
     try {
       const results = await processIntakeBatch(batch, async (asset) => {
-        const result = await extractPickedFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size }, (item) => setActivity((current) => [...current, { ...item, id: `${asset.id}:${item.id}`, label: `${asset.name} · ${item.label}` }]), purpose, controller.signal);
+        const result = await extractPickedFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size }, (item) => setActivity((current) => appendIntakeActivity(current, item, asset.id, asset.name)), purpose, controller.signal);
         await attachSourceToAsset(asset.id, result.source.id);
         return { claimsCount: result.claims.length };
       }, { signal: controller.signal, onStatus: (event) => {
@@ -568,17 +582,20 @@ export default function Review() {
     </View>}
     {stagedReviewCount > 0 && <Surface style={styles.batchSave}><Label>{stagedReviewCount} ITEM{stagedReviewCount === 1 ? '' : 'S'} READY TO SAVE</Label><Text style={styles.batchIntro}>Your choices stay in review until you save. Approved details and selected self-reported notes will be added together.{undecidedClaimCount ? ` Leave any of the ${undecidedClaimCount} undecided suggestion${undecidedClaimCount === 1 ? '' : 's'} untouched to keep it pending; it will not be added.` : ''}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Save ${stagedReviewCount} reviewed item${stagedReviewCount === 1 ? '' : 's'}`} accessibilityHint="Saves only the choices you staged. Suggestions left undecided stay pending." accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void saveReviewBatch()} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Saving reviewed items…' : 'Save reviewed items'}</Text><Text style={styles.arrow}>→</Text></Pressable></Surface>}
     {Boolean(sourceToOpen) && !source && !error && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Opening your saved review</Text><Text style={styles.noticeBody}>The suggestions for this file are loading. The original won’t be sent again.</Text></Surface>}
-    {extracting && <Surface style={styles.notice}><Text style={styles.noticeTitle}>Nura is reviewing your files</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP READING</Text></Pressable></Surface>}
-    {activity.length > 0 && <Surface style={styles.activity}><Label>FILE REVIEW ACTIVITY</Label>{activity.map((item, index) => <IntakeActivityRow key={item.id} item={item} reducedMotion={reducedMotion} latest={index === activity.length - 1} />)}</Surface>}
-    {notice ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>Review update</Text><Text accessibilityLiveRegion="polite" aria-live="polite" style={styles.noticeBody}>{notice}</Text></Surface> : null}
+    {(extracting || activity.length > 0) && <Surface style={styles.activity}>
+      {extracting && <View style={styles.activityStatusRow}><ActivityIndicator size="small" color={colors.violet} /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>Reading selected files</Text><Text style={styles.noticeBody}>Files are processed one at a time. Completed sources stay saved if you stop or if another file needs attention.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop file review" onPress={() => extractionAbort.current?.abort()} style={({ pressed }) => [styles.stop, pressed && styles.stopPressed]}><Text style={styles.stopText}>STOP</Text></Pressable></View>}
+      <Label>{extracting ? 'LIVE FILE ACTIVITY' : 'FILE REVIEW ACTIVITY'}</Label>
+      {activity.map((item, index) => <IntakeActivityRow key={item.id} item={item} reducedMotion={reducedMotion} latest={index === activity.length - 1} />)}
+      {activitySummary ? <Text accessibilityLiveRegion="polite" aria-live="polite" style={styles.activitySummary}>{activitySummary}</Text> : null}
+    </Surface>}
+    {notice && !activitySummary ? <Surface style={styles.notice}><Text style={styles.noticeTitle}>Review update</Text><Text accessibilityLiveRegion="polite" aria-live="polite" style={styles.noticeBody}>{notice}</Text></Surface> : null}
     {error ? <Surface style={styles.error}><Text style={styles.noticeTitle}>Could not complete this step</Text><Text accessibilityLiveRegion="assertive" aria-live="assertive" style={styles.noticeBody}>{error}</Text></Surface> : null}
     {Boolean(existingSourceId && ready && !selected) && <Surface style={styles.error}><Text style={styles.noticeTitle}>Original file unavailable</Text><Text style={styles.noticeBody}>Nura couldn’t match this extraction to its saved original. The extracted details stay hidden until the original file is available.</Text></Surface>}
     {source && <Surface style={styles.sourceCard}>
-      <Label>{source.origin === 'user_entered' ? 'YOUR DESCRIPTION' : 'YOUR SOURCE'}</Label>
+      <Label>{source.origin === 'user_entered' ? 'YOUR DESCRIPTION' : 'YOUR SOURCE'} · {claims.length} DETAILS</Label>
       <Text style={styles.sourceName}>{source.displayName}</Text>
+      {sourceReviewSummary ? <Text style={styles.sourceSub}>{sourceReviewSummary}</Text> : null}
       <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Local organization · no AI provider was called' : `Duplicate check complete · ${new Date(source.importedAt).toLocaleDateString()}`}</Text>
-      {claims.some((claim) => claim.evidenceState === 'user_confirmed') && <Text style={styles.sourceSub}>{missingAccepted.length ? `${missingAccepted.length} previously approved ${purpose === 'insurance' ? 'policy term' : 'detail'}${missingAccepted.length === 1 ? ' is' : 's are'} being reconnected to your registry.` : `${claims.filter((claim) => claim.evidenceState === 'user_confirmed').length} previously approved ${purpose === 'insurance' ? 'policy term' : 'detail'}${claims.filter((claim) => claim.evidenceState === 'user_confirmed').length === 1 ? ' is' : 's are'} linked to your registry.`}</Text>}
-      {claims.some((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate') && <Text style={styles.sourceSub}>{claims.filter((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate').length} suggested {purpose === 'insurance' ? 'policy term' : 'detail'}{claims.filter((claim) => claim.evidenceState === 'needs_review' || claim.evidenceState === 'candidate').length === 1 ? ' stays' : 's stay'} separate until you approve them.</Text>}
       <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Your full description stays on this device. The local preview stores source metadata, quoted suggestions, and short quoted passages it could not organize.' : 'The original file remains saved on this device.'}</Text>
       {source.origin === 'user_entered' ? <View style={styles.unknownPassages}>
         {(source.documentContext?.notes ?? []).filter((item) => item.kind === 'unresolved_self_report').length > 0 ? <>
@@ -590,15 +607,25 @@ export default function Review() {
         </> : <Text style={styles.sourceSub}>No passages were marked unclear by the local organizer.</Text>}
       </View> : <DocumentContextCard context={source.documentContext} compact />}
     </Surface>}
-    {claims.map((claim) => {
+    {reviewGroups.map((group) => <View key={group.kind} style={styles.reviewGroup}>
+      <View style={styles.reviewGroupHeading}><Text style={styles.reviewGroupTitle}>{group.title}</Text><Text style={styles.reviewGroupCount}>{group.claims.length}</Text></View>
+      {group.claims.map((claim) => {
       const draft = drafts[claim.id] ?? { label: claim.label, value: claim.value, unit: claim.unit ?? '', effectiveAt: claim.effectiveAt ?? '' };
       const pending = isPendingReviewClaim(claim);
       const accepted = claim.evidenceState === 'user_confirmed';
       const retracted = claim.evidenceState === 'user_retracted';
       const correctingAccepted = accepted && editingId === claim.id;
       const stagedDecision = reviewDecisions[claim.id];
-      return <View key={claim.id} onLayout={(event) => { if (claim.id === focusClaimId) scrollRef.current?.scrollTo({ y: Math.max(0, event.nativeEvent.layout.y - 20), animated: false }); }}><Surface style={claim.id === focusClaimId ? { ...styles.claim, ...styles.focusedClaim } : styles.claim}>
-        <View style={styles.claimTop}><View style={{ flex: 1 }}><Text style={styles.claimLabel}>{claim.label}</Text><Text style={styles.claimValue}>{formatClaimValue(claim.value, claim.unit)}{purpose === 'insurance' && claim.effectiveAt ? ' · ' + claim.effectiveAt : ''}</Text>{(claim.referenceRange || claim.method) && <Text style={styles.claimMeta}>{[claim.referenceRange ? `Reference range ${claim.referenceRange}` : null, claim.method ? `Method ${claim.method}` : null].filter(Boolean).join(' · ')}</Text>}</View><Text style={[styles.state, accepted && styles.stateDone, retracted && styles.stateRemoved]}>{pending ? 'FOR REVIEW' : accepted ? purpose === 'insurance' ? 'IN POLICY RECORD' : 'IN YOUR RECORD' : retracted ? purpose === 'insurance' ? 'REMOVED FROM POLICY' : 'REMOVED FROM PROFILE' : claim.evidenceState === 'rejected' ? 'DISMISSED' : claim.evidenceState === 'superseded' ? 'SUPERSEDED' : 'NEEDS REVIEW'}</Text></View>
+      const expanded = expandedClaimIds[claim.id] ?? (claim.id === focusClaimId);
+      const compactStatus = stagedDecision ? stagedDecision.decision === 'accept' ? 'Included in save' : stagedDecision.decision === 'edit' ? 'Edit staged' : 'Dismiss on save' : pending ? 'Needs review' : accepted ? purpose === 'insurance' ? 'In policy record' : 'In your record' : retracted ? 'Removed' : claim.evidenceState === 'rejected' ? 'Dismissed' : claim.evidenceState === 'superseded' ? 'Superseded' : 'Needs review';
+      const compactDate = claim.effectiveAt ? `${purpose === 'insurance' ? 'Policy' : 'Result'} date · ${claim.effectiveAt}` : purpose === 'medical' ? 'Result date not stated' : '';
+      return <View key={claim.id} onLayout={(event) => { if (claim.id === focusClaimId) scrollRef.current?.scrollTo({ y: Math.max(0, event.nativeEvent.layout.y - 20), animated: false }); }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${claim.label}, ${formatClaimValue(claim.value, claim.unit)}, ${compactStatus}. ${expanded ? 'Hide' : 'Show'} source quote and review actions`} accessibilityHint="Opens the source quote, date context and review actions." accessibilityState={{ expanded }} onPress={() => setExpandedClaimIds((current) => ({ ...current, [claim.id]: !(current[claim.id] ?? (claim.id === focusClaimId)) }))} style={({ pressed }) => [styles.claimSummary, pressed && styles.claimSummaryPressed]}>
+          <View style={styles.claimSummaryMain}><Text style={styles.claimSummaryLabel}>{claim.label}</Text><Text style={styles.claimSummaryValue}>{formatClaimValue(claim.value, claim.unit)}</Text>{compactDate ? <Text style={styles.claimSummaryDate}>{compactDate}</Text> : null}</View>
+          <View style={styles.claimSummaryAside}><Text style={[styles.claimSummaryStatus, accepted && styles.stateDone, retracted && styles.stateRemoved]}>{compactStatus}</Text><Text style={styles.claimSummaryDisclosure}>{expanded ? 'Hide details ↑' : 'Review details ↓'}</Text></View>
+        </Pressable>
+        {expanded ? <Surface style={claim.id === focusClaimId ? { ...styles.claim, ...styles.focusedClaim } : styles.claim}>
+        {(claim.referenceRange || claim.method) && <Text style={styles.claimMeta}>{[claim.referenceRange ? `Reference range ${claim.referenceRange}` : null, claim.method ? `Method ${claim.method}` : null].filter(Boolean).join(' · ')}</Text>}
         {purpose === 'medical' && <View style={styles.dateReview}>
           <Text style={styles.dateReviewLabel}>RESULT DATE</Text>
           <Text style={styles.dateReviewValue}>{claim.effectiveAt ? 'Suggested result date · ' + claim.effectiveAt : 'Not stated in the source'}</Text>
@@ -607,7 +634,7 @@ export default function Review() {
         </View>}
         {claim.id === focusClaimId && <Text style={styles.focusNotice}>OPENED FROM POLICY COMPARISON</Text>}
         {claim.sourceLocation.quote ? <Text style={styles.quote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · page ${claim.sourceLocation.page}` : typeof claim.sourceLocation.timestampSeconds === 'number' ? ` · video ${formatVideoTimestamp(claim.sourceLocation.timestampSeconds)}` : ''}</Text> : <Text style={styles.quote}>No source quote was found. Check the original before saving this detail.</Text>}
-        <Text style={styles.confidence}>{source?.origin === 'user_entered' ? 'Local rule-based suggestion · check against your exact words' : `AI confidence estimate ${claim.confidence === null ? 'not available' : `${Math.round(claim.confidence * 100)}%`} · check against the original`}</Text>
+        <Text style={styles.confidence}>{source?.origin === 'user_entered' ? 'Local rule-based suggestion · review against your exact words' : claim.sourceLocation.quote ? 'Automated suggestion · check the value and result date against this source' : 'No exact source wording found · keep this pending or open the original'}</Text>
         {pending && stagedDecision && <View><Text accessibilityLiveRegion="polite" aria-live="polite" style={styles.stagedHint}>{stagedDecision.decision === 'reject' ? 'Marked to dismiss when you save this review.' : stagedDecision.decision === 'edit' ? 'Your edited details are staged for save. The original quote stays attached.' : 'Marked to add when you save this review. It is not in your registry yet.'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Undo staged choice for ${claim.label}`} accessibilityHint="Removes this choice and leaves the suggestion pending." accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => undoReviewDecision(claim)} style={styles.undoChoice}><Text style={styles.undoChoiceText}>Undo choice · leave pending</Text></Pressable></View>}
         {retracted && <View style={styles.retractedNote}><Text style={styles.retractedText}>{purpose === 'insurance' ? 'Removed from the Insurance Registry. The original policy file, source quote and review history remain available.' : 'Removed from your active profile. The original file, source quote and review history remain available.'}</Text></View>}
         {claim.originalExtraction && <View style={styles.versionHistory}><Text style={styles.historyTitle}>WHAT NURA FIRST READ</Text><Text style={styles.historyCopy}>{claim.originalExtraction.label}: {formatClaimValue(claim.originalExtraction.value, claim.originalExtraction.unit)} · kept with the source quote</Text></View>}
@@ -622,8 +649,10 @@ export default function Review() {
         {accepted && retractConfirmId === claim.id && <View style={styles.retractConfirm}><Text style={styles.retractConfirmText}>{purpose === 'insurance' ? 'Remove this policy term from your Insurance Registry? Its source quote, original policy file and review history will be kept.' : 'Remove this as a personal health fact? Its source quote, original file and review history will be kept.'}</Text><View style={styles.actions}><Pressable disabled={busy} accessibilityRole="button" onPress={() => void retractClaim(claim)} style={styles.removeConfirm}><Text style={styles.removeConfirmText}>{busy ? 'Removing…' : purpose === 'insurance' ? 'Remove policy term' : 'Remove from profile'}</Text></Pressable><Pressable disabled={busy} accessibilityRole="button" onPress={() => setRetractConfirmId(null)} style={styles.edit}><Text style={styles.actionText}>Keep it</Text></Pressable></View></View>}
         {pending && purpose === 'insurance' && claim.kind !== 'coverage_term' ? <View style={styles.actions}><Text style={styles.confidence}>This isn’t a policy term, so it can’t be added to your Insurance Registry.</Text><Pressable accessibilityRole="button" accessibilityLabel={`Dismiss ${claim.label}`} accessibilityHint="Keeps this suggestion out of the Insurance Registry when you save." accessibilityState={{ disabled: busy, selected: stagedDecision?.decision === 'reject', busy }} disabled={busy} onPress={() => reviewClaim(claim, 'reject')} style={styles.reject}><Text style={styles.actionText}>{stagedDecision?.decision === 'reject' ? 'Dismiss on save' : 'Dismiss'}</Text></Pressable></View> : null}
         {pending && editingId !== claim.id && (purpose !== 'insurance' || claim.kind === 'coverage_term') ? <View style={styles.actions}><Pressable accessibilityRole="button" accessibilityLabel={`${stagedDecision?.decision === 'accept' ? 'Included in save' : purpose === 'insurance' ? 'Include policy term' : 'Include'}: ${claim.label}`} accessibilityHint="Stages this suggestion for your record. It is not saved until you save reviewed items." accessibilityState={{ disabled: busy, selected: stagedDecision?.decision === 'accept', busy }} disabled={busy} onPress={() => reviewClaim(claim, 'accept')} style={styles.accept}><Text style={styles.actionOnText}>{stagedDecision?.decision === 'accept' ? 'Included in save' : purpose === 'insurance' ? 'Include policy term' : 'Include in save'}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`${editingId === claim.id ? 'Finish editing' : 'Edit'} ${claim.label}`} accessibilityHint="Opens the suggested name, value and result date for editing." accessibilityState={{ disabled: busy, selected: editingId === claim.id, busy }} disabled={busy} onPress={() => startEdit(claim)} style={styles.edit}><Text style={styles.actionText}>{stagedDecision?.decision === 'edit' ? 'Edit staged details' : 'Edit'}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Dismiss ${claim.label}`} accessibilityHint="Keeps this suggestion out of your record when you save." accessibilityState={{ disabled: busy, selected: stagedDecision?.decision === 'reject', busy }} disabled={busy} onPress={() => reviewClaim(claim, 'reject')} style={styles.reject}><Text style={styles.actionText}>{stagedDecision?.decision === 'reject' ? 'Dismiss on save' : 'Dismiss'}</Text></Pressable></View> : null}
-      </Surface></View>;
+        </Surface> : null}
+      </View>;
     })}
+    </View>)}
     {!assets.length && !intakeNotes.length && <Surface style={styles.notice}><Text style={styles.noticeTitle}>No file or description selected</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'Choose a policy PDF or image to review its stated terms.' : 'Choose a PDF, image or short health video, or add a short description, to begin a source-linked review.'}</Text></Surface>}
     <Pressable onPress={() => router.replace(purpose === 'insurance' ? '/insurance' : '/(tabs)/health')} style={styles.secondary}><Text style={styles.secondaryText}>{purpose === 'insurance' ? 'Open Insurance Registry' : firstRun ? 'View your health history' : 'Open my registry'}</Text><Text style={styles.arrow}>→</Text></Pressable>
     {firstRun && <Pressable accessibilityRole="button" onPress={() => router.push('/profile-summary')} style={styles.firstRunSummary}><Text style={styles.firstRunSummaryText}>Review a profile summary with Nura · optional</Text></Pressable>}
@@ -652,4 +681,7 @@ const styles = StyleSheet.create({
   batchSave: { marginTop: 14, padding: 14, borderColor: '#CDBDD6', backgroundColor: '#FBF7FC' },
   batchFinding: { marginTop: 9, padding: 13, borderColor: '#D9C7A8', backgroundColor: '#FFFBF3' }, batchFindingTitle: { color: '#8B672E', fontSize: 12, fontWeight: '700' }, batchConflictTitle: { color: '#A34E43' }, batchFindingBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 6 },
   batchSources: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9 }, batchSourceButton: { borderRadius: 99, backgroundColor: colors.surfaceStrong, paddingHorizontal: 10, paddingVertical: 7 }, batchSourceText: { color: colors.violet, fontSize: 9, fontWeight: '600' },
+  activityStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 10 }, activitySummary: { color: colors.ink, fontSize: 11, lineHeight: 16, marginTop: 10 },
+  reviewGroup: { marginTop: 14 }, reviewGroupHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 }, reviewGroupTitle: { color: colors.ink, fontSize: 13, fontWeight: '700' }, reviewGroupCount: { minWidth: 26, overflow: 'hidden', textAlign: 'center', color: colors.violet, backgroundColor: '#EEE8F2', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3, fontSize: 10, fontWeight: '700' },
+  claimSummary: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, padding: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: '#E6DFE9', borderRadius: 14 }, claimSummaryPressed: { backgroundColor: '#F7F2F8', transform: [{ scale: 0.99 }] }, claimSummaryMain: { flex: 1 }, claimSummaryLabel: { color: colors.text, fontSize: 13, fontWeight: '600' }, claimSummaryValue: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 3 }, claimSummaryDate: { color: colors.quiet, fontSize: 10, lineHeight: 14, marginTop: 3 }, claimSummaryAside: { alignItems: 'flex-end', gap: 8 }, claimSummaryStatus: { maxWidth: 118, textAlign: 'right', color: colors.violet, backgroundColor: '#F0EAF5', borderRadius: 9, paddingHorizontal: 8, paddingVertical: 4, fontSize: 9, fontWeight: '700' }, claimSummaryDisclosure: { color: colors.violet, fontSize: 10, fontWeight: '700' },
 });
