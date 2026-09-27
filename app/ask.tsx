@@ -16,7 +16,7 @@ import { registryBriefCitations, registryBriefDisplayText } from '../src/service
 import { agentCitationTarget } from '../src/services/agentCitationNavigation.mjs';
 import { resolvePolicyReviewSourceIds, selectPolicyReviewFacts } from '../src/services/policyReviewScope.mjs';
 import { createAgentRunEventGate } from '../src/services/agentRunLifecycle.mjs';
-import { askAnswerFirstView, askMeaningView, coveragePanelReferences } from '../src/services/askAnswerPresentation.mjs';
+import { askAnswerFirstView, askEvidencePreview, askMeaningView, coveragePanelReferences } from '../src/services/askAnswerPresentation.mjs';
 import { selectAskHealthFacts } from '../src/services/askHealthFactSelection.mjs';
 
 const C = {
@@ -334,13 +334,13 @@ export default function Ask() {
       {!fileContext && agentMessages.length === 0 && !busy && <View style={s.welcome}><Text style={s.welcomeEyebrow}>YOUR RECORDS, IN CONTEXT</Text><Text style={s.welcomeTitle}>Let’s look at the whole picture.</Text><Text style={s.welcomeBody}>Ask about information you’ve saved. Nura will show which records it used and where it could not find an answer.</Text><View style={s.promptRow}><Pressable style={s.prompt} onPress={() => setQuestion('What information is in my health profile?')}><Text style={s.promptText}>What’s in my profile?</Text><Text style={s.promptArrow}>↗</Text></Pressable><Pressable style={s.prompt} onPress={() => setQuestion('What information is missing from my records?')}><Text style={s.promptText}>What’s missing?</Text><Text style={s.promptArrow}>↗</Text></Pressable></View></View>}
       {agentMessages.filter((message) => !(answer && activeRunId && message.role === 'assistant' && message.runId === activeRunId)).map((message) => <View key={message.id} style={[s.message, message.role === 'user' ? s.userMessage : s.assistantMessage]}>
         <Text style={[s.messageLabel, message.role === 'user' && s.userMessageLabel]}>{message.role === 'user' ? 'YOU' : 'NURA'}</Text>
-        {message.role === 'assistant' ? <StructuredAskAnswer text={registryBriefDisplayText(message.text)} citations={message.citations.map((citation) => citation.reference)} meaning={message.meaning} unknowns={message.unknowns ?? []} unknownsRecorded={message.unknowns !== undefined} sources={message.citations} suppressedReferences={message.coverageAssessments?.length ? coveragePanelReferences(message.coverageAssessments, message.citations) : []} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} reducedMotion={reducedMotion} /> : <Text style={[s.messageText, s.userMessageText]}>{message.text}</Text>}
+        {message.role === 'assistant' ? <StructuredAskAnswer key={message.runId} text={registryBriefDisplayText(message.text)} citations={message.citations.map((citation) => citation.reference)} meaning={message.meaning} unknowns={message.unknowns ?? []} unknownsRecorded={message.unknowns !== undefined} sources={message.citations} suppressedReferences={message.coverageAssessments?.length ? coveragePanelReferences(message.coverageAssessments, message.citations) : []} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} reducedMotion={reducedMotion} /> : <Text style={[s.messageText, s.userMessageText]}>{message.text}</Text>}
         {message.role === 'assistant' && message.coverageAssessments?.length ? <CoveragePanel assessments={message.coverageAssessments} sources={message.citations} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} /> : null}
         {message.role === 'assistant' && message.nextSteps?.length ? <View style={s.nextBox}><Text style={s.nextTitle}>{message.coverageAssessments?.length ? 'QUESTIONS TO CONFIRM WITH YOUR INSURER' : 'POSSIBLE NEXT STEP'}</Text>{message.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.nextText}>•  {item}</Text>)}</View> : null}
         {message.role === 'assistant' && message.trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{message.trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
       </View>)}
       {busy && <View style={s.liveCard}><View style={s.liveHeader}><Orb size={30} /><View style={{ flex: 1 }}><Text style={s.liveTitle}>{aiState === 'responding' ? 'Nura is preparing an answer' : 'Nura is working with your records'}</Text><Text style={s.liveSub}>Live activity · only actions and evidence</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop this Ask Nura run" onPress={stopCurrentRun} style={s.stopRunButton}><Text style={s.stopRunText}>Stop</Text></Pressable></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><View style={[s.traceMark, item.status === 'complete' && s.traceMarkDone]}><Text style={[s.traceMarkText, item.status === 'complete' && s.traceMarkTextDone]}>{item.status === 'complete' ? '✓' : '·'}</Text></View><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail && <Text style={s.traceDetail}>{item.detail}</Text>}</View></View>)}</View>}
-      {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><StructuredAskAnswer text={registryBriefDisplayText(answer.answer)} citations={answer.citations} meaning={answer.meaning} unknowns={answer.unknowns} sources={sources} suppressedReferences={answer.coverageAssessments === undefined ? [] : coveragePanelReferences(answer.coverageAssessments, sources)} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} reducedMotion={reducedMotion} />
+      {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><StructuredAskAnswer key={activeRunId ?? 'live-answer'} text={registryBriefDisplayText(answer.answer)} citations={answer.citations} meaning={answer.meaning} unknowns={answer.unknowns} sources={sources} suppressedReferences={answer.coverageAssessments === undefined ? [] : coveragePanelReferences(answer.coverageAssessments, sources)} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} reducedMotion={reducedMotion} />
         {answer.coverageAssessments !== undefined && <CoveragePanel assessments={answer.coverageAssessments} sources={sources} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} />}
         {answer.nextSteps.length > 0 && <View style={s.nextBox}><Text style={s.nextTitle}>{answer.coverageAssessments !== undefined ? 'QUESTIONS TO CONFIRM WITH YOUR INSURER' : 'POSSIBLE NEXT STEP'}</Text>{answer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.nextText}>•  {item}</Text>)}</View>}
         {!busy && trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
@@ -367,7 +367,12 @@ export default function Ask() {
 function ShareRow({ label, count, excluded }: { label: string; count: string; excluded?: boolean }) { return <View style={s.shareRow}><Text style={s.shareLabel}>{label}</Text><Text style={[s.shareCount, excluded && s.shareExcluded]}>{count}</Text></View>; }
 function StructuredAskAnswer({ text, citations, meaning, unknowns, unknownsRecorded = true, sources, suppressedReferences = [], onOpenSource, targetFor, reducedMotion }: { text: string; citations: string[]; meaning?: AgentMeaning; unknowns: string[]; unknownsRecorded?: boolean; sources: AgentSource[]; suppressedReferences?: string[]; onOpenSource: (source: AgentSource) => void; targetFor: (source: AgentSource) => AgentCitationTarget; reducedMotion: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const [sourceListExpanded, setSourceListExpanded] = useState(false);
   const view = askAnswerFirstView({ answer: text, citations, unknowns, sources, excludedReferences: suppressedReferences });
+  const preview = askEvidencePreview(view.evidence, { limit: 3, excludedReferences: suppressedReferences });
+  const visibleItems = sourceListExpanded ? view.evidence : preview.visible;
+  const visibleReferences = new Set(visibleItems.map((item) => item.reference));
+  const visibleInGroup = (items: typeof view.evidence) => items.filter((item) => visibleReferences.has(item.reference));
   const renderEvidence = ({ reference, source, detail }: (typeof view.evidence)[number]) => {
     if (!source) return <View key={reference} style={s.recordEvidenceUnavailable}><Text style={s.recordReference}>{reference}</Text><Text style={s.recordEvidenceMissing}>This citation is unavailable in the current review.</Text></View>;
     const target = targetFor(source);
@@ -383,26 +388,45 @@ function StructuredAskAnswer({ text, citations, meaning, unknowns, unknownsRecor
     if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((current) => !current);
   };
+  const toggleSourceList = () => {
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSourceListExpanded((current) => !current);
+  };
+  const renderGroup = (title: string, items: typeof view.evidence, note?: string) => {
+    const visible = visibleInGroup(items);
+    if (!visible.length) return null;
+    return <View key={title} style={title === 'SAVED HEALTH RECORDS' ? undefined : s.citedOriginSection}>
+      <Text style={s.recordSectionLabel}>{title}</Text>
+      {note ? <Text style={s.recordSectionNote}>{note}</Text> : null}
+      {visible.map(renderEvidence)}
+    </View>;
+  };
+  const canExpandDetails = view.answerExpandable || visibleItems.some((item) => item.detail?.expandable);
   return <View style={s.structuredAnswer}>
     <Text style={s.structuredEyebrow}>SHORT ANSWER</Text>
     <Text style={s.structuredLead}>{view.shortAnswer}{view.answerExpandable ? '…' : ''}</Text>
     {meaning?.text ? <MeaningSection meaning={meaning} sources={sources} onOpenSource={onOpenSource} targetFor={targetFor} /> : null}
     <View style={s.recordEvidenceSection}>
-      <Text style={s.recordSectionLabel}>WHAT YOUR SAVED RECORDS SHOW</Text>
-      {view.evidenceGroups.records.length ? view.evidenceGroups.records.map(renderEvidence) : <Text style={s.recordSectionNote}>{view.suppressedReferences.length ? 'Policy terms and related health details are shown in the policy review below.' : view.evidenceGroups.unavailable.length ? 'Some citations could not be checked in this review.' : citations.length ? 'No saved health record was cited in this answer.' : 'No saved record was cited for this answer.'}</Text>}
+      <View style={s.evidenceSectionHead}>
+        <Text style={s.recordSectionLabel}>EVIDENCE &amp; SOURCES</Text>
+        {preview.totalCount > 0 ? <Text style={s.evidenceCount}>{preview.totalCount} CITED</Text> : null}
+      </View>
+      {renderGroup('SAVED HEALTH RECORDS', view.evidenceGroups.records)}
+      {!visibleInGroup(view.evidenceGroups.records).length ? <Text style={s.recordSectionNote}>{view.suppressedReferences.length ? 'Policy terms and related health details are shown in the policy review below.' : view.evidenceGroups.unavailable.length ? 'Some citations could not be checked in this review.' : citations.length ? 'No saved health record was cited in this answer.' : 'No saved record was cited for this answer.'}</Text> : null}
+      {renderGroup('DOCUMENT DETAILS', view.evidenceGroups.documentDetails, 'Quoted or extracted from linked files; these are not accepted health facts.')}
+      {renderGroup('SELECTED HEALTH AREAS', view.evidenceGroups.selectedAreas)}
+      {renderGroup('LINKS YOU RECORDED', view.evidenceGroups.savedLinks)}
+      {renderGroup('PUBLIC SOURCES', view.evidenceGroups.publicSources)}
+      {renderGroup('OTHER CITED INFORMATION', view.evidenceGroups.other)}
+      {renderGroup('CITATIONS NOT AVAILABLE HERE', view.evidenceGroups.unavailable)}
+      {preview.hiddenCount > 0 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: sourceListExpanded }} accessibilityLabel={sourceListExpanded ? 'Show fewer cited sources' : `Show all ${preview.totalCount} cited sources`} onPress={toggleSourceList} style={s.structuredDisclosure}><Text style={s.structuredDisclosureText}>{sourceListExpanded ? 'SHOW FEWER SOURCES ↑' : `SHOW ${preview.hiddenCount} MORE SOURCES ↓`}</Text></Pressable> : null}
     </View>
-    {view.evidenceGroups.documentDetails.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>DOCUMENT DETAILS</Text><Text style={s.recordSectionNote}>Quoted or extracted from linked files; these details are not accepted health facts.</Text>{view.evidenceGroups.documentDetails.map(renderEvidence)}</View>}
-    {view.evidenceGroups.selectedAreas.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>SELECTED HEALTH AREAS</Text>{view.evidenceGroups.selectedAreas.map(renderEvidence)}</View>}
-    {view.evidenceGroups.savedLinks.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>LINKS YOU RECORDED</Text>{view.evidenceGroups.savedLinks.map(renderEvidence)}</View>}
-    {view.evidenceGroups.publicSources.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>PUBLIC SOURCES</Text>{view.evidenceGroups.publicSources.map(renderEvidence)}</View>}
-    {view.evidenceGroups.other.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>OTHER CITED INFORMATION</Text>{view.evidenceGroups.other.map(renderEvidence)}</View>}
-    {view.evidenceGroups.unavailable.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>CITATIONS NOT AVAILABLE HERE</Text>{view.evidenceGroups.unavailable.map(renderEvidence)}</View>}
     {unknownsRecorded ? <View style={s.unclearSection}>
       <Text style={s.unclearSectionLabel}>WHAT’S UNCLEAR</Text>
       {view.unclear.length ? view.unclear.map((item, index) => <Text key={`${index}-${item}`} style={s.unclearText}>•  {item}</Text>) : <Text style={s.recordSectionNote}>No specific unknowns were listed in this answer.</Text>}
       {view.unclear.length > 0 && <Text style={s.unclearScope}>This reflects only the information selected for this answer.</Text>}
     </View> : null}
-    {view.expandable ? <>
+    {canExpandDetails ? <>
       {expanded && view.answerExpandable && <View style={s.fullResponse}><Text style={s.recordSectionLabel}>FULL RESPONSE</Text><Text style={s.fullResponseText}>{view.answer}</Text></View>}
       <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={expanded ? 'Show less answer detail' : 'Read full response and source detail'} onPress={toggle} style={s.structuredDisclosure}><Text style={s.structuredDisclosureText}>{expanded ? 'SHOW LESS ↑' : view.answerExpandable ? 'READ FULL RESPONSE + SOURCE DETAIL ↓' : 'READ FULL SOURCE DETAIL ↓'}</Text></Pressable>
     </> : null}
@@ -537,6 +561,8 @@ const s = StyleSheet.create({
   meaningSourceRef: { color: '#5D4672', fontSize: 10, fontWeight: '800' },
   meaningSourceTitle: { color: '#514657', fontSize: 11, maxWidth: 180 },
   recordEvidenceSection: { borderTopWidth: 1, borderTopColor: '#E9E1E8', paddingTop: 11, marginTop: 12 },
+  evidenceSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  evidenceCount: { color: '#655B68', fontSize: 10, fontWeight: '700', letterSpacing: 0.35 },
   citedOriginSection: { borderTopWidth: 1, borderTopColor: '#E9E1E8', paddingTop: 10, marginTop: 10 },
   recordSectionLabel: { color: '#725184', fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
   recordEvidence: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E9E2E8', padding: 10, marginTop: 7 },

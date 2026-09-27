@@ -1,6 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { answerFirstView, askAnswerFirstView, askMeaningView, coveragePanelReferences, groupAskEvidence } from './askAnswerPresentation.mjs';
+import { answerFirstView, askAnswerFirstView, askEvidencePreview, askMeaningView, coveragePanelReferences, groupAskEvidence } from './askAnswerPresentation.mjs';
+
+test('Ask evidence preview returns an empty compact summary when no cited evidence exists', () => {
+  assert.deepEqual(askEvidencePreview([]), { visible: [], hiddenCount: 0, totalCount: 0 });
+});
+
+test('Ask evidence preview shows all three distinct cited items when there are three', () => {
+  const evidence = ['R1', 'R2', 'R3'].map((reference) => ({ reference, title: `Source ${reference}` }));
+  assert.deepEqual(askEvidencePreview(evidence), { visible: evidence, hiddenCount: 0, totalCount: 3 });
+});
+
+test('Ask evidence preview limits the first view to three and preserves the full list for expansion', () => {
+  const evidence = ['R1', 'R2', 'R3', 'R4', 'R5'].map((reference) => ({ reference, title: `Source ${reference}` }));
+  const original = evidence.slice();
+  const preview = askEvidencePreview(evidence);
+
+  assert.deepEqual(preview, { visible: evidence.slice(0, 3), hiddenCount: 2, totalCount: 5 });
+  assert.deepEqual(evidence, original, 'the full evidence list remains unchanged for expansion');
+});
+
+test('Ask evidence preview de-duplicates citations by trimmed reference and keeps their first order', () => {
+  const first = { reference: 'R1', title: 'First source row' };
+  const duplicate = { reference: ' R1 ', title: 'Repeated citation' };
+  const second = { reference: 'R2', title: 'Second source row' };
+  const third = { reference: 'R3', title: 'Third source row' };
+  const preview = askEvidencePreview([first, duplicate, second, third]);
+
+  assert.deepEqual(preview, { visible: [first, second, third], hiddenCount: 0, totalCount: 3 });
+});
+
+test('Ask evidence preview omits excluded references from both visible and additional counts', () => {
+  const evidence = ['R1', 'R2', 'R3', 'R4', 'R5'].map((reference) => ({ reference, title: `Source ${reference}` }));
+  const preview = askEvidencePreview(evidence, { limit: 3, excludedReferences: ['R2', ' R4 '] });
+
+  assert.deepEqual(preview, { visible: [evidence[0], evidence[2], evidence[4]], hiddenCount: 0, totalCount: 3 });
+  assert.deepEqual(evidence.map((item) => item.reference), ['R1', 'R2', 'R3', 'R4', 'R5'], 'suppressed rows remain in the caller-owned list but are not displayed');
+});
 
 test('short answers remain complete and do not get an unnecessary disclosure control', () => {
   const answer = 'The selected report lists a cholesterol result of 4.8 mmol/L.';

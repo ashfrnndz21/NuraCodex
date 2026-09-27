@@ -71,6 +71,35 @@ export function askAnswerFirstView({ answer, citations = [], unknowns = [], sour
   };
 }
 
+/**
+ * Keep the first evidence view compact while leaving the caller's full evidence
+ * list untouched for an expanded view. Evidence should already be bounded to
+ * the answer's cited references; excluded references are omitted entirely.
+ * @template {{reference?: string}} T
+ * @param {T[]} evidence
+ * @param {{limit?: number, excludedReferences?: string[]}} options
+ * @returns {{visible: T[], hiddenCount: number, totalCount: number}}
+ */
+export function askEvidencePreview(evidence = [], { limit = 3, excludedReferences = [] } = {}) {
+  const maximum = Number.isFinite(Number(limit)) ? Math.max(0, Math.floor(Number(limit))) : 3;
+  const excluded = new Set((Array.isArray(excludedReferences) ? excludedReferences : [])
+    .filter((reference) => typeof reference === 'string')
+    .map((reference) => reference.trim())
+    .filter(Boolean));
+  const unique = [];
+  const seen = new Set();
+
+  for (const item of Array.isArray(evidence) ? evidence : []) {
+    const reference = typeof item?.reference === 'string' ? item.reference.trim() : '';
+    if (!reference || excluded.has(reference) || seen.has(reference)) continue;
+    seen.add(reference);
+    unique.push(item);
+  }
+
+  const visible = unique.slice(0, maximum);
+  return { visible, hiddenCount: unique.length - visible.length, totalCount: unique.length };
+}
+
 /** Keep different evidence origins visibly separate in the first view. */
 export function groupAskEvidence(evidence = []) {
   const groups = { records: [], documentDetails: [], selectedAreas: [], savedLinks: [], publicSources: [], other: [], unavailable: [] };
