@@ -38,10 +38,10 @@ export type AgentTrace = { id: string; label: string; status: 'started' | 'compl
 export type CoverageAssessment = { kind: 'explicit_benefit' | 'explicit_limit' | 'explicit_exclusion' | 'unclear'; policyReference: string; detail: string; relatedHealthReferences: string[] };
 export type AgentMeaning = { text: string; citations: string[] };
 export type ProfileSummarySnapshot = { answer: string; citations: string[]; unknowns: string[]; nextSteps: string[]; memoryProposal: { label: string; value: string; reason: string } | null; revision: boolean };
-export type AgentMessage = { id: string; runId: string; role: 'user' | 'assistant'; text: string; citations: AgentCitation[]; trace: AgentTrace[]; meaning?: AgentMeaning; coverageAssessments?: CoverageAssessment[]; profileSummary?: ProfileSummarySnapshot; createdAt: string };
+export type AgentMessage = { id: string; runId: string; role: 'user' | 'assistant'; text: string; citations: AgentCitation[]; trace: AgentTrace[]; meaning?: AgentMeaning; unknowns?: string[]; nextSteps?: string[]; coverageAssessments?: CoverageAssessment[]; profileSummary?: ProfileSummarySnapshot; createdAt: string };
 type AgentMessageRow = { id: string; run_id: string; role: AgentMessage['role']; text: string; citations_json: string; trace_json: string; created_at: string; answer_metadata_json: string };
 function agentMessageFromRow(row: AgentMessageRow): AgentMessage {
-  const metadata = JSON.parse(row.answer_metadata_json || '{}') as { meaning?: AgentMeaning; coverageAssessments?: CoverageAssessment[]; profileSummary?: ProfileSummarySnapshot };
+  const metadata = JSON.parse(row.answer_metadata_json || '{}') as { meaning?: AgentMeaning; unknowns?: string[]; nextSteps?: string[]; coverageAssessments?: CoverageAssessment[]; profileSummary?: ProfileSummarySnapshot };
   return {
     id: row.id,
     runId: row.run_id,
@@ -50,6 +50,8 @@ function agentMessageFromRow(row: AgentMessageRow): AgentMessage {
     citations: JSON.parse(row.citations_json) as AgentCitation[],
     trace: JSON.parse(row.trace_json) as AgentTrace[],
     meaning: metadata.meaning,
+    unknowns: metadata.unknowns,
+    nextSteps: metadata.nextSteps,
     coverageAssessments: metadata.coverageAssessments,
     profileSummary: metadata.profileSummary,
     createdAt: row.created_at,
@@ -612,7 +614,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     setPolicyClarifications((current) => removePolicyClarificationFromList(current, id));
   }, [policyClarifications]);
   const addQuestion = useCallback((question: string) => { const cleaned = question.trim(); if (!cleaned) return; setSavedQuestions((current) => current.includes(cleaned) ? current : [cleaned, ...current]); if (Platform.OS !== 'web') void getDatabase().then((db) => db.runAsync('INSERT OR IGNORE INTO questions (question,added_at) VALUES (?,?)', cleaned, new Date().toISOString())).catch((e) => setStorageError(String(e))); }, []);
-  const addAgentMessage = useCallback((message: Omit<AgentMessage, 'id' | 'createdAt'>) => { const saved: AgentMessage = { ...message, id: newId(), createdAt: new Date().toISOString() }; setAgentMessages((current) => [...current, saved]); if (Platform.OS !== 'web') void getDatabase().then((db) => db.runAsync('INSERT INTO agent_messages (id,run_id,role,text,citations_json,trace_json,created_at,answer_metadata_json) VALUES (?,?,?,?,?,?,?,?)', saved.id, saved.runId, saved.role, saved.text, JSON.stringify(saved.citations), JSON.stringify(saved.trace), saved.createdAt, JSON.stringify({ meaning: saved.meaning, coverageAssessments: saved.coverageAssessments ?? [], profileSummary: saved.profileSummary }))).catch((e) => setStorageError(String(e))); return saved; }, []);
+  const addAgentMessage = useCallback((message: Omit<AgentMessage, 'id' | 'createdAt'>) => { const saved: AgentMessage = { ...message, id: newId(), createdAt: new Date().toISOString() }; setAgentMessages((current) => [...current, saved]); if (Platform.OS !== 'web') void getDatabase().then((db) => db.runAsync('INSERT INTO agent_messages (id,run_id,role,text,citations_json,trace_json,created_at,answer_metadata_json) VALUES (?,?,?,?,?,?,?,?)', saved.id, saved.runId, saved.role, saved.text, JSON.stringify(saved.citations), JSON.stringify(saved.trace), saved.createdAt, JSON.stringify({ meaning: saved.meaning, unknowns: saved.unknowns ?? [], nextSteps: saved.nextSteps ?? [], coverageAssessments: saved.coverageAssessments ?? [], profileSummary: saved.profileSummary }))).catch((e) => setStorageError(String(e))); return saved; }, []);
   const saveRegistryBrief = useCallback(async (input: RegistryBriefInput) => {
     const topicId = input.topicId.trim(); const topicLabel = input.topicLabel.trim(); const answer = input.answer.trim();
     const citations = input.citations.filter((citation) => citation.reference && citation.id && citation.title).slice(0, 24);

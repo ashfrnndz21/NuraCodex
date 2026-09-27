@@ -42,7 +42,16 @@ test('a fresh workspace clears sample profile and record data before onboarding'
 test('browser demo snapshot round-trips profile, facts, source links and agent history', () => {
   const storage = memoryStorage();
   const profileSummary = { answer: 'The sample profile includes a selected cholesterol focus.', citations: ['R1'], unknowns: ['No result values were provided.'], nextSteps: ['Add a recent report if useful.'], memoryProposal: null, revision: true };
-  const snapshot = { ...fallback, name: 'Riley Sample', facts: [{ id: 'f1', sourceId: 's1' }], links: [{ id: 'l1' }], agentMessages: [{ id: 'm1', profileSummary }] };
+  const agentMessage = {
+    id: 'm1', runId: 'run-1', role: 'assistant', text: 'Your saved reading is 118/76.',
+    citations: [{ reference: 'R1', id: 'f1', title: 'Blood pressure', detail: '118/76 mmHg', date: '2025-02-18', source: 'Sample report', status: 'confirmed', kind: 'user_record' }],
+    trace: [{ id: 'event-1', label: 'Checked the saved record', status: 'complete' }],
+    meaning: { text: 'Blood pressure is recorded as two numbers.', citations: ['R2'] },
+    unknowns: ['No later reading was provided.'],
+    nextSteps: ['Add another dated reading if you want a comparison.'],
+    profileSummary,
+  };
+  const snapshot = { ...fallback, name: 'Riley Sample', facts: [{ id: 'f1', sourceId: 's1' }], links: [{ id: 'l1' }], agentMessages: [agentMessage] };
   writeBrowserDemoSnapshot(storage, 'nura-demo', snapshot);
   const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.equal(loaded.warning, null);

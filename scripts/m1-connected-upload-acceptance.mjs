@@ -311,19 +311,28 @@ async function syntheticProviderSource() {
       return originalFetch(input, options);
     };
     function answerFor(filename) {
-      const details = filename === 'ordinary-cancel-report.pdf'
-        ? { value: '121/79', date: '2025-03-02' }
-        : filename === 'ordinary-unstarted-report.pdf'
-          ? { value: '117/74', date: '2025-03-10' }
-          : { value: '118/76', date: '2025-02-18' };
-      const quote = 'Blood pressure ' + details.value + ' mmHg on ' + details.date;
+      const fixtures = {
+        'ordinary-retry-report.pdf': { value: '118/76', date: '2025-02-18' },
+        'ordinary-cancel-report.pdf': { value: '121/79', date: '2025-03-02' },
+        'ordinary-unstarted-report.pdf': { value: '117/74', date: null, reportDate: '2025-03-10' },
+        'ordinary-conflict-a-report.pdf': { value: '124/82', date: '2025-04-15' },
+        'ordinary-conflict-b-report.pdf': { value: '129/84', date: '2025-04-15' },
+      };
+      const details = fixtures[filename] || fixtures['ordinary-retry-report.pdf'];
+      const quote = details.date
+        ? 'Blood pressure ' + details.value + ' mmHg on ' + details.date
+        : 'Blood pressure ' + details.value + ' mmHg. Report issued ' + details.reportDate;
       return {
         claims: [{
           kind: 'measurement', label: 'Blood pressure', value: details.value, unit: 'mmHg',
           referenceRange: null, method: null, effectiveAt: details.date, confidence: 0.94,
           page: 1, quote,
         }],
-        documentContext: { documentType: 'Synthetic laboratory report', dates: [], entities: [], notes: [] },
+        documentContext: {
+          documentType: 'Synthetic laboratory report',
+          dates: details.reportDate ? [{ kind: 'report_date', value: details.reportDate, page: 1, quote: 'Report issued ' + details.reportDate }] : [],
+          entities: [], notes: [],
+        },
       };
     }
   };
@@ -441,7 +450,9 @@ async function runRehearsal() {
   const fixtureContents = {
     'ordinary-retry-report.pdf': '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nBlood pressure 118/76 mmHg on 2025-02-18\n%%EOF\n',
     'ordinary-cancel-report.pdf': '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nBlood pressure 121/79 mmHg on 2025-03-02\n%%EOF\n',
-    'ordinary-unstarted-report.pdf': '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nBlood pressure 117/74 mmHg on 2025-03-10\n%%EOF\n',
+    'ordinary-unstarted-report.pdf': '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nBlood pressure 117/74 mmHg\nReport issued 2025-03-10. This issue date is not a result date.\n%%EOF\n',
+    'ordinary-conflict-a-report.pdf': '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nBlood pressure 124/82 mmHg on 2025-04-15\n%%EOF\n',
+    'ordinary-conflict-b-report.pdf': '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nBlood pressure 129/84 mmHg on 2025-04-15\n%%EOF\n',
   };
   const filePaths = [];
   for (const [name, contents] of Object.entries(fixtureContents)) {
@@ -449,24 +460,25 @@ async function runRehearsal() {
     await writeFile(path, contents, { mode: 0o600 });
     filePaths.push(path);
   }
-  record('Three test-only PDF inputs contain synthetic text and no personal identifiers', true);
+  record('Five test-only PDF inputs contain synthetic text and no personal identifiers', true);
 
   await onboardToIntake();
   await pickSyntheticFiles(filePaths);
   await waitText('Review your health details');
-  record('Ordinary PDFs are staged through the app file chooser', (await bodyText()).includes('ordinary-retry-report.pdf') && (await bodyText()).includes('ordinary-cancel-report.pdf') && (await bodyText()).includes('ordinary-unstarted-report.pdf'));
+  const stagedFilesBody = await bodyText();
+  record('Ordinary PDFs are staged through the app file chooser', ['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => stagedFilesBody.includes(name)));
 
   await clickVisible({ text: 'Review your health details' });
   await waitPath((value) => value.startsWith('/review'));
-  await clickVisible({ aria: 'Review all 3 files with Nura' });
+  await clickVisible({ aria: 'Review all 5 files with Nura' });
   await waitText('Review these health files?');
   const firstConsent = await bodyText();
-  assert(firstConsent.includes('ordinary-retry-report.pdf') && firstConsent.includes('ordinary-cancel-report.pdf') && firstConsent.includes('ordinary-unstarted-report.pdf'), 'Consent did not name every staged synthetic PDF.');
+  assert(['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => firstConsent.includes(name)), 'Consent did not name every staged synthetic PDF.');
   assert(firstConsent.includes('Connected AI') && firstConsent.includes('connected Nura AI service'), 'Consent did not describe the connected service for ordinary files.');
   assert(!firstConsent.includes('No AI provider is called for these samples.'), 'Ordinary files were incorrectly described as local samples.');
   record('One explicit consent names all ordinary PDFs and identifies connected-service processing', true);
 
-  await clickVisible({ text: 'Approve and read 3 files' });
+  await clickVisible({ text: 'Approve and read 5 files' });
   await waitText('Needs another try', 60000);
   await waitFor(async () => (await readLines(providerLogPath)).some((item) => item.filename === 'ordinary-cancel-report.pdf' && item.attempt === 1 && item.outcome === 'delayed-until-user-stop'), 'The deterministic delayed synthetic extraction did not start.', 60000);
   await waitText('STOP', 15000);
@@ -479,18 +491,20 @@ async function runRehearsal() {
   await waitText('Stopped', 30000);
   const afterStop = await bodyText();
   assert(afterStop.includes('ordinary-unstarted-report.pdf') && afterStop.includes('Ready'), 'The file after the cancelled request did not remain unstarted and ready.');
+  assert(afterStop.includes('ordinary-conflict-a-report.pdf') && afterStop.includes('ordinary-conflict-b-report.pdf'), 'Conflict fixtures did not remain staged after Stop.');
   await waitFor(async () => (await readLines(providerLogPath)).some((item) => item.filename === 'ordinary-cancel-report.pdf' && item.attempt === 1 && item.outcome === 'aborted-after-stop'), 'The synthetic provider shim did not observe the app cancellation signal.', 30000);
   const firstAttempts = await readLines(providerLogPath);
-  assert(!firstAttempts.some((item) => item.filename === 'ordinary-unstarted-report.pdf'), 'The file after cancellation unexpectedly reached extraction.');
+  assert(!firstAttempts.some((item) => ['ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].includes(item.filename)), 'A file after cancellation unexpectedly reached extraction.');
   record('Stop aborts the active synthetic request and leaves the next file unstarted', true);
 
-  await clickVisible({ aria: 'Review all 3 files with Nura' });
+  await clickVisible({ aria: 'Review all 5 files with Nura' });
   await waitText('Review these health files?');
   const retryConsent = await bodyText();
-  assert(retryConsent.includes('ordinary-retry-report.pdf') && retryConsent.includes('ordinary-cancel-report.pdf') && retryConsent.includes('ordinary-unstarted-report.pdf'), 'Retry did not present a fresh consent sheet naming all still-unprocessed files.');
-  await clickVisible({ text: 'Approve and read 3 files' });
+  assert(['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => retryConsent.includes(name)), 'Retry did not present a fresh consent sheet naming all still-unprocessed files.');
+  await clickVisible({ text: 'Approve and read 5 files' });
   await waitText('Blood pressure', 60000);
   await waitText('117/74', 60000);
+  await waitText('129/84', 60000);
   await waitFor(async () => {
     const text = await bodyText();
     return text.includes('Document reading complete') && text.includes('117/74');
@@ -508,14 +522,41 @@ async function runRehearsal() {
   const retrySource = repository.sources.find((item) => item.displayName === 'ordinary-retry-report.pdf');
   const cancelSource = repository.sources.find((item) => item.displayName === 'ordinary-cancel-report.pdf');
   const unstartedSource = repository.sources.find((item) => item.displayName === 'ordinary-unstarted-report.pdf');
-  assert(retrySource && cancelSource && unstartedSource, 'Expected retry, cancelled/retried, and formerly-unstarted synthetic sources.');
-  assert([retrySource, cancelSource, unstartedSource].every((item) => item.processingMode === 'connected_ai_provider'), 'Ordinary file processing was not recorded as connected-service mode.');
-  assert(repository.claims.length === 3 && repository.claims.every((claim) => claim.evidenceState === 'needs_review'), 'One or more extracted candidates were accepted or missing.');
+  const conflictSourceA = repository.sources.find((item) => item.displayName === 'ordinary-conflict-a-report.pdf');
+  const conflictSourceB = repository.sources.find((item) => item.displayName === 'ordinary-conflict-b-report.pdf');
+  assert(retrySource && cancelSource && unstartedSource && conflictSourceA && conflictSourceB, 'Expected all five synthetic report sources.');
+  assert([retrySource, cancelSource, unstartedSource, conflictSourceA, conflictSourceB].every((item) => item.processingMode === 'connected_ai_provider'), 'Ordinary file processing was not recorded as connected-service mode.');
+  assert(repository.claims.length === 5 && repository.claims.every((claim) => claim.evidenceState === 'needs_review'), 'One or more extracted candidates were accepted or missing.');
   assert(repository.assertions.length === 0, 'A candidate was written to accepted profile memory without user approval.');
   assert(repository.claims.every((claim) => repository.sources.some((source) => source.id === claim.sourceId)), 'An extracted candidate lost its source link.');
-  record('Service repository contains three source-linked pending candidates and zero accepted assertions', true);
+  record('Service repository contains five source-linked pending candidates and zero accepted assertions', true);
 
   await waitPath((value) => value.startsWith('/review'));
+  await clickVisible({ aria: 'Open ordinary-retry-report.pdf' });
+  await waitText('118/76', 15000);
+  await waitText('Different values for the same date', 45000);
+  await waitText('Different values · date needs checking', 45000);
+  const crossSourceReview = await bodyText();
+  assert(crossSourceReview.includes('Blood pressure · 124/82 mmhg / 129/84 mmhg · Result date 2025-04-15'), 'The same-date conflicting values were not shown together with their shared result date.');
+  assert(crossSourceReview.includes('ordinary-conflict-a-report.pdf') && crossSourceReview.includes('ordinary-conflict-b-report.pdf'), 'The conflict review did not preserve links to both original reports.');
+  assert(crossSourceReview.includes('Both suggestions remain separate.'), 'The conflict was not explicitly described as separate suggestions requiring review.');
+  assert(crossSourceReview.includes('at least one source has no linked result date'), 'A differing value with a missing event date was not flagged for date review.');
+  record('Cross-file review flags same-date differences and date-uncertain values without merging suggestions', true);
+
+  await clickVisible({ aria: 'Open ordinary-unstarted-report.pdf' });
+  await waitText('117/74', 15000);
+  const missingDateClaimLabel = await evaluate('([...document.querySelectorAll("[role=button]")].map((el)=>el.getAttribute("aria-label")||"").find((label)=>label.includes("117/74")&&label.includes("Needs review")))||""');
+  assert(missingDateClaimLabel, 'Could not identify the synthetic claim whose event date was omitted.');
+  await clickVisible({ aria: missingDateClaimLabel });
+  const missingDateReview = await bodyText();
+  assert(missingDateReview.includes('Not stated in the source'), 'The event date was not shown as unknown.');
+  assert(missingDateReview.includes('report date 2025-03-10') && missingDateReview.includes('These dates are not linked to this result.'), 'The report date was not kept separate from the missing result date.');
+  const sourceWithUnknownDate = repository.sources.find((item) => item.id === unstartedSource.id);
+  const unknownDateClaim = repository.claims.find((claim) => claim.sourceId === unstartedSource.id);
+  assert(unknownDateClaim?.effectiveAt === null, 'The server filled the missing event date from another source date.');
+  assert(sourceWithUnknownDate?.documentContext?.dates?.some((item) => item.kind === 'report_date' && item.value === '2025-03-10'), 'The report date was not retained as separate document context.');
+  record('Missing event date remains unknown while the distinct report date stays source context', true);
+
   await clickVisible({ aria: 'Open ordinary-retry-report.pdf' });
   await waitText('118/76', 15000);
   const acceptedClaimLabel = await evaluate('([...document.querySelectorAll("[role=button]")].map((el)=>el.getAttribute("aria-label")||"").find((label)=>label.includes("118/76")&&label.includes("Needs review")))||""');
@@ -536,13 +577,22 @@ async function runRehearsal() {
   await waitText('117/74', 15000);
   const pendingClaimLabel = await evaluate('([...document.querySelectorAll("[role=button]")].map((el)=>el.getAttribute("aria-label")||"").find((label)=>label.includes("117/74")&&label.includes("Needs review")))||""');
   assert(pendingClaimLabel, 'The untouched 117/74 suggestion did not remain pending.');
+
+  await clickVisible({ aria: 'Open ordinary-conflict-a-report.pdf' });
+  await waitText('124/82', 15000);
+  const conflictClaimALabel = await evaluate('([...document.querySelectorAll("[role=button]")].map((el)=>el.getAttribute("aria-label")||"").find((label)=>label.includes("124/82")&&label.includes("Needs review")))||""');
+  assert(conflictClaimALabel, 'The first same-date conflict suggestion did not remain independently pending.');
+  await clickVisible({ aria: 'Open ordinary-conflict-b-report.pdf' });
+  await waitText('129/84', 15000);
+  const conflictClaimBLabel = await evaluate('([...document.querySelectorAll("[role=button]")].map((el)=>el.getAttribute("aria-label")||"").find((label)=>label.includes("129/84")&&label.includes("Needs review")))||""');
+  assert(conflictClaimBLabel, 'The second same-date conflict suggestion did not remain independently pending.');
   const queueBeforeSave = await bodyText();
-  assert(queueBeforeSave.includes('2 ITEMS READY TO SAVE') && queueBeforeSave.includes('Leave any of the 1 undecided suggestion untouched to keep it pending'), 'The review queue does not show two staged choices and one untouched pending suggestion.');
-  record('Review stages one accept and one dismissal while leaving a third suggestion pending', true);
+  assert(queueBeforeSave.includes('2 ITEMS READY TO SAVE') && queueBeforeSave.includes('Leave any of the 3 undecided suggestions untouched to keep it pending'), 'The review queue does not show two staged choices and three untouched pending suggestions.');
+  record('Review stages one accept and one dismissal while both conflict results and the undated result remain pending', true);
 
   await clickVisible({ aria: 'Save 2 reviewed items' });
   await waitText('2 reviewed items saved to your health record.', 30000);
-  await waitText('1 other suggestion remains pending and was not added.', 15000);
+  await waitText('3 other suggestions remain pending and was not added.', 15000);
   record('One explicit review save accepts and dismisses only the staged suggestions', true);
 
   const savedRepository = await waitFor(async () => {
@@ -551,8 +601,10 @@ async function runRehearsal() {
     return statesByName['ordinary-retry-report.pdf'] === 'user_confirmed'
       && statesByName['ordinary-cancel-report.pdf'] === 'rejected'
       && statesByName['ordinary-unstarted-report.pdf'] === 'needs_review'
+      && statesByName['ordinary-conflict-a-report.pdf'] === 'needs_review'
+      && statesByName['ordinary-conflict-b-report.pdf'] === 'needs_review'
       ? current : false;
-  }, 'The repository did not persist one accepted, one dismissed and one pending candidate.', 15000);
+  }, 'The repository did not persist one accepted, one dismissed and three pending candidates.', 15000);
   assert(savedRepository.assertions.length === 1, 'The explicit review save did not create exactly one accepted source assertion.');
   const acceptedAssertion = savedRepository.assertions[0];
   const acceptedSource = savedRepository.sources.find((source) => source.displayName === 'ordinary-retry-report.pdf');
@@ -568,7 +620,7 @@ async function runRehearsal() {
   const acceptedSourceRows = savedHealthHistory.match(/ordinary-retry-report\.pdf/g) || [];
   assert(savedHealthHistory.includes('SOURCE FILE · ordinary-retry-report.pdf'), 'The accepted health event does not show its source file in history.');
   assert(acceptedSourceRows.length === 1, `The accepted report is duplicated in the health timeline (${acceptedSourceRows.length} visible source rows).`);
-  assert(!savedHealthHistory.includes('121/79') && !savedHealthHistory.includes('117/74'), 'A dismissed or still-pending suggestion appeared as a saved health event.');
+  assert(['121/79', '117/74', '124/82', '129/84'].every((value) => !savedHealthHistory.includes(value)), 'A dismissed, undated or conflicting pending suggestion appeared as a saved health event.');
   record('Health history shows the accepted source-linked event once and excludes dismissed and pending values', true, healthRoute);
 
   const healthUrl = await evaluate('location.href');
@@ -581,7 +633,7 @@ async function runRehearsal() {
   const reloadedHealthHistory = await bodyText();
   const reloadedSourceRows = reloadedHealthHistory.match(/ordinary-retry-report\.pdf/g) || [];
   const reloadedSourceLinkIsUnique = reloadedHealthHistory.includes('SOURCE FILE · ordinary-retry-report.pdf') && reloadedSourceRows.length === 1;
-  const unreviewedValuesStayOut = !reloadedHealthHistory.includes('121/79') && !reloadedHealthHistory.includes('117/74');
+  const unreviewedValuesStayOut = ['121/79', '117/74', '124/82', '129/84'].every((value) => !reloadedHealthHistory.includes(value));
   assert(reloadedSourceLinkIsUnique, `Reload duplicated or detached the accepted source row (${reloadedSourceRows.length} visible source rows).`);
   assert(unreviewedValuesStayOut, 'Dismissed or pending data appeared after reloading health history.');
   record('Accepted event and its single source link survive a full health-page reload', reloadedSourceLinkIsUnique && unreviewedValuesStayOut);
@@ -590,9 +642,13 @@ async function runRehearsal() {
   const retryAttempts = attempts.filter((item) => item.filename === 'ordinary-retry-report.pdf');
   const cancelAttempts = attempts.filter((item) => item.filename === 'ordinary-cancel-report.pdf');
   const untouchedAttempts = attempts.filter((item) => item.filename === 'ordinary-unstarted-report.pdf');
+  const conflictAAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-a-report.pdf');
+  const conflictBAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-b-report.pdf');
   assert(retryAttempts.map((item) => item.outcome).join(',') === 'synthetic-service-failure,synthetic-success', 'The failed file did not retry successfully after fresh consent.');
   assert(cancelAttempts.some((item) => item.outcome === 'aborted-after-stop') && cancelAttempts.some((item) => item.attempt === 2 && item.outcome === 'synthetic-success'), 'The cancelled file was not safely retried after fresh consent.');
   assert(untouchedAttempts.length === 1 && untouchedAttempts[0].outcome === 'synthetic-success', 'The previously unstarted file was not processed exactly once after fresh consent.');
+  assert(conflictAAttempts.length === 1 && conflictAAttempts[0].outcome === 'synthetic-success', 'The first conflict fixture was not processed exactly once.');
+  assert(conflictBAttempts.length === 1 && conflictBAttempts[0].outcome === 'synthetic-success', 'The second conflict fixture was not processed exactly once.');
   assert(attempts.every((item) => item.contentMatches), 'The fake provider received bytes other than the expected deterministic synthetic PDFs.');
   record('In-memory provider trace proves fail/retry, stop/retry, and no skipped or extra requests', true, attempts.length + ' synthetic requests; no PDF bytes were written to logs');
 
