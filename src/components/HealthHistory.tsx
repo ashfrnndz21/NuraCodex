@@ -10,6 +10,7 @@ import { formatVideoTimestamp, getSourceClaims, sourceMatchesAsset, type Candida
 import { findMisdatedAcceptedClaims } from '../services/sourceClaimReconciliation.mjs';
 import { groupSourceFactEvents, omitAssetsRepresentedByDetails, omitSelfReportNotesRepresentedByAcceptedClaims, resolveTimelineSourceAsset } from '../services/timelineSourceGrouping.mjs';
 import { groupTimelineByYear } from '../services/timelineYearSections.mjs';
+import { timelineDatePresentation } from '../services/timelineDatePresentation.mjs';
 import { resolveTimelineEndpointNavigation, type TimelineEndpointNavigation } from '../services/timelineEndpointNavigation.mjs';
 import { DocumentContextCard } from './DocumentContextCard';
 import { Orb } from './Orb';
@@ -399,13 +400,14 @@ export function HealthHistory({ name, ready, storageError, facts, assets, treatm
         const tint = entryPalette(entry);
         const selected = selectedNode === entry.nodeId || Boolean(entry.members?.some((member) => member.nodeId === selectedNode));
         const entryAsset = entry.kind === 'asset' ? assets.find((asset) => `asset:${asset.id}` === entry.nodeId) : undefined;
+        const datePresentation = timelineDatePresentation(entry);
         const glyph = entry.kind === 'fact' ? '✳' : entry.kind === 'treatment' ? '✚' : entry.kind === 'visit' ? '⌂' : assetGlyph(entryAsset?.kind ?? 'file');
         return <View key={entry.id} ref={(node) => { if (node) timelineEntryRefs.current.set(entry.id, node); else timelineEntryRefs.current.delete(entry.id); }} style={s.timelineRow}>
-          <View style={s.dateCol}><Text style={s.dateDay}>{dateParts(entry.date).day}</Text><Text style={s.dateMonth}>{dateParts(entry.date).month}</Text></View>
+          <View style={s.dateCol} accessible accessibilityLabel={datePresentation.accessibilityLabel}><Text style={s.dateDay}>{dateParts(entry.date).day}</Text><Text style={s.dateMonth}>{datePresentation.isEntryDate ? 'ADDED' : dateParts(entry.date).month}</Text></View>
           <View style={s.axis}><View style={[s.axisLine, { backgroundColor: tint.line }]} /><Pressable accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`${selected ? 'Selected' : 'Select'} ${entry.title}`} onPress={() => toggleDetails(entry.id)} style={({ pressed }) => [s.nodeHalo, { backgroundColor: tint.pale, borderColor: selected ? tint.accent : '#FFFFFF', borderWidth: selected ? 2 : 1 }, pressed && s.nodePressed]}><Animated.View style={[s.node, { backgroundColor: tint.node, borderColor: tint.line, shadowColor: tint.accent, transform: [{ scale: nodeScaleFor(entry.nodeId) }] }]}><Text style={s.nodeGlyph}>{glyph}</Text></Animated.View></Pressable></View>
           <View style={s.eventWrap}><View style={[s.eventCard, { backgroundColor: C.white, borderColor: tint.line, borderLeftColor: tint.node, borderLeftWidth: 3 }, selected && { borderColor: tint.node, backgroundColor: '#FBF6FA' }]}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: expanded === entry.id, selected }} onPress={() => toggleDetails(entry.id)} style={({ pressed }) => [s.eventSummary, pressed && { opacity: .92 }]}>
-              <View style={s.eventMeta}><View style={[s.kindDot, { backgroundColor: tint.node }]} /><Text style={[s.eventKind, { color: tint.accent, backgroundColor: tint.pale }]}>{entry.kind === 'fact' ? entry.category.toUpperCase() : `${entry.category} · SAVED`}</Text>{entry.kind === 'fact' && entry.validUntil && <Text style={s.versionBadge}>PREVIOUS VERSION</Text>}{entry.kind === 'fact' && entry.supersedesId && <Text style={s.versionBadge}>CORRECTED BY YOU</Text>}<Text style={s.eventDate}>{entry.date}</Text></View>
+              <View style={s.eventMeta}><View style={[s.kindDot, { backgroundColor: tint.node }]} /><Text style={[s.eventKind, { color: tint.accent, backgroundColor: tint.pale }]}>{entry.kind === 'fact' ? entry.category.toUpperCase() : `${entry.category} · SAVED`}</Text>{entry.kind === 'fact' && entry.validUntil && <Text style={s.versionBadge}>PREVIOUS VERSION</Text>}{entry.kind === 'fact' && entry.supersedesId && <Text style={s.versionBadge}>CORRECTED BY YOU</Text>}<Text style={s.eventDate}>{datePresentation.cardDate}</Text></View>
               <Text style={s.eventTitle}>{entry.title}</Text><Text style={s.eventDetail} numberOfLines={expanded === entry.id ? undefined : 2}>{entry.detail}</Text>
               {entry.sourceAssetName && <Text style={{ color: '#705583', fontSize: 8, fontWeight: '600', letterSpacing: .35, marginTop: 5 }}>SOURCE FILE · {entry.sourceAssetName}</Text>}
               {entry.kind === 'asset' && <Text style={s.notAnalyzed}>{entryAsset?.serverSourceId ? 'Source analyzed · open to view extracted details' : 'Saved on this device · contents not analyzed'}</Text>}

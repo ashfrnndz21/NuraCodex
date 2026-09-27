@@ -6,7 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Crypto from 'expo-crypto';
 import { Orb } from '../src/components/Orb';
-import { AgentAnswer, AgentEvent, AgentRunInput, AgentSource, AgentTrace, CoverageAssessment, getAgentStatus, runNuraAgent } from '../src/services/agentClient';
+import { AgentAnswer, AgentEvent, AgentMeaning, AgentRunInput, AgentSource, AgentTrace, CoverageAssessment, getAgentStatus, runNuraAgent } from '../src/services/agentClient';
 import { getSourceClaims, sourceMatchesAsset } from '../src/services/intakeClient';
 import { useNura } from '../src/state/NuraContext';
 import { useAIState } from '../src/state/AIStateContext';
@@ -16,7 +16,7 @@ import { registryBriefCitations, registryBriefDisplayText } from '../src/service
 import { agentCitationTarget } from '../src/services/agentCitationNavigation.mjs';
 import { resolvePolicyReviewSourceIds, selectPolicyReviewFacts } from '../src/services/policyReviewScope.mjs';
 import { createAgentRunEventGate } from '../src/services/agentRunLifecycle.mjs';
-import { answerFirstView } from '../src/services/askAnswerPresentation.mjs';
+import { answerFirstView, askAnswerFirstView, askMeaningView, coveragePanelReferences } from '../src/services/askAnswerPresentation.mjs';
 import { selectAskHealthFacts } from '../src/services/askHealthFactSelection.mjs';
 
 const C = {
@@ -330,15 +330,14 @@ export default function Ask() {
       {agentMessages.filter((message) => !(answer && activeRunId && message.role === 'assistant' && message.runId === activeRunId)).map((message) => <View key={message.id} style={[s.message, message.role === 'user' ? s.userMessage : s.assistantMessage]}>
         <Text style={[s.messageLabel, message.role === 'user' && s.userMessageLabel]}>{message.role === 'user' ? 'YOU' : 'NURA'}</Text>
         {message.role === 'assistant' ? <PresentedAnswer text={registryBriefDisplayText(message.text)} textStyle={s.messageText} reducedMotion={reducedMotion} /> : <Text style={[s.messageText, s.userMessageText]}>{message.text}</Text>}
+        {message.role === 'assistant' && message.meaning?.text ? <MeaningSection meaning={message.meaning} sources={message.citations} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} /> : null}
         {message.role === 'assistant' && message.coverageAssessments?.length ? <CoveragePanel assessments={message.coverageAssessments} sources={message.citations} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} /> : null}
         {message.role === 'assistant' && message.citations.length > 0 && <View style={s.citationWrap}><Text style={s.traceHeading}>EVIDENCE USED</Text>{message.citations.map((citation) => <EvidenceSourceCard key={citation.id} source={citation} target={evidenceTarget(citation)} onPress={() => openEvidenceSource(citation)} />)}</View>}
         {message.role === 'assistant' && message.trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{message.trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
       </View>)}
       {busy && <View style={s.liveCard}><View style={s.liveHeader}><Orb size={30} /><View style={{ flex: 1 }}><Text style={s.liveTitle}>{aiState === 'responding' ? 'Nura is preparing an answer' : 'Nura is working with your records'}</Text><Text style={s.liveSub}>Live activity · only actions and evidence</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Stop this Ask Nura run" onPress={stopCurrentRun} style={s.stopRunButton}><Text style={s.stopRunText}>Stop</Text></Pressable></View>{trace.map((item) => <View key={item.id} style={s.traceRow}><View style={[s.traceMark, item.status === 'complete' && s.traceMarkDone]}><Text style={[s.traceMarkText, item.status === 'complete' && s.traceMarkTextDone]}>{item.status === 'complete' ? '✓' : '·'}</Text></View><View style={{ flex: 1 }}><Text style={s.traceLabel}>{item.label}</Text>{item.detail && <Text style={s.traceDetail}>{item.detail}</Text>}</View></View>)}</View>}
-      {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><PresentedAnswer text={registryBriefDisplayText(answer.answer)} textStyle={s.answerText} reducedMotion={reducedMotion} />
+      {answer && <View style={s.answerCard}><Text style={s.answerLabel}>NURA’S RESPONSE</Text><StructuredAskAnswer text={registryBriefDisplayText(answer.answer)} citations={answer.citations} meaning={answer.meaning} unknowns={answer.unknowns} sources={sources} suppressedReferences={answer.coverageAssessments === undefined ? [] : coveragePanelReferences(answer.coverageAssessments, sources)} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} reducedMotion={reducedMotion} />
         {answer.coverageAssessments !== undefined && <CoveragePanel assessments={answer.coverageAssessments} sources={sources} onOpenSource={openEvidenceSource} targetFor={evidenceTarget} />}
-        {answer.citations.length > 0 ? sources.length > 0 ? <View style={s.citationWrap}><Text style={s.traceHeading}>EVIDENCE USED · {sources.length}</Text>{sources.map((source) => <EvidenceSourceCard key={source.id} source={source} target={evidenceTarget(source)} onPress={() => openEvidenceSource(source)} />)}</View> : <View style={s.evidenceNote}><Text style={s.evidenceNoteText}>Nura cited source references, but they are unavailable in this review.</Text></View> : <View style={s.evidenceNote}><Text style={s.evidenceNoteText}>No sources were cited for this answer.</Text></View>}
-        {answer.unknowns.length > 0 && <View style={s.unknownBox}><Text style={s.unknownTitle}>{answer.coverageAssessments !== undefined ? 'POLICY DETAIL NOT SHOWN HERE' : 'NOT FOUND IN THIS REVIEW'}</Text>{answer.unknowns.map((item, index) => <Text key={`${index}-${item}`} style={s.unknownText}>•  {item}</Text>)}{answer.coverageAssessments === undefined && <Text style={s.unknownScope}>This reflects only information selected for this answer. Other saved areas, files or records may not have been included.</Text>}</View>}
         {answer.nextSteps.length > 0 && <View style={s.nextBox}><Text style={s.nextTitle}>{answer.coverageAssessments !== undefined ? 'QUESTIONS TO CONFIRM WITH YOUR INSURER' : 'POSSIBLE NEXT STEP'}</Text>{answer.nextSteps.map((item, index) => <Text key={`${index}-${item}`} style={s.nextText}>•  {item}</Text>)}</View>}
         {!busy && trace.length > 0 && <View style={s.savedTrace}><Text style={s.traceHeading}>HOW NURA WORKED</Text>{trace.map((item) => <Text key={item.id} style={s.savedTraceLine}>✓  {item.label}{item.detail ? ` · ${item.detail}` : ''}</Text>)}</View>}
         {registryBriefMode && !busy && <View style={s.registrySave}><Text style={s.registrySaveTitle}>SAVE TO MEDICAL REGISTRY</Text><Text style={s.registrySaveBody}>This saves the answer, its stated unknowns and only the sources it cited. The summary will be marked out of date if linked records change.</Text>{registryBriefSaveError ? <Text style={s.registrySaveError}>{registryBriefSaveError}</Text> : null}<Pressable accessibilityRole="button" disabled={registryBriefSaved || registryBriefSaving || answer.citations.length === 0} onPress={() => void saveRegistrySummary()} style={[s.registrySaveButton, (registryBriefSaved || registryBriefSaving || answer.citations.length === 0) && { opacity: .5 }]}><Text style={s.registrySaveButtonText}>{registryBriefSaved ? 'SAVED TO MEDICAL REGISTRY' : registryBriefSaving ? 'SAVING ON THIS DEVICE…' : 'SAVE CITED SUMMARY'}</Text></Pressable></View>}
@@ -372,6 +371,63 @@ function PresentedAnswer({ text, textStyle, reducedMotion }: { text: string; tex
     <Text style={s.answerSummaryLabel}>SHORT ANSWER</Text>
     <Text style={textStyle}>{expanded || !firstView.expandable ? text : `${firstView.text}…`}</Text>
     {firstView.expandable ? <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={expanded ? 'Show less of Nura’s answer' : 'Read the full Nura answer'} onPress={toggle} style={s.answerDisclosure}><Text style={s.answerDisclosureText}>{expanded ? 'SHOW LESS ↑' : 'READ FULL ANSWER ↓'}</Text></Pressable> : null}
+  </View>;
+}
+function StructuredAskAnswer({ text, citations, meaning, unknowns, sources, suppressedReferences = [], onOpenSource, targetFor, reducedMotion }: { text: string; citations: string[]; meaning?: AgentMeaning; unknowns: string[]; sources: AgentSource[]; suppressedReferences?: string[]; onOpenSource: (source: AgentSource) => void; targetFor: (source: AgentSource) => AgentCitationTarget; reducedMotion: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const view = askAnswerFirstView({ answer: text, citations, unknowns, sources, excludedReferences: suppressedReferences });
+  const renderEvidence = ({ reference, source, detail }: (typeof view.evidence)[number]) => {
+    if (!source) return <View key={reference} style={s.recordEvidenceUnavailable}><Text style={s.recordReference}>{reference}</Text><Text style={s.recordEvidenceMissing}>This citation is unavailable in the current review.</Text></View>;
+    const target = targetFor(source);
+    const unavailable = !target;
+    return <Pressable key={reference} accessibilityRole="button" accessibilityState={{ disabled: unavailable }} accessibilityLabel={unavailable ? `Cited item unavailable: ${source.title}` : `Open cited source ${source.title}`} disabled={unavailable} onPress={() => onOpenSource(source)} style={[s.recordEvidence, unavailable && s.recordEvidenceUnavailable]}>
+      <View style={s.recordEvidenceHeading}><Text style={s.recordReference}>{reference}</Text><Text style={s.recordEvidenceTitle}>{source.title}</Text></View>
+      <Text style={s.recordEvidenceMeta}>{source.source}{source.date ? ` · ${source.date}` : ''}</Text>
+      {source.detail ? <Text style={s.recordEvidenceDetail}>{expanded || !detail?.expandable ? source.detail : `${detail.text}…`}</Text> : <Text style={s.recordEvidenceMissing}>The cited item has no excerpt available in this review.</Text>}
+      <Text style={s.recordEvidenceAction}>{target ? 'OPEN CITED ITEM ↗' : 'CITED ITEM UNAVAILABLE'}</Text>
+    </Pressable>;
+  };
+  const toggle = () => {
+    if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded((current) => !current);
+  };
+  return <View style={s.structuredAnswer}>
+    <Text style={s.structuredEyebrow}>SHORT ANSWER</Text>
+    <Text style={s.structuredLead}>{view.shortAnswer}{view.answerExpandable ? '…' : ''}</Text>
+    {meaning?.text ? <MeaningSection meaning={meaning} sources={sources} onOpenSource={onOpenSource} targetFor={targetFor} /> : null}
+    <View style={s.recordEvidenceSection}>
+      <Text style={s.recordSectionLabel}>WHAT YOUR SAVED RECORDS SHOW</Text>
+      {view.evidenceGroups.records.length ? view.evidenceGroups.records.map(renderEvidence) : <Text style={s.recordSectionNote}>{view.suppressedReferences.length ? 'Policy terms and related health details are shown in the policy review below.' : view.evidenceGroups.unavailable.length ? 'Some citations could not be checked in this review.' : citations.length ? 'No saved health record was cited in this answer.' : 'No saved record was cited for this answer.'}</Text>}
+    </View>
+    {view.evidenceGroups.documentDetails.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>DOCUMENT DETAILS</Text><Text style={s.recordSectionNote}>Quoted or extracted from linked files; these details are not accepted health facts.</Text>{view.evidenceGroups.documentDetails.map(renderEvidence)}</View>}
+    {view.evidenceGroups.selectedAreas.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>SELECTED HEALTH AREAS</Text>{view.evidenceGroups.selectedAreas.map(renderEvidence)}</View>}
+    {view.evidenceGroups.savedLinks.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>LINKS YOU RECORDED</Text>{view.evidenceGroups.savedLinks.map(renderEvidence)}</View>}
+    {view.evidenceGroups.publicSources.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>PUBLIC SOURCES</Text>{view.evidenceGroups.publicSources.map(renderEvidence)}</View>}
+    {view.evidenceGroups.other.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>OTHER CITED INFORMATION</Text>{view.evidenceGroups.other.map(renderEvidence)}</View>}
+    {view.evidenceGroups.unavailable.length > 0 && <View style={s.citedOriginSection}><Text style={s.recordSectionLabel}>CITATIONS NOT AVAILABLE HERE</Text>{view.evidenceGroups.unavailable.map(renderEvidence)}</View>}
+    <View style={s.unclearSection}>
+      <Text style={s.unclearSectionLabel}>WHAT’S UNCLEAR</Text>
+      {view.unclear.length ? view.unclear.map((item, index) => <Text key={`${index}-${item}`} style={s.unclearText}>•  {item}</Text>) : <Text style={s.recordSectionNote}>No specific unknowns were listed in this answer.</Text>}
+      {view.unclear.length > 0 && <Text style={s.unclearScope}>This reflects only the information selected for this answer.</Text>}
+    </View>
+    {view.expandable ? <>
+      {expanded && view.answerExpandable && <View style={s.fullResponse}><Text style={s.recordSectionLabel}>FULL RESPONSE</Text><Text style={s.fullResponseText}>{view.answer}</Text></View>}
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={expanded ? 'Show less answer detail' : 'Read full response and source detail'} onPress={toggle} style={s.structuredDisclosure}><Text style={s.structuredDisclosureText}>{expanded ? 'SHOW LESS ↑' : view.answerExpandable ? 'READ FULL RESPONSE + SOURCE DETAIL ↓' : 'READ FULL SOURCE DETAIL ↓'}</Text></Pressable>
+    </> : null}
+  </View>;
+}
+function MeaningSection({ meaning, sources, onOpenSource, targetFor }: { meaning: AgentMeaning; sources: AgentSource[]; onOpenSource: (source: AgentSource) => void; targetFor: (source: AgentSource) => AgentCitationTarget }) {
+  const view = askMeaningView(meaning, sources);
+  if (!view) return null;
+  return <View style={s.meaningCard}>
+    <Text style={s.meaningHeading}>WHAT THIS CAN MEAN</Text>
+    <Text style={s.meaningText}>{view.text}</Text>
+    <Text style={s.meaningNote}>General context from trusted public sources; not a personal interpretation or treatment advice.</Text>
+    <View style={s.meaningSources}><Text style={s.meaningSourceLabel}>SOURCE BASIS</Text>{view.citations.map((reference) => {
+      const source = sources.find((item) => item.reference === reference)!;
+      const target = targetFor(source);
+      return <Pressable key={reference} accessibilityRole="button" accessibilityLabel={target ? `Open meaning source ${source.title}` : `Meaning source ${source.title} unavailable`} disabled={!target} onPress={() => onOpenSource(source)} style={[s.meaningSourceChip, !target && s.meaningSourceDisabled]}><Text style={s.meaningSourceRef}>{reference}</Text><Text numberOfLines={1} style={s.meaningSourceTitle}>{source.publisher || source.title}</Text></Pressable>;
+    })}</View>
   </View>;
 }
 function ShareToggle({ label, count, selected, onPress, disabled = false }: { label: string; count: number | string; selected: boolean; onPress: () => void; disabled?: boolean }) { return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled }} disabled={disabled} onPress={onPress} style={s.shareRow}><View style={s.shareToggleLabel}><View style={[s.checkBox, selected && s.checkBoxOn]}><Text style={s.checkMark}>{selected ? '✓' : ''}</Text></View><Text style={s.shareLabel}>{label}</Text></View><Text style={[s.shareCount, (!count || disabled) && s.shareExcluded]}>{typeof count === 'number' ? `${count} ${count === 1 ? 'item' : 'items'}` : count}</Text></Pressable>; }
@@ -489,7 +545,41 @@ const s = StyleSheet.create({
   traceDetail: { color: C.muted, fontSize: 9, lineHeight: 13, marginTop: 1 },
 
   answerCard: { backgroundColor: C.surface, borderRadius: 20, borderWidth: 1, borderColor: C.line, padding: 15, marginTop: 12 },
-  answerLabel: { color: C.plum, fontSize: 8, fontWeight: '700', letterSpacing: 1.25 },
+  answerLabel: { color: C.plum, fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
+  structuredAnswer: { backgroundColor: '#FCF8F2', borderRadius: 16, borderWidth: 1, borderColor: '#E7DDE8', padding: 13, marginTop: 9 },
+  structuredEyebrow: { color: '#725184', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+  structuredLead: { color: '#352D39', fontSize: 16, lineHeight: 24, fontWeight: '500', marginTop: 6 },
+  meaningCard: { backgroundColor: '#F1EAF6', borderRadius: 13, borderWidth: 1, borderColor: '#DCCCE8', padding: 11, marginTop: 11 },
+  meaningHeading: { color: '#5E4672', fontSize: 11, fontWeight: '800', letterSpacing: 0.65 },
+  meaningText: { color: '#382F3B', fontSize: 14, lineHeight: 21, marginTop: 6 },
+  meaningNote: { color: '#625968', fontSize: 12, lineHeight: 18, marginTop: 6 },
+  meaningSources: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 8 },
+  meaningSourceLabel: { color: '#65586B', fontSize: 10, fontWeight: '800', letterSpacing: 0.4, marginRight: 2 },
+  meaningSourceChip: { maxWidth: '78%', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FFFCFF', borderRadius: 9, borderWidth: 1, borderColor: '#D6C8DE', paddingHorizontal: 8, paddingVertical: 6 },
+  meaningSourceDisabled: { opacity: 0.6 },
+  meaningSourceRef: { color: '#5D4672', fontSize: 10, fontWeight: '800' },
+  meaningSourceTitle: { color: '#514657', fontSize: 11, maxWidth: 180 },
+  recordEvidenceSection: { borderTopWidth: 1, borderTopColor: '#E9E1E8', paddingTop: 11, marginTop: 12 },
+  citedOriginSection: { borderTopWidth: 1, borderTopColor: '#E9E1E8', paddingTop: 10, marginTop: 10 },
+  recordSectionLabel: { color: '#725184', fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
+  recordEvidence: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E9E2E8', padding: 10, marginTop: 7 },
+  recordEvidenceUnavailable: { backgroundColor: '#F5F0F4', borderRadius: 10, padding: 9, marginTop: 6 },
+  recordEvidenceHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  recordReference: { color: '#5D4672', backgroundColor: '#EFE6F2', overflow: 'hidden', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 4, fontSize: 11, fontWeight: '800' },
+  recordEvidenceTitle: { color: '#382F3B', flex: 1, fontSize: 14, fontWeight: '700' },
+  recordEvidenceMeta: { color: '#655B68', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  recordEvidenceDetail: { color: '#403744', fontSize: 14, lineHeight: 21, marginTop: 6 },
+  recordEvidenceMissing: { color: '#625968', fontSize: 13, lineHeight: 19, marginTop: 5 },
+  recordEvidenceAction: { color: '#335A92', fontSize: 11, fontWeight: '800', letterSpacing: 0.35, marginTop: 7 },
+  recordSectionNote: { color: '#5F5663', fontSize: 13, lineHeight: 19, marginTop: 6 },
+  unclearSection: { backgroundColor: '#F8F1E8', borderRadius: 12, padding: 10, marginTop: 10 },
+  unclearSectionLabel: { color: '#855B40', fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
+  unclearText: { color: '#403744', fontSize: 14, lineHeight: 21, marginTop: 6 },
+  unclearScope: { color: '#625968', fontSize: 12, lineHeight: 18, marginTop: 7 },
+  fullResponse: { borderTopWidth: 1, borderTopColor: '#E9E1E8', paddingTop: 10, marginTop: 10 },
+  fullResponseText: { color: '#403744', fontSize: 13, lineHeight: 20, marginTop: 6 },
+  structuredDisclosure: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingVertical: 9, paddingRight: 8 },
+  structuredDisclosureText: { color: '#355B91', fontSize: 10, fontWeight: '800', letterSpacing: 0.45 },
   answerSummaryLabel: { color: C.faint, fontSize: 8, fontWeight: '700', letterSpacing: 0.8, marginTop: 8 },
   answerText: { color: C.ink, fontSize: 15, lineHeight: 23, marginTop: 7 },
   answerDisclosure: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingVertical: 9, paddingRight: 8 },

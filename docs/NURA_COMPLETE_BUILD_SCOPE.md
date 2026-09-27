@@ -4,7 +4,7 @@
 
 **Scope baseline:** 24 September 2026. The existing [mobile storyboard](NURA_MOBILE_STORYBOARDS.md), [agentic foundation](NURA_AGENTIC_FOUNDATION.md), and [story acceptance contract](USER_STORY_ACCEPTANCE.md) remain detailed design/architecture references. This document joins them into one completion and testing plan.
 
-**Latest checkpoint:** 27 September 2026, 07:14 +08. Strict acceptance remains **0/11 user stories, 0/8 production gates, 0/19 packages (0%)**. A verified slice or route does not count as a complete package. The exact two-PDF M1 sample batch passes a provider-free service integration using hash-verified fixed mappings, dated source-linked claims, explicit accept/edit/reject decisions, safe mismatch rejection, and duplicate-path checks. Typecheck, lint, repository **273/273**, latest slices **80/80**, review accessibility **7/7**, and `git diff --check` pass. The Mac is locked, so this is not yet a visually verified in-app journey; M1 remains open.
+**Latest checkpoint:** 27 September 2026, 11:37 +08. Strict acceptance remains 0/11 user stories, 0/8 production gates, 0/19 packages (0%). The local synthetic sample/zero-topic browser rehearsal passes 23/23; the ordinary connected-upload rehearsal now passes 17/17 through the compiled app, including consent, failure/retry, Stop cancellation, accept, dismiss, pending review, exactly one save, source-linked /health and reload with one source row. Its provider response is injected in memory; no live provider or personal health data is used. Ask also has an optional source-linked general-education “What this can mean” card, with the body and source text sizes increased for phone reading. The repository suite is 284/284, latest slices 87/87, review accessibility 7/7, typecheck, no-cache lint and diff check pass. Ask’s card still needs visual phone review and semantic grounding evaluation; reduced motion, native restart, production identity and owner isolation remain open.
 
 ## What “100% complete” means
 
@@ -229,3 +229,52 @@ Never describe a plan as completed work, a screen as a completed story, a config
 - Verification: typecheck and lint passed; repository/integration tests **265/265**; latest-slice tests **79/79**; `git diff --check` passed.
 - Strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. M1 remains partial because this run stopped before file approval, source-claim review, one save, and timeline re-entry. No user-test milestone is ready.
 - Next: verify the staged two-report batch using deterministic local extraction, per-file events, the full edit/reject/unclear/date queue, one save, source navigation and reload, without a live provider. Native/reduced-motion/device checks and production identity/isolation remain open.
+
+
+### M1 in-app synthetic batch journey — 27 September 2026, 08:55 +08
+
+- Ran a fresh, disposable Chrome profile against the compiled web app at http://127.0.0.1:8096/ and an empty local data directory on a loopback backend. OPENAI_API_KEY was explicitly empty; the browser storage on the existing user preview was not touched. The local demo code 720720 is a preview rehearsal, not production email/mobile verification.
+- Completed profile setup with five selected health areas and a blood-sugar detail, wrote a synthetic plain-language note, and staged the two built-in lipid PDFs. The review screen showed separate, accurate consent for on-device fixed sample mapping with no provider call. Each file emitted its own real service milestones and produced 8 and 5 dated, source-quoted suggestions.
+- In the unified review queue, staged the January LDL result and April LDL result for inclusion, edited synthetic April non-HDL from 132 to 131 mg/dL while retaining the original quote, marked the April HDL suggestion for dismissal, and left other suggestions pending. One save action persisted only the staged decisions and selected self-report.
+- /health displayed three events: the separately labeled user note, one 21 January report result, and one 22 April report event grouping two measurements. Reopening the saved source preserved the quote and review history. Reload retained all three events without a duplicate source row.
+- At 360×780, 390×844 and 430×932, the page had no horizontal overflow; the 390×844 timeline screenshot was visually inspected. The experience uses warm reading cards and clear source/date labels; long details remain expandable. This is a browser preview, not native-device or reduced-motion verification.
+- The first isolated request was blocked by the test backend’s default development CORS list because the temporary port was not included. The preflight confirmed no app data request reached the service. The disposable backend was restarted with only the isolated test origin allowed; the user-approved local-only retry succeeded. No application CORS policy was loosened.
+- Verification after the journey: npm run typecheck; EXPO_NO_DOTENV=1 npm run lint -- --no-cache; npm run test:repo 273/273; latest slices 80/80; review accessibility 7/7. All passed. No real health data, network provider, or third-party request was used.
+- **Status:** M1 remains in progress, and strict acceptance stays **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. The test covers only the preview sign-in and exact local fixture path. Production identity/recovery and person isolation, skip-to-upload, ordinary connected uploads, offline/cancel recovery, native persistence, and in-app reduced-motion behavior remain open.
+- **Next:** turn this observed full web path into a repeatable automated browser acceptance check; then continue the remaining M1 gates. Do not offer a disconnected flow as the full-user test milestone.
+
+
+### Repeatable M1 browser rehearsal and Ask evidence presentation — 27 September 2026, 09:50 +08
+
+- `npm run test:m1-browser` starts a disposable synthetic repository, loopback-only service and Expo web app, then uses a fresh headless Chrome profile. It empties the provider key, disables dotenv and records observed network origins. The script passes **16/16** assertions.
+- The verified path starts at local preview sign-in, completes required name/country, selects five focus areas, records a synthetic note, stages two exact built-in lipid reports, grants the consent naming both, reviews source-linked suggestions, saves staged decisions once, and reaches `/health`. Reload preserves source-linked history. At 360, 390 and 430 px, no horizontal overflow appears.
+- The service repository confirms accepted, edited, dismissed and still-pending claim states; an edited value retains its original extraction. Two fixture sources and zero provider events are present. Thirty-two observed HTTP(S) requests use only isolated app/service origins. Reduced-motion preference was set for this run, but full behavior remains open.
+- The app now preserves an open source when its file row is tapped again and prevents source revalidation from replacing the save confirmation.
+- Ask's first view is shorter and separates saved facts, extracted document details, selected topics, user-recorded links, public sources and unavailable citations. Unknowns remain explicit; evidence shown in the coverage panel is not repeated. Full “what it means” semantics, phone visual review and complete Ask evaluation remain open.
+- Combined verification: browser **16/16**, repository **281/281**, latest slices **85/85**, review accessibility **7/7**, typecheck, no-cache lint and diff check all pass. No live model/provider, external network origin or real health data was used.
+- This does not complete Story 1 or any production gate. Production identity/recovery and owner isolation, skip-to-upload, ordinary connected uploads, in-app offline/cancel/retry, native restart, full reduced-motion/device checks, and the other ten stories/eight gates remain open. Overall acceptance remains **0/19 (0%)**. No whole-app user test is ready.
+
+
+### M1 zero-area routing contract — 27 September 2026, 10:00 +08
+
+- Added a regression check proving a new profile with a valid name and country, no selected health topics, and no saved facts/files is allowed to continue from profile setup to `/intake?firstRun=true`. Required identity fields remain enforced; there is no topic-count prerequisite.
+- The assertion covers the current screen handler and route contract, not a compiled browser walkthrough of the zero-area experience. The visual/action branch remains open for M1.
+- Verification: latest-slice suite **86/86**, typecheck, no-cache lint and `git diff --check` passed. The provider-free M1 browser path remains **16/16**; repository suite **281/281**. Strict completion remains **0/19 (0%)**.
+
+### Connected-upload and Ask presentation checkpoint — 27 September 2026, 11:30 +08
+
+- The provider-free local sample and zero-topic rehearsal passes 23/23. A separate synthetic ordinary-upload browser rehearsal passes 12/12 through the compiled app: three ordinary PDFs are staged, consent lists all files, one synthetic extraction failure stays retryable, Stop cancels the active request without starting the next file, and a fresh-consent retry produces three source-linked review candidates. The candidates remain pending; no assertion is saved.
+- The synthetic provider response is intercepted in memory. Chrome observed only the local app and service origins; the service did not log PDF bytes. This does not verify a live provider or block every possible low-level Node networking path.
+- Ask gained an optional source-linked “What this can mean” section. It is concise public health education, only appears when tied to a returned public source, and is suppressed for policy, symptom-support and profile-summary answers. Citation/source checks are not semantic-entailment evaluation; phone visual review remains open.
+- Verification: browser 23/23, connected upload 12/12, repository/integration 284/284, latest slices 87/87, review accessibility 7/7, typecheck, no-cache lint, and diff check passed.
+- Strict acceptance remains 0/11 stories, 0/8 production gates, 0/19 accepted packages (0%). M1 is partial and the full-app user test is not ready. Production identity/recovery and owner isolation, connected candidate review/save/history, native restart, full reduced-motion/device checks, and the other story/gate criteria remain open.
+- Next implementation slice: continue ordinary upload through evidence-level accept/edit/dismiss/pending decisions, one save, and source/date-linked health-history re-entry; then test the connected journey across phone widths and reduced motion.
+
+### M1 connected review/save/history and Ask readability — 27 September 2026, 11:37 +08
+
+- The local sample/zero-topic rehearsal passes **23/23**. The ordinary connected-upload rehearsal now passes **17/17** end to end: three synthetic PDFs, explicit file-specific consent, visible retry after a service failure, Stop cancellation, fresh-consent retry, one accepted claim, one dismissed claim, one pending claim, and a single save.
+- The saved health history shows the accepted 118/76 event linked to its original synthetic report exactly once. Reload preserves that relationship; the dismissed and pending candidates are not shown as saved facts. The run uses an in-memory synthetic provider response and no real credentials or health data.
+- Ask’s new optional “What this can mean” card remains a concise, cited general-education section rather than personal advice. I raised small body/source text sizes for phone reading. The semantic-source checks do not prove entailment, and the card still needs a visual phone review.
+- Verification after integration: repository/integration **284/284**, latest slices **87/87**, review accessibility **7/7**, both browser rehearsals **23/23** and **17/17**, typecheck, no-cache lint and diff check pass.
+- Strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 accepted packages (0%)**. M1 remains partial: duplicate/conflict and unknown-date cases, native restart, actual reduced-motion behavior, production sign-in/recovery and owner isolation remain. A complete whole-app user test is not ready.
+- Next slice: add the M1 duplicate/conflict and unknown-date scenarios using synthetic sources, then audit actual reduced-motion behavior and continue production identity/isolation.

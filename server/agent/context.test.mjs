@@ -376,3 +376,41 @@ test('memory proposals need a directly stated value or a citeable personal sourc
   assert.equal(validate({ ...candidate, sourceReferences: ['R2', 'R3', 'R4', 'R5', 'R99'] }).memoryProposal, null, 'topics, external sources, user links, policy terms and unknown refs cannot support a personal memory write');
   assert.deepEqual(sources.map((source) => source.reference), ['R1', 'R2', 'R3', 'R4', 'R5'], 'validation does not mutate the evidence registry');
 });
+
+test('meaning is concise public education and stays linked to cited trusted sources', () => {
+  const sources = [
+    { reference: 'R1', id: 'fact:result', kind: 'user_record', category: 'Lab result', title: 'Synthetic result' },
+    { reference: 'W1', id: 'web:W1', kind: 'external_source', category: 'Education', title: 'Trusted public source' },
+  ];
+  const answer = validateAnswer({
+    answer: 'The selected report lists a synthetic result.', citations: ['R1', 'W1'],
+    meaning: { text: 'A1C estimates average blood sugar over roughly three months.', citations: ['W1'] },
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'results', question: 'What does A1C measure?' });
+
+  assert.deepEqual(answer.meaning, { text: 'A1C estimates average blood sugar over roughly three months.', citations: ['W1'] });
+  assert.deepEqual(answer.citations, ['R1', 'W1']);
+
+  const generalRiskContext = validateAnswer({
+    answer: 'The selected report lists a synthetic result.', citations: ['W1'],
+    meaning: { text: 'High blood pressure is associated with stroke risk over time.', citations: ['W1'] },
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'results', question: 'What is high blood pressure?' });
+  assert.equal(generalRiskContext.meaning.text, 'High blood pressure is associated with stroke risk over time.', 'general sourced education can mention population-level risk without assigning a risk to the person');
+});
+
+test('meaning is empty for legacy, uncited, non-public, unsafe, or overlong explanations', () => {
+  const sources = [
+    { reference: 'R1', id: 'fact:result', kind: 'user_record', category: 'Lab result', title: 'Synthetic result' },
+    { reference: 'W1', id: 'web:W1', kind: 'external_source', category: 'Education', title: 'Trusted public source' },
+  ];
+  const base = { answer: 'The selected record was reviewed.', citations: ['R1', 'W1'], unknowns: [], nextSteps: [], memoryProposal: { proposed: false } };
+  const validate = (meaning, intent = 'results') => validateAnswer({ ...base, ...(meaning === undefined ? {} : { meaning }) }, sources, { key: intent, question: 'Explain this result.' });
+
+  assert.deepEqual(validate(undefined).meaning, { text: '', citations: [] }, 'older answer payloads remain valid');
+  assert.deepEqual(validate({ text: 'A1C estimates average blood sugar over roughly three months.', citations: ['R1'] }).meaning, { text: '', citations: [] }, 'a personal record cannot source general medical education');
+  assert.deepEqual(validate({ text: 'A1C estimates average blood sugar over roughly three months.', citations: ['W404'] }).meaning, { text: '', citations: [] }, 'unknown source references are rejected');
+  assert.deepEqual(validate({ text: 'Your result means you have diabetes.', citations: ['W1'] }).meaning, { text: '', citations: [] }, 'personal diagnosis language is rejected');
+  assert.deepEqual(validate({ text: 'A1C estimates average blood sugar over roughly three months.', citations: ['W1'] }, 'coverage').meaning, { text: '', citations: [] }, 'policy meaning uses its dedicated wording and assessment');
+  assert.deepEqual(validate({ text: `${'A1C estimates average blood sugar. '.repeat(56)}`, citations: ['W1'] }).meaning, { text: '', citations: [] }, 'long explanations do not become a text dump');
+});

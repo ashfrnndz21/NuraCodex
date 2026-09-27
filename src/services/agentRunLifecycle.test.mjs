@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createAgentRunEventGate } from './agentRunLifecycle.mjs';
 
 const answer = {
-  type: 'answer', answer: 'A grounded synthetic answer.', citations: ['R1'], unknowns: [], nextSteps: [],
+  type: 'answer', answer: 'A grounded synthetic answer.', citations: ['R1'], meaning: { text: '', citations: [] }, unknowns: [], nextSteps: [],
   memoryProposal: { label: 'Preference', value: 'Synthetic preference', reason: 'Asked to remember.' },
 };
 
@@ -14,6 +14,7 @@ test('an answer and its memory proposal remain provisional until run_finished', 
   const complete = gate.completeTransport();
   assert.equal(complete.kind, 'complete');
   assert.equal(complete.answer.answer, answer.answer);
+  assert.deepEqual(complete.answer.meaning, answer.meaning);
   assert.equal(complete.answer.memoryProposal.value, answer.memoryProposal.value);
 });
 

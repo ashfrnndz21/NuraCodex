@@ -82,7 +82,7 @@ export default function ProfileSummary() {
           runSources = event.sources;
           setSources(event.sources);
         } else if (event.type === 'answer') {
-          finalAnswer = { answer: event.answer, citations: event.citations, unknowns: event.unknowns, nextSteps: event.nextSteps, coverageAssessments: event.coverageAssessments, memoryProposal: event.memoryProposal };
+          finalAnswer = { answer: event.answer, citations: event.citations, meaning: event.meaning, unknowns: event.unknowns, nextSteps: event.nextSteps, coverageAssessments: event.coverageAssessments, memoryProposal: event.memoryProposal };
           setAnswer(finalAnswer);
           dispatchRunEvent('TEXT_MESSAGE_START');
         } else if (event.type === 'run_finished' && finalAnswer) {

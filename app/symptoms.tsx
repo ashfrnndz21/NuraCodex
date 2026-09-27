@@ -89,7 +89,7 @@ export default function Symptoms() {
           runTrace = [...runTrace.filter((existing) => existing.id !== event.id), item]; setTrace(runTrace);
           if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         } else if (event.type === 'evidence') { setSources(event.sources); setPublicSearchUsed((current) => current || event.sources.some((source) => source.kind === 'external_source')); }
-        else if (event.type === 'answer') { setAnswer({ answer: event.answer, citations: event.citations, unknowns: event.unknowns, nextSteps: event.nextSteps, coverageAssessments: event.coverageAssessments, memoryProposal: null }); dispatchRunEvent('TEXT_MESSAGE_START'); }
+        else if (event.type === 'answer') { setAnswer({ answer: event.answer, citations: event.citations, meaning: event.meaning, unknowns: event.unknowns, nextSteps: event.nextSteps, coverageAssessments: event.coverageAssessments, memoryProposal: null }); dispatchRunEvent('TEXT_MESSAGE_START'); }
         else if (event.type === 'run_finished') dispatchRunEvent('RUN_FINISHED');
         else if (event.type === 'run_error') { setError(event.message); dispatchRunEvent('RUN_ERROR'); }
       });

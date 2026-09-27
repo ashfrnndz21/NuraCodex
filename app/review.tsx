@@ -75,6 +75,7 @@ export default function Review() {
   const [selfReportConsentChecked, setSelfReportConsentChecked] = useState(false);
   const [organizingNoteId, setOrganizingNoteId] = useState<string | null>(null);
   const [selectionChanged, setSelectionChanged] = useState(false);
+  const [sourceOpenRevision, setSourceOpenRevision] = useState(0);
   const [fileStates, setFileStates] = useState<Record<string, { status: 'queued' | 'reading' | 'complete' | 'failed' | 'cancelled'; detail?: string }>>({});
   const [busy, setBusy] = useState(false);
   const [extracting, setExtracting] = useState(false);
@@ -83,6 +84,7 @@ export default function Review() {
   const [activity, setActivity] = useState<IntakeActivity[]>([]);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [source, setSource] = useState<LocalSource | null>(null);
+  const lastOpenedNoticeSourceId = useRef<string | null>(null);
   const [claims, setClaims] = useState<CandidateClaim[]>([]);
   const [batchReviewRun, setBatchReviewRun] = useState<{ key: string; reviews: BatchSourceReview[]; complete: boolean }>({ key: '', reviews: [], complete: false });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -180,8 +182,11 @@ export default function Review() {
       if (!active) return;
       if (selectedAssetId && selected?.serverSourceId !== result.source.id) await attachSourceToAsset(selectedAssetId, result.source.id);
       if (!active) return;
+      const shouldAnnounceOpen = lastOpenedNoticeSourceId.current !== result.source.id;
+      lastOpenedNoticeSourceId.current = result.source.id;
       setSource(result.source); setClaims(result.claims);
-      setNotice(result.source.origin === 'user_entered' ? 'Opened the saved local organization of your description. No provider call was made.' : 'Opened the saved extraction for this file. The original was not sent again.');
+      setError('');
+      if (shouldAnnounceOpen) setNotice(result.source.origin === 'user_entered' ? 'Opened the saved local organization of your description. No provider call was made.' : 'Opened the saved extraction for this file. The original was not sent again.');
       const requestedClaim = result.claims.find((claim) => claim.id === requestedClaimId && claim.evidenceState === 'user_confirmed');
       if (requestedClaim) {
         setDrafts((current) => ({ ...current, [requestedClaim.id]: { label: requestedClaim.label, value: requestedClaim.value, unit: requestedClaim.unit ?? '', effectiveAt: requestedClaim.effectiveAt ?? '' } }));
@@ -191,7 +196,7 @@ export default function Review() {
       if (active) setError(caught instanceof Error ? caught.message : 'This source could not be opened.');
     });
     return () => { active = false; };
-  }, [sourceToOpen, requestedClaimId, selected, selectedAssetId, ready, sourceNote, sourceFact, selfReportTextForSource, attachSourceToAsset, linkIntakeNoteSource]);
+  }, [sourceToOpen, sourceOpenRevision, requestedClaimId, selected, selectedAssetId, ready, sourceNote, sourceFact, selfReportTextForSource, attachSourceToAsset, linkIntakeNoteSource]);
 
   useEffect(() => {
     if (!ready) return;
@@ -561,7 +566,7 @@ export default function Review() {
         </View>}
       </Surface>)}
     </View>}
-    {readable.length > 0 ? <View style={styles.files}><Label>{purpose === 'insurance' ? 'POLICY FILES' : 'HEALTH FILES'} · {readable.length}</Label>{readable.map((asset) => { const run = fileStates[asset.id]; const status = run?.status === 'reading' ? 'Reading now' : run?.status === 'complete' || asset.serverSourceId ? 'Ready to review' : run?.status === 'failed' ? 'Needs another try' : run?.status === 'cancelled' ? 'Stopped' : 'Ready'; return <Pressable key={asset.id} accessibilityRole="button" accessibilityLabel={`Open ${asset.name}`} accessibilityHint={`${status}. Opens this file's source-linked review.`} accessibilityState={{ disabled: busy, selected: selected?.id === asset.id, busy: run?.status === 'reading' }} disabled={busy} onPress={() => { setSelectionChanged(true); setSelectedId(asset.id); setSource(null); setClaims([]); setActivity([]); setNotice(''); setError(''); }}><Surface style={{ ...styles.file, ...(selected?.id === asset.id ? styles.fileSelected : {}) }}><Text style={styles.fileType}>{asset.kind.toUpperCase()}</Text><View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.fileName}>{asset.name}</Text><Text style={styles.fileSub}>{asset.kind === 'video' ? 'Up to 3 minutes · up to 6 timestamped moments' : asset.size ? `${Math.round(asset.size / 1024)} KB` : 'Ready for explicit review'} · {status}</Text>{run?.detail ? <Text numberOfLines={2} style={styles.fileSub}>{run.detail}</Text> : null}</View><Text style={styles.select}>{selected?.id === asset.id ? 'Selected' : 'Open'}</Text></Surface></Pressable>; })}</View> : null}
+    {readable.length > 0 ? <View style={styles.files}><Label>{purpose === 'insurance' ? 'POLICY FILES' : 'HEALTH FILES'} · {readable.length}</Label>{readable.map((asset) => { const run = fileStates[asset.id]; const status = run?.status === 'reading' ? 'Reading now' : run?.status === 'complete' || asset.serverSourceId ? 'Ready to review' : run?.status === 'failed' ? 'Needs another try' : run?.status === 'cancelled' ? 'Stopped' : 'Ready'; return <Pressable key={asset.id} accessibilityRole="button" accessibilityLabel={`Open ${asset.name}`} accessibilityHint={`${status}. Opens this file's source-linked review.`} accessibilityState={{ disabled: busy, selected: selected?.id === asset.id, busy: run?.status === 'reading' }} disabled={busy} onPress={() => { if (selected?.id === asset.id) { if (!source && asset.serverSourceId) { setError(''); setSourceOpenRevision((revision) => revision + 1); } return; } lastOpenedNoticeSourceId.current = null; setSelectionChanged(true); setSelectedId(asset.id); setSource(null); setClaims([]); setActivity([]); setNotice(''); setError(''); }}><Surface style={{ ...styles.file, ...(selected?.id === asset.id ? styles.fileSelected : {}) }}><Text style={styles.fileType}>{asset.kind.toUpperCase()}</Text><View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.fileName}>{asset.name}</Text><Text style={styles.fileSub}>{asset.kind === 'video' ? 'Up to 3 minutes · up to 6 timestamped moments' : asset.size ? `${Math.round(asset.size / 1024)} KB` : 'Ready for explicit review'} · {status}</Text>{run?.detail ? <Text numberOfLines={2} style={styles.fileSub}>{run.detail}</Text> : null}</View><Text style={styles.select}>{selected?.id === asset.id ? 'Selected' : 'Open'}</Text></Surface></Pressable>; })}</View> : null}
     {!readable.length && assets.length > 0 && <Surface style={styles.notice}><Text style={styles.noticeTitle}>{purpose === 'insurance' ? 'Choose a policy PDF or image' : 'Choose a supported health file'}</Text><Text style={styles.noticeBody}>{purpose === 'insurance' ? 'The Insurance Registry reads policy PDFs and images. Video files are not used for policy review.' : 'Nura can review PDFs, JPG, PNG and WebP images, and short MP4, MOV or WebM health videos.'}</Text></Surface>}
     {filesNeedingReview.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel={`Review all ${filesNeedingReview.length} files with Nura`} accessibilityHint="Shows one approval sheet naming each file before reading begins." accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => { setError(''); setConsentOpen(true); setConsentAssetIds(filesNeedingReview.map((asset) => asset.id)); }} style={[styles.primary, busy && styles.disabled]}><View style={{ flex: 1 }}><Text style={styles.primaryText}>{busy ? 'Reviewing files…' : `Review ${filesNeedingReview.length === 1 ? 'file' : `all ${filesNeedingReview.length} files`} with Nura`}</Text><Text style={[styles.fileSub, { color: colors.violet }]}>One approval · each file gets its own source-linked review</Text></View><Text style={styles.arrow}>→</Text></Pressable>}
     {linkedSourceAssets.length > 1 && <View style={styles.batchAnalysis}>
@@ -583,7 +588,7 @@ export default function Review() {
           <Text style={styles.batchFindingBody}>{isConflict ? 'Check the source passages and dates before deciding which value belongs in your history. Both suggestions remain separate.' : dateNeedsReview ? 'The same detail has different values, and at least one source has no linked result date. Check the original reports and add a date before deciding whether these are separate results.' : 'The same value appears in more than one file. Check the original reports before deciding whether these are the same event.'}</Text>
           <View style={styles.batchSources}>{finding.sources.map((item) => {
             const asset = batchSourceReviews.find((review) => review.source?.id === item.id);
-            return <Pressable key={item.id} disabled={!asset} onPress={() => { if (!asset) return; setSelectionChanged(true); setSelectedId(asset.assetId); setSource(null); setClaims([]); setActivity([]); setError(''); setNotice(`Opened ${asset.name} to compare its original source.`); }} style={styles.batchSourceButton}>
+            return <Pressable key={item.id} disabled={!asset} onPress={() => { if (!asset) return; if (selected?.id === asset.assetId) { if (!source && asset.source) { setError(''); setSourceOpenRevision((revision) => revision + 1); } return; } lastOpenedNoticeSourceId.current = null; setSelectionChanged(true); setSelectedId(asset.assetId); setSource(null); setClaims([]); setActivity([]); setError(''); setNotice(`Opened ${asset.name} to compare its original source.`); }} style={styles.batchSourceButton}>
               <Text style={styles.batchSourceText}>Open {item.name} ↗</Text>
             </Pressable>;
           })}</View>

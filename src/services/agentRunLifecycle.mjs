@@ -13,6 +13,7 @@ export function createAgentRunEventGate() {
         pendingAnswer = {
           answer: event.answer,
           citations: event.citations,
+          meaning: event.meaning,
           unknowns: event.unknowns,
           nextSteps: event.nextSteps,
           coverageAssessments: event.coverageAssessments,

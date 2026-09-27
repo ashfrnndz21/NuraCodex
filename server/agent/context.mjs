@@ -4,6 +4,8 @@ const MAX_PROFILE_SYNTHESIS_ITEMS = 32;
 const RETRIEVABLE_FACT_STATUSES = new Set(['confirmed', 'reviewed']);
 const LINK_RELATIONS = new Set(['same_source', 'happened_around', 'measured_during', 'treatment_for', 'related_by_me', 'user_note']);
 const MEMORY_EVIDENCE_KINDS = new Set(['user_record', 'treatment_record', 'care_visit', 'document_context']);
+const UNSUPPORTED_MEANING_LANGUAGE = /\b(?:you|your|i|we|our|recommend(?:s|ed|ation)?|should|must|need to|start|stop|change|take|avoid|increase|decrease|adjust|treat(?:ment)?|diagnos(?:e|is|ed)|cause[sd]?|urgent|safe)\b/i;
+const EMPTY_MEANING = { text: '', citations: [] };
 const SOURCE_CONTEXT_KINDS = {
   dates: new Set(['report_date', 'collected_at', 'received_at', 'approved_at', 'issued_at', 'effective_period']),
   entities: new Set(['laboratory', 'provider', 'insurer', 'analyzer', 'technology']),
@@ -267,6 +269,20 @@ export function validateAnswer(answer, sources, intent) {
   const modelCitations = Array.isArray(answer?.citations) ? answer.citations.filter((value) => typeof value === 'string' && allowed.has(value)) : [];
   const coverageCitations = coverageAssessments.flatMap((item) => [item.policyReference, ...item.relatedHealthReferences]);
   let citations = [...new Set([...(rejectedCoverageFinding ? [] : modelCitations), ...coverageCitations])].slice(0, 20);
+  const meaningText = cleanText(answer?.meaning?.text, 500);
+  const meaningReferences = Array.isArray(answer?.meaning?.citations)
+    ? [...new Set(answer.meaning.citations.filter((reference) => typeof reference === 'string' && modelCitations.includes(reference) && sourceByReference.get(reference)?.kind === 'external_source'))].slice(0, 4)
+    : [];
+  // Meaning is limited to opted-in, trusted public sources and non-personal
+  // educational wording. The pattern intentionally errs toward suppressing it.
+  const meaningAllowed = !['coverage', 'symptom_support', 'profile_summary'].includes(intent.key);
+  const meaning = meaningAllowed && meaningText && meaningText.split(/\s+/).length <= 55 && meaningReferences.length && !UNSUPPORTED_MEANING_LANGUAGE.test(meaningText)
+    ? { text: meaningText, citations: meaningReferences }
+    : EMPTY_MEANING;
+  if (meaning.citations.length) {
+    const combinedCitations = [...new Set([...citations, ...meaning.citations])];
+    citations = combinedCitations.length <= 20 ? combinedCitations : [...new Set([...meaning.citations, ...citations])].slice(0, 20);
+  }
   const noExclusionsUnsubstantiated = intent.key === 'coverage' && noExclusionsClaim.test(cleanText(answer?.answer, 4000)) && !sourceConfirmsNoExclusions(sources);
   const rejectedPolicyClaim = rejectedCoverageFinding || noExclusionsUnsubstantiated;
   const memory = answer?.memoryProposal;
@@ -274,6 +290,7 @@ export function validateAnswer(answer, sources, intent) {
     return {
       answer: 'I can’t safely assess the cause or urgency of a symptom from this profile. No cited public medical source was available for this response, so I won’t offer symptom-specific guidance. If symptoms are severe, rapidly worsening, or feel dangerous, contact local emergency services. Otherwise, a qualified clinician can assess what is happening.',
       citations: [],
+      meaning: EMPTY_MEANING,
       unknowns: ['No trusted public medical source was cited for this response.', 'Nura cannot diagnose or determine whether a symptom is safe.'],
       nextSteps: ['Contact a qualified clinician for an assessment.', 'Save a symptom note here if you want it in your health record.'],
       memoryProposal: null,
@@ -308,6 +325,7 @@ export function validateAnswer(answer, sources, intent) {
         ? 'The reviewed policy wording does not establish that the policy has no exclusions. I have kept only findings that match the saved policy wording.'
         : 'I could not verify that policy interpretation against its cited wording, so I have left it out. The findings shown below match saved policy text.',
       citations,
+      meaning: EMPTY_MEANING,
       ...(intent.key === 'coverage' ? { coverageAssessments } : {}),
       unknowns: [...new Set(unknowns)].slice(0, 5),
       nextSteps: [...new Set(nextSteps)].slice(0, 3),
@@ -317,6 +335,7 @@ export function validateAnswer(answer, sources, intent) {
   return {
     answer: cleanText(answer?.answer, 4000) || 'I could not form a clear answer from the selected information.',
     citations,
+    meaning,
     ...(intent.key === 'coverage' ? { coverageAssessments } : {}),
     unknowns,
     nextSteps,
