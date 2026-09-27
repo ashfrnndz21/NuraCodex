@@ -8,7 +8,8 @@ import { interpretSelfReportRequest } from './agent/selfReport.mjs';
 import { organizeSelfReportLocally } from './agent/localSelfReport.mjs';
 import { addHealthFeedCandidate, uniqueHealthFeedItems } from './agent/feedResults.mjs';
 import { localDemoRepository } from './adapters/localDemoRepository.mjs';
-import { createCandidateClaim, createDocumentContext, createRunEvent, createSourceRecord, DEMO_PROFILE_ID } from './contracts.mjs';
+import { LocalDemoProfileAccess, LOCAL_DEMO_PRINCIPAL } from './adapters/localDemoProfileAccess.mjs';
+import { createCandidateClaim, createDocumentContext, createRunEvent, createSourceRecord, DEMO_PROFILE_ID as DEMO_PROFILE_FIXTURE_ID } from './contracts.mjs';
 import { allowedOriginsFromEnv, applyCorsHeaders, isAllowedOrigin } from './cors.mjs';
 import { createRateLimiter } from './rateLimit.mjs';
 
@@ -19,6 +20,18 @@ if (!allowedHosts.has(host)) throw new Error('The development agent server binds
 if (process.env.NODE_ENV === 'production') throw new Error('This development agent server cannot be started in production.');
 const allowedOrigins = allowedOriginsFromEnv(process.env.NURA_ALLOWED_ORIGINS);
 const rateLimited = createRateLimiter();
+const localDemoProfileAccess = new LocalDemoProfileAccess();
+const localDemoAuthorization = await localDemoProfileAccess.authorize({
+  principal: LOCAL_DEMO_PRINCIPAL,
+  requestedProfileId: DEMO_PROFILE_FIXTURE_ID,
+});
+if (localDemoAuthorization.status !== 'allowed') {
+  throw new Error('The local synthetic demo profile is not authorized by its profile-access adapter.');
+}
+// The development service has one server-resolved synthetic principal/profile.
+// Never accept profile ownership from request JSON; production needs a verified
+// session adapter and account-scoped persistence before this server can be hosted.
+const DEMO_PROFILE_ID = localDemoAuthorization.profileId;
 const MAX_BODY_BYTES = 96_000;
 const configuredUploadCap = Number(process.env.NURA_MAX_INTAKE_BYTES || 15 * 1024 * 1024);
 const MAX_INTAKE_BYTES = Number.isSafeInteger(configuredUploadCap) ? Math.min(Math.max(configuredUploadCap, 64 * 1024), 15 * 1024 * 1024) : 15 * 1024 * 1024;
@@ -36,6 +49,11 @@ function json(response, status, value) {
 
 function cors(request, response) {
   applyCorsHeaders(request.headers.origin, response, allowedOrigins);
+}
+
+async function canAccessProfile(profileId) {
+  const result = await localDemoProfileAccess.authorize({ principal: LOCAL_DEMO_PRINCIPAL, requestedProfileId: profileId });
+  return result.status === 'allowed';
 }
 
 async function readBody(request, limit = MAX_BODY_BYTES) {
@@ -372,7 +390,7 @@ const server = createServer(async (request, response) => {
       localSampleDocuments: DEMO_INTAKE_ENABLED,
       trustedHealthSearch: process.env.NURA_HEALTH_SEARCH_ENABLED === 'true' && process.env.NURA_ENABLE_DEMO_WEB_SEARCH === 'true' && provider.configured,
       persistentDemoRepository: true,
-    } });
+    }, identity: { mode: localDemoProfileAccess.identityMode, productionIdentity: localDemoProfileAccess.productionIdentity } });
     return;
   }
 
@@ -406,7 +424,7 @@ const server = createServer(async (request, response) => {
   const claimsMatch = request.method === 'GET' && url.pathname.match(/^\/v1\/intake\/sources\/([a-zA-Z0-9-]+)\/claims$/);
   if (claimsMatch) {
     const source = await localDemoRepository.getSource(claimsMatch[1]);
-    if (!source || source.profileId !== DEMO_PROFILE_ID) { json(response, 404, { error: 'source_not_found' }); return; }
+    if (!source || !(await canAccessProfile(source.profileId))) { json(response, 404, { error: 'source_not_found' }); return; }
     const claims = await localDemoRepository.listClaims(source.id);
     json(response, 200, { mode: 'local_demo_synthetic_only', source, claims });
     return;
@@ -418,7 +436,7 @@ const server = createServer(async (request, response) => {
     let body;
     try { body = await readBody(request); } catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
     const existing = await localDemoRepository.getClaim(decisionMatch[1]);
-    if (!existing || existing.profileId !== DEMO_PROFILE_ID) { json(response, 404, { error: 'claim_not_found' }); return; }
+    if (!existing || !(await canAccessProfile(existing.profileId))) { json(response, 404, { error: 'claim_not_found' }); return; }
     try {
       const result = await localDemoRepository.decideClaim(existing.id, body);
       const event = createRunEvent({ runId: `review-${existing.id}`, sequence: 1, type: result.claim.evidenceState === 'user_confirmed' ? 'claim.accepted' : `claim.${result.claim.evidenceState}`, stage: 'claim_review', status: 'complete', displayLabel: result.claim.evidenceState === 'user_confirmed' ? 'You accepted a sourced claim' : 'You reviewed a sourced claim', refs: [{ kind: 'source', id: result.claim.sourceId }, ...(result.assertion ? [{ kind: 'assertion', id: result.assertion.id }] : [])] });
@@ -434,7 +452,7 @@ const server = createServer(async (request, response) => {
     let body;
     try { body = await readBody(request); } catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
     const existing = await localDemoRepository.getClaim(correctionMatch[1]);
-    if (!existing || existing.profileId !== DEMO_PROFILE_ID) { json(response, 404, { error: 'claim_not_found' }); return; }
+    if (!existing || !(await canAccessProfile(existing.profileId))) { json(response, 404, { error: 'claim_not_found' }); return; }
     try {
       const result = await localDemoRepository.correctClaim(existing.id, body);
       const event = createRunEvent({
@@ -458,7 +476,7 @@ const server = createServer(async (request, response) => {
     let body;
     try { body = await readBody(request); } catch (error) { json(response, 400, { error: 'invalid_request', message: error.message }); return; }
     const existing = await localDemoRepository.getClaim(retractionMatch[1]);
-    if (!existing || existing.profileId !== DEMO_PROFILE_ID) { json(response, 404, { error: 'claim_not_found' }); return; }
+    if (!existing || !(await canAccessProfile(existing.profileId))) { json(response, 404, { error: 'claim_not_found' }); return; }
     try {
       const result = await localDemoRepository.retractClaim(existing.id, body);
       if (!result || !result.previousAssertion) { json(response, 409, { error: 'retraction_unavailable', message: 'The accepted source version could not be found.' }); return; }

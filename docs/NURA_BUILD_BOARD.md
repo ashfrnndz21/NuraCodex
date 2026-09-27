@@ -2,7 +2,7 @@
 
 **Build objective:** the complete Nura mobile app: all eleven user stories, the agreed visual language and motion, persistent source-linked health state, multimodal record intake, consent-scoped agentic intelligence, and production security/privacy/release readiness. Synthetic-data demo readiness is an intermediate milestone; production identity, isolated family access, secure persistence, lifecycle controls, operations, and governance are part of the 100% goal. Never present an unconnected service or simulated trace as live.
 
-**Updated:** 27 September 2026, 13:26 +08
+**Updated:** 27 September 2026, 13:45 +08
 
 **Integration owner:** the primary Codex build owner. The design and intelligence tracks may work in parallel, but only the integration owner marks a story connected after its screen, state, service, event, motion and acceptance check agree.
 
@@ -31,6 +31,15 @@
 | **P6 · Providers/discovery** | Partial allowlisted search. | Provider reliability, dates/video metadata, privacy controls, limits and outage behavior. |
 | **P7 · Operations/security** | Not started. | Hosted controls, secret rotation, monitoring, abuse response, restore and incident drills. |
 | **P8 · Release/accessibility/governance** | Not started. | Device/accessibility matrix, reduced-motion review, clinical/legal/privacy sign-off, release/rollback evidence. |
+
+### Latest verified checkpoint — 27 September 2026, 13:45 +08
+
+- **Overall accepted packages:** **0/19 (0%)** — **0/11 stories** and **0/8 production gates** meet their full acceptance contracts. Current partial-work milestone is **M1 · Profile and first history / P1 · identity boundary**. No whole-app user-test handoff is ready.
+- **Changed:** the development service now obtains its single fixed synthetic profile through a server-side `ProfileAccess` port. Source and claim read/review/correction/retraction routes use that port. The Ask request sanitizer drops client-supplied profile identifiers, and `/healthz` reports `synthetic_demo_only` with `productionIdentity: false`. A conformance/swap test covers the synthetic adapter; the standard repository test command now runs it. This is a local demo boundary only: it does not verify email/mobile ownership, create accounts, or provide production cross-account isolation.
+- **Passed:** repository/integration suite **292/292** (including the two profile-access checks); latest slices **92/92**; review accessibility **7/7**; profile-access focused suite **2/2**; M1 browser journey **23/23** with reduced-motion preference; connected-upload journey **19/19**; typecheck; no-cache lint; JavaScript syntax and `git diff --check`. The browser journeys used synthetic fixtures and isolated local services, with no external provider request or real health data.
+- **Still open:** M1 native phone and true restart acceptance; verified email/mobile sign-in, code expiry/replay/recovery and account-scoped storage; native reduced-motion/accessibility checks; complete M2–M11 journeys; P1–P8 production evidence. P1 remains not passed.
+- **Next implementation slice:** define and test the verified-session/authenticator boundary (including expired, replayed and unverified-code denial) before connecting a real delivery provider. Keep local synthetic sign-in clearly labeled and do not treat it as real identity. Continue the supported-device restart check when a native simulator/device is available.
+- **User-test milestone:** none ready. Current M1 browser and upload rehearsals are internal synthetic evidence, not the complete end-to-end user experience requested.
 
 ### Latest verified checkpoint — 27 September 2026, 13:26 +08
 

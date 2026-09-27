@@ -129,6 +129,15 @@ const run = (overrides = {}) => sanitizeRunBody({
   treatmentContextConsent: false, visitContextConsent: false, context: { facts: [], topics: [], links: [], treatments: [], visits: [] }, ...overrides,
 });
 
+test('a client-supplied profile identifier never becomes authority in the sanitized run', () => {
+  const request = run({
+    profileId: 'synthetic-foreign-profile',
+    context: { facts: [], topics: [], links: [], treatments: [], visits: [], profileId: 'synthetic-foreign-profile' },
+  });
+  assert.equal(Object.hasOwn(request, 'profileId'), false);
+  assert.equal(Object.hasOwn(request.context, 'profileId'), false);
+});
+
 test('profile revision runs are labeled separately from the first synthesis', () => {
   assert.deepEqual(classifyIntent('Create a concise first-pass synthesis of my selected health profile.'), {
     key: 'profile_summary', label: 'first profile synthesis',
