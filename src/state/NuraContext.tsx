@@ -7,6 +7,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import { loadProfileSetup, persistApprovedMemoryFact as persistApprovedMemoryFactRecord, persistProfileSetup } from './profilePersistence.mjs';
 import { appendRegistryBrief } from './registryBriefPersistence.mjs';
+import { agentMessageFromRow, persistAgentMessage, type AgentMessageRow } from './agentMessageMetadata.mjs';
 import { createEmptyBrowserDemoSnapshot, readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from './browserDemoPersistence.mjs';
 import { browserAssetUri, clearBrowserAssets, deleteBrowserAsset, saveBrowserAsset } from './browserAssetStore.mjs';
 import { validatePolicyReplacement } from '../services/policyReplacement.mjs';
@@ -39,24 +40,6 @@ export type CoverageAssessment = { kind: 'explicit_benefit' | 'explicit_limit' |
 export type AgentMeaning = { text: string; citations: string[] };
 export type ProfileSummarySnapshot = { answer: string; citations: string[]; unknowns: string[]; nextSteps: string[]; memoryProposal: { label: string; value: string; reason: string } | null; revision: boolean };
 export type AgentMessage = { id: string; runId: string; role: 'user' | 'assistant'; text: string; citations: AgentCitation[]; trace: AgentTrace[]; meaning?: AgentMeaning; unknowns?: string[]; nextSteps?: string[]; coverageAssessments?: CoverageAssessment[]; profileSummary?: ProfileSummarySnapshot; createdAt: string };
-type AgentMessageRow = { id: string; run_id: string; role: AgentMessage['role']; text: string; citations_json: string; trace_json: string; created_at: string; answer_metadata_json: string };
-function agentMessageFromRow(row: AgentMessageRow): AgentMessage {
-  const metadata = JSON.parse(row.answer_metadata_json || '{}') as { meaning?: AgentMeaning; unknowns?: string[]; nextSteps?: string[]; coverageAssessments?: CoverageAssessment[]; profileSummary?: ProfileSummarySnapshot };
-  return {
-    id: row.id,
-    runId: row.run_id,
-    role: row.role,
-    text: row.text,
-    citations: JSON.parse(row.citations_json) as AgentCitation[],
-    trace: JSON.parse(row.trace_json) as AgentTrace[],
-    meaning: metadata.meaning,
-    unknowns: metadata.unknowns,
-    nextSteps: metadata.nextSteps,
-    coverageAssessments: metadata.coverageAssessments,
-    profileSummary: metadata.profileSummary,
-    createdAt: row.created_at,
-  };
-}
 export type RegistryBrief = { id: string; topicId: string; topicLabel: string; answer: string; unknowns: string[]; citations: AgentCitation[]; sourceSignature: string; runId: string; createdAt: string; supersedesBriefId?: string };
 export type RegistryBriefInput = Omit<RegistryBrief, 'id' | 'createdAt' | 'supersedesBriefId'>;
 export type AddFactMetadata = { source?: string; category?: string; note?: string; sourceRunId?: string; sourceId?: string; sourceClaimId?: string; supersedesId?: string; reviewState?: 'user_confirmed'; eventDate?: string | null; validFrom?: string; validUntil?: string | null; confidence?: number | null; permissionScope?: string };
@@ -75,7 +58,7 @@ type NuraState = {
   addPolicyClarification: (input: { sourceId: string; sourceClaimId: string; question: string; response: string }) => Promise<PolicyClarification>;
   editPolicyClarification: (id: string, response: string) => Promise<PolicyClarification>;
   removePolicyClarification: (id: string) => Promise<void>;
-  addQuestion: (question: string) => void; addAgentMessage: (message: Omit<AgentMessage, 'id' | 'createdAt'>) => AgentMessage; saveRegistryBrief: (brief: RegistryBriefInput) => Promise<RegistryBrief>; clearAgentMessages: () => void; clearAllLocalData: () => Promise<{ fileCleanupFailed: boolean }>; resetDemo: () => void;
+  addQuestion: (question: string) => void; addAgentMessage: (message: Omit<AgentMessage, 'id' | 'createdAt'>) => Promise<AgentMessage>; saveRegistryBrief: (brief: RegistryBriefInput) => Promise<RegistryBrief>; clearAgentMessages: () => void; clearAllLocalData: () => Promise<{ fileCleanupFailed: boolean }>; resetDemo: () => void;
 };
 const NuraContext = createContext<NuraState | null>(null);
 const DB_NAME = 'nura-private.db';
@@ -614,7 +597,7 @@ export function NuraProvider({ children }: { children: React.ReactNode }) {
     setPolicyClarifications((current) => removePolicyClarificationFromList(current, id));
   }, [policyClarifications]);
   const addQuestion = useCallback((question: string) => { const cleaned = question.trim(); if (!cleaned) return; setSavedQuestions((current) => current.includes(cleaned) ? current : [cleaned, ...current]); if (Platform.OS !== 'web') void getDatabase().then((db) => db.runAsync('INSERT OR IGNORE INTO questions (question,added_at) VALUES (?,?)', cleaned, new Date().toISOString())).catch((e) => setStorageError(String(e))); }, []);
-  const addAgentMessage = useCallback((message: Omit<AgentMessage, 'id' | 'createdAt'>) => { const saved: AgentMessage = { ...message, id: newId(), createdAt: new Date().toISOString() }; setAgentMessages((current) => [...current, saved]); if (Platform.OS !== 'web') void getDatabase().then((db) => db.runAsync('INSERT INTO agent_messages (id,run_id,role,text,citations_json,trace_json,created_at,answer_metadata_json) VALUES (?,?,?,?,?,?,?,?)', saved.id, saved.runId, saved.role, saved.text, JSON.stringify(saved.citations), JSON.stringify(saved.trace), saved.createdAt, JSON.stringify({ meaning: saved.meaning, unknowns: saved.unknowns ?? [], nextSteps: saved.nextSteps ?? [], coverageAssessments: saved.coverageAssessments ?? [], profileSummary: saved.profileSummary }))).catch((e) => setStorageError(String(e))); return saved; }, []);
+  const addAgentMessage = useCallback(async (message: Omit<AgentMessage, 'id' | 'createdAt'>) => { const saved: AgentMessage = { ...message, id: newId(), createdAt: new Date().toISOString() }; if (Platform.OS !== 'web') { try { await persistAgentMessage(await getDatabase(), saved); } catch { const storageMessage = 'Conversation could not be saved on this device. Try again.'; setStorageError(storageMessage); throw new Error(storageMessage); } } setAgentMessages((current) => [...current, saved]); return saved; }, []);
   const saveRegistryBrief = useCallback(async (input: RegistryBriefInput) => {
     const topicId = input.topicId.trim(); const topicLabel = input.topicLabel.trim(); const answer = input.answer.trim();
     const citations = input.citations.filter((citation) => citation.reference && citation.id && citation.title).slice(0, 24);

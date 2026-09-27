@@ -435,9 +435,11 @@ async function onboardToIntake() {
   await waitText('Choose your country');
   await fillInput('Search countries', 'Malaysia');
   await clickVisible({ text: 'Malaysia' });
-  const completedProfile = await evaluate("({ name: document.querySelector('[aria-label=\\\"Profile display name\\\"]')?.value || '', country: document.querySelector('[aria-label^=\\\"Country: \\\"]')?.getAttribute('aria-label') || '', visibleText: document.body.innerText.slice(-700) })");
+  const completedProfile = await waitFor(async () => {
+    const fields = await evaluate("({ name: document.querySelector('[aria-label=\\\"Profile display name\\\"]')?.value || '', country: document.querySelector('[aria-label^=\\\"Country: \\\"]')?.getAttribute('aria-label') || '', visibleText: document.body.innerText.slice(-700) })");
+    return fields?.name === 'Casey Synthetic' && fields.country === 'Country: Malaysia. Change country' ? fields : false;
+  }, 'The required synthetic profile name or selected country was not retained.', 10000);
   log('Rendered profile fields after country selection: ' + JSON.stringify(completedProfile));
-  assert(completedProfile?.name === 'Casey Synthetic' && completedProfile.country === 'Country: Malaysia. Change country', 'The required synthetic profile name or selected country was not retained.');
   await clickVisible({ text: 'CONTINUE TO HEALTH AREAS' });
   await waitText('ADD RECORDS OR A NOTE');
   await clickVisible({ text: 'ADD RECORDS OR A NOTE' });

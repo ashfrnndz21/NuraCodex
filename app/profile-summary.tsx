@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -27,6 +27,12 @@ export default function ProfileSummary() {
   const [savedNote, setSavedNote] = useState(false);
   const [activeRunId, setActiveRunId] = useState('');
   const [reducedMotion, setReducedMotion] = useState(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -71,6 +77,8 @@ export default function ProfileSummary() {
     let runTrace: AgentTrace[] = [];
     let runSources: AgentSource[] = [];
     let finalAnswer: AgentAnswer | null = null;
+    let saveMessagesPromise: Promise<void> | null = null;
+    let messagesSaved = false;
     dispatchRunEvent('RUN_STARTED');
     try {
       await runNuraAgent({ runId, question, consentConfirmed: true, history: [], externalSearchConsent: false, treatmentContextConsent: false, visitContextConsent: false, context: { ...selectedContext, treatments: [], visits: [] } }, (event: AgentEvent) => {
@@ -86,16 +94,25 @@ export default function ProfileSummary() {
           setAnswer(finalAnswer);
           dispatchRunEvent('TEXT_MESSAGE_START');
         } else if (event.type === 'run_finished' && finalAnswer) {
-          const savedText = [finalAnswer.answer, finalAnswer.unknowns.length ? `\n\nStill not in this profile:\n${finalAnswer.unknowns.map((item) => `• ${item}`).join('\n')}` : ''].join('');
-          addAgentMessage({ runId, role: 'user', text: question, citations: [], trace: [] });
-          addAgentMessage({ runId, role: 'assistant', text: savedText, citations: runSources.filter((source) => finalAnswer?.citations.includes(source.reference)), trace: runTrace.map((item) => ({ ...item, status: 'complete' })), profileSummary: { answer: finalAnswer.answer, citations: finalAnswer.citations, unknowns: finalAnswer.unknowns, nextSteps: finalAnswer.nextSteps, memoryProposal: finalAnswer.memoryProposal, revision } });
-          setActiveRunId(runId);
-          dispatchRunEvent('RUN_FINISHED');
+          saveMessagesPromise = (async () => {
+            try {
+              await addAgentMessage({ runId, role: 'user', text: question, citations: [], trace: [] });
+              await addAgentMessage({ runId, role: 'assistant', text: finalAnswer.answer, citations: runSources.filter((source) => finalAnswer?.citations.includes(source.reference)), trace: runTrace.map((item) => ({ ...item, status: 'complete' })), unknowns: finalAnswer.unknowns, nextSteps: finalAnswer.nextSteps, profileSummary: { answer: finalAnswer.answer, citations: finalAnswer.citations, unknowns: finalAnswer.unknowns, nextSteps: finalAnswer.nextSteps, memoryProposal: finalAnswer.memoryProposal, revision } });
+              messagesSaved = true;
+            } catch {
+              if (mounted.current) setError('Your profile summary is ready, but device storage could not save it to conversation history.');
+            }
+          })();
         } else if (event.type === 'run_error') {
           setError(event.message);
           dispatchRunEvent('RUN_ERROR');
         }
       });
+      if (saveMessagesPromise) await saveMessagesPromise;
+      if (messagesSaved) {
+        setActiveRunId(runId);
+        dispatchRunEvent('RUN_FINISHED');
+      } else dispatchRunEvent('RUN_ERROR');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Nura could not create this profile understanding.');
       dispatchRunEvent('RUN_ERROR');

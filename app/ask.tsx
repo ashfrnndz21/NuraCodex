@@ -64,6 +64,7 @@ export default function Ask() {
   const [sources, setSources] = useState<AgentSource[]>([]);
   const [trace, setTrace] = useState<AgentTrace[]>([]);
   const [error, setError] = useState('');
+  const [messageSaveWarning, setMessageSaveWarning] = useState('');
   const [service, setService] = useState<{ available: boolean; provider?: string; model?: string; reason?: string; capabilities?: { documentExtraction?: boolean; trustedHealthSearch?: boolean } } | null>(null);
   const [proposalSaved, setProposalSaved] = useState(false);
   const [proposalSaving, setProposalSaving] = useState(false);
@@ -195,21 +196,21 @@ export default function Ask() {
     if (!cleanQuestion || busy || proposalSaveLock.current) return;
     setConsentOpen(false);
     setQuestion('');
-    setAnswer(null); setSources([]); setTrace([]); setError(''); setProposalSaved(false); setProposalSaving(false); setProposalSaveError(''); setRegistryBriefSaved(false); setRegistryBriefSaveError(''); setBusy(true);
+    setAnswer(null); setSources([]); setTrace([]); setError(''); setMessageSaveWarning(''); setProposalSaved(false); setProposalSaving(false); setProposalSaveError(''); setRegistryBriefSaved(false); setRegistryBriefSaveError(''); setBusy(true);
     const runId = Crypto.randomUUID();
     const controller = new AbortController();
     const runGate = createAgentRunEventGate();
     activeRunController.current = controller;
     setActiveRunId(runId);
     const userMessage = { runId, role: 'user' as const, text: cleanQuestion, citations: [], trace: [] };
-    addAgentMessage(userMessage);
-    addQuestion(cleanQuestion);
-    dispatchRunEvent('RUN_STARTED');
     let runTrace: AgentTrace[] = [];
     let runSources: AgentSource[] = [];
     let finalAnswer: AgentAnswer | null = null;
     const previous = selectedHistory;
     try {
+      await addAgentMessage(userMessage);
+      addQuestion(cleanQuestion);
+      dispatchRunEvent('RUN_STARTED');
       await runNuraAgent({ runId, question: cleanQuestion, consentConfirmed: true, history: previous, externalSearchConsent: shareExternalSearch && !coverageQuestion, treatmentContextConsent: shareTreatments, visitContextConsent: shareVisits, sourceContextConsent: sourceContextSelected && linkedDocumentContexts.length > 0, context: { ...selectedContext, treatments: shareTreatments ? scopedContext.treatments : [], visits: shareVisits ? scopedContext.visits : [], documentSources: sourceContextSelected ? linkedDocumentContexts : [] } }, (event: AgentEvent) => {
         if (!mounted.current || controller.signal.aborted) return;
         const gated = runGate.receive(event);
@@ -243,7 +244,11 @@ export default function Ask() {
       const cited = runSources.filter((source) => finalAnswer?.citations.includes(source.reference));
       setSources(cited);
       setAnswer(finalAnswer);
-      addAgentMessage({ runId, role: 'assistant', text: finalAnswer.answer, citations: cited, trace: runTrace.map((item) => ({ ...item, status: 'complete' })), meaning: finalAnswer.meaning, unknowns: finalAnswer.unknowns, nextSteps: finalAnswer.nextSteps, coverageAssessments: finalAnswer.coverageAssessments });
+      try {
+        await addAgentMessage({ runId, role: 'assistant', text: finalAnswer.answer, citations: cited, trace: runTrace.map((item) => ({ ...item, status: 'complete' })), meaning: finalAnswer.meaning, unknowns: finalAnswer.unknowns, nextSteps: finalAnswer.nextSteps, coverageAssessments: finalAnswer.coverageAssessments });
+      } catch {
+        setMessageSaveWarning('This answer is ready, but device storage could not save it to your conversation history.');
+      }
       dispatchRunEvent('RUN_FINISHED');
     } catch (caught) {
       const message = controller.signal.aborted
@@ -342,6 +347,7 @@ export default function Ask() {
         {registryBriefMode && !busy && <View style={s.registrySave}><Text style={s.registrySaveTitle}>SAVE TO MEDICAL REGISTRY</Text><Text style={s.registrySaveBody}>This saves the answer, its stated unknowns and only the sources it cited. The summary will be marked out of date if linked records change.</Text>{registryBriefSaveError ? <Text style={s.registrySaveError}>{registryBriefSaveError}</Text> : null}<Pressable accessibilityRole="button" disabled={registryBriefSaved || registryBriefSaving || answer.citations.length === 0} onPress={() => void saveRegistrySummary()} style={[s.registrySaveButton, (registryBriefSaved || registryBriefSaving || answer.citations.length === 0) && { opacity: .5 }]}><Text style={s.registrySaveButtonText}>{registryBriefSaved ? 'SAVED TO MEDICAL REGISTRY' : registryBriefSaving ? 'SAVING ON THIS DEVICE…' : 'SAVE CITED SUMMARY'}</Text></Pressable></View>}
         {answer.memoryProposal && <View style={s.proposal}><Text style={s.proposalTitle}>NURA SUGGESTED A PROFILE UPDATE</Text><Text style={s.proposalText}>{answer.memoryProposal.label}: {answer.memoryProposal.value}</Text>{answer.memoryProposal.reason ? <Text style={s.proposalReason}>{answer.memoryProposal.reason}</Text> : null}{answer.memoryProposal.sourceReferences?.length ? <View style={s.proposalSources}><Text style={s.proposalSourceHeading}>SUPPORTING RECORDS</Text>{answer.memoryProposal.sourceReferences.map((reference) => { const source = sources.find((item) => item.reference === reference); if (!source) return <Text key={reference} style={s.proposalSourceUnavailable}>Supporting record {reference} is unavailable in this review.</Text>; const target = evidenceTarget(source); return <Pressable key={reference} accessibilityRole="button" accessibilityState={{ disabled: !target }} disabled={!target} onPress={() => openEvidenceSource(source)} style={[s.proposalSourceLink, !target && s.proposalSourceLinkDisabled]}><Text style={s.proposalSourceRef}>{reference}</Text><View style={{ flex: 1 }}><Text style={s.proposalSourceTitle}>{source.title}</Text><Text style={s.proposalSourceAction}>{target ? 'OPEN SUPPORTING RECORD ↗' : 'SOURCE UNAVAILABLE'}</Text></View></Pressable>; })}</View> : answer.memoryProposal.sourceKind === 'user_request' ? <Text style={s.proposalReason}>Based on your explicit request in this conversation.</Text> : null}{proposalSaveError ? <Text accessibilityRole="alert" style={s.proposalSaveError}>{proposalSaveError}</Text> : null}<Pressable onPress={() => void acceptMemoryProposal()} disabled={proposalSaved || proposalSaving} style={[s.proposalButton, proposalSaved && s.proposalSaved, (proposalSaved || proposalSaving) && { opacity: .8 }]}><Text style={[s.proposalButtonText, proposalSaved && s.proposalSavedText]}>{proposalSaved ? 'ADDED · CONFIRMED BY YOU' : proposalSaving ? 'SAVING TO YOUR PROFILE…' : proposalSaveError ? 'TRY AGAIN' : 'REVIEW AND ADD TO MY PROFILE'}</Text></Pressable></View>}
         <Text style={s.medicalNote}>{answer.coverageAssessments !== undefined ? 'This is an evidence summary, not an insurer decision. Confirm important coverage questions with your insurer.' : 'Nura helps organize your records; this is not a diagnosis or a substitute for care from a clinician.'}</Text>
+        {messageSaveWarning ? <Text accessibilityRole="alert" style={s.messageSaveWarning}>{messageSaveWarning}</Text> : null}
       </View>}
       {error ? <View style={s.errorCard}><Text style={s.errorTitle}>This run didn’t complete</Text><Text style={s.errorText}>{error}</Text><Text style={s.errorNote}>Your saved health records were not changed.</Text></View> : null}
     </ScrollView>
@@ -582,6 +588,7 @@ const s = StyleSheet.create({
   proposalSaved: { backgroundColor: C.green, borderColor: 'rgba(188, 232, 208, 0.38)' },
   proposalSavedText: { color: C.mint },
   medicalNote: { color: C.faint, fontSize: 8, lineHeight: 12, marginTop: 11 },
+  messageSaveWarning: { color: C.amberInk, fontSize: 11, lineHeight: 16, marginTop: 8 },
 
   errorCard: { backgroundColor: 'rgba(139, 73, 62, 0.24)', borderWidth: 1, borderColor: 'rgba(242, 191, 165, 0.4)', borderRadius: 16, padding: 13, marginTop: 12 },
   errorTitle: { color: '#FFD2C4', fontSize: 11, fontWeight: '700' },

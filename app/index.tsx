@@ -25,6 +25,7 @@ import { useNura, HealthTopic } from '../src/state/NuraContext';
 import { brandScenes, motion } from '../src/theme';
 import { ageFromDateOfBirth, hasExistingProfileEvidence, validateRequiredProfileDetails } from '../src/services/profileDemographics.mjs';
 import { buildProfileEvidenceRows } from '../src/services/profileOverview.mjs';
+import { shouldUseMotion } from '../src/services/motionPolicy.mjs';
 import type { ProfileOverviewAsset, ProfileOverviewFact, ProfileOverviewTreatment, ProfileOverviewVisit } from '../src/services/profileOverview.mjs';
 
 type Signal = { id: string; label: string };
@@ -431,7 +432,7 @@ export default function ProfileSetup() {
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [motionPreference, setMotionPreference] = useState<boolean | null>(null);
   // Suppress movement until the OS preference has arrived; then honor it for all onboarding motion.
-  const reducedMotion = motionPreference !== false;
+  const reducedMotion = !shouldUseMotion(motionPreference);
   const [error, setError] = useState('');
   const [moving, setMoving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -444,6 +445,8 @@ export default function ProfileSetup() {
   const panelScale = useMemo(() => new Animated.Value(1), []);
   const measurementsOpacity = useMemo(() => new Animated.Value(0), []);
   const measurementsY = useMemo(() => new Animated.Value(7), []);
+  const transitionAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const pendingStep = useRef<OnboardingStep | null>(null);
   const sceneIndex = stepOrder.indexOf(step);
 
   useEffect(() => {
@@ -459,10 +462,27 @@ export default function ProfileSetup() {
 
   useEffect(() => {
     let active = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setMotionPreference(value); });
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setMotionPreference);
+    let preferenceChanged = false;
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (value) => { preferenceChanged = true; setMotionPreference(value); });
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active && !preferenceChanged) setMotionPreference(value); });
     return () => { active = false; subscription.remove(); };
   }, []);
+
+  useEffect(() => {
+    if (!reducedMotion || !transitionAnimation.current) return;
+    const nextStep = pendingStep.current;
+    const animation = transitionAnimation.current;
+    transitionAnimation.current = null;
+    pendingStep.current = null;
+    animation.stop();
+    if (nextStep) setStep(nextStep);
+    panelOpacity.setValue(1);
+    panelX.setValue(0);
+    panelScale.setValue(1);
+    setMoving(false);
+  }, [panelOpacity, panelScale, panelX, reducedMotion]);
+
+  useEffect(() => () => { transitionAnimation.current?.stop(); }, []);
 
   useEffect(() => {
     if (!measurementsMounted) return;
@@ -508,21 +528,32 @@ export default function ProfileSetup() {
       return;
     }
     setMoving(true);
-    Animated.parallel([
+    pendingStep.current = next;
+    const exitAnimation = Animated.parallel([
       Animated.timing(panelOpacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
       Animated.timing(panelX, { toValue: -direction * 24, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
       Animated.timing(panelScale, { toValue: 0.985, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
-    ]).start(({ finished }) => {
-      if (!finished) { setMoving(false); return; }
+    ]);
+    transitionAnimation.current = exitAnimation;
+    exitAnimation.start(({ finished }) => {
+      if (transitionAnimation.current !== exitAnimation) return;
+      if (!finished) { transitionAnimation.current = null; pendingStep.current = null; setMoving(false); return; }
       setStep(next);
+      pendingStep.current = null;
       panelX.setValue(direction * 28);
       panelScale.setValue(0.985);
       setError('');
-      Animated.parallel([
+      const enterAnimation = Animated.parallel([
         Animated.timing(panelOpacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
         Animated.timing(panelX, { toValue: 0, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
         Animated.spring(panelScale, { toValue: 1, speed: 20, bounciness: 3, useNativeDriver: animatedNativeDriver }),
-      ]).start(() => setMoving(false));
+      ]);
+      transitionAnimation.current = enterAnimation;
+      enterAnimation.start(() => {
+        if (transitionAnimation.current !== enterAnimation) return;
+        transitionAnimation.current = null;
+        setMoving(false);
+      });
     });
   }
 
@@ -648,7 +679,7 @@ export default function ProfileSetup() {
             ))}
           </View>
           <Text style={styles.welcomePrivacy}>Your focus areas are choices. Health details remain connected to their source.</Text>
-          <Pressable accessibilityRole="button" onPress={() => transitionTo('identity')} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
+          <Pressable accessibilityRole="button" onPress={() => transitionTo('identity')} style={({ pressed }) => [styles.primaryButton, pressed && (reducedMotion ? styles.buttonPressedReduced : styles.buttonPressed)]}>
             <Text style={styles.primaryButtonText}>START MY PROFILE</Text><Text style={styles.primaryArrow}>→</Text>
           </Pressable>
         </View>
@@ -698,7 +729,7 @@ export default function ProfileSetup() {
             ) : null}
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
-          <Pressable accessibilityRole="button" onPress={continueIdentity} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
+          <Pressable accessibilityRole="button" onPress={continueIdentity} style={({ pressed }) => [styles.primaryButton, pressed && (reducedMotion ? styles.buttonPressedReduced : styles.buttonPressed)]}>
             <Text style={styles.primaryButtonText}>CONTINUE TO HEALTH AREAS</Text><Text style={styles.primaryArrow}>→</Text>
           </Pressable>
         </View>
@@ -728,8 +759,8 @@ export default function ProfileSetup() {
           </View>
         </View>
         {error ? <Text accessibilityRole="alert" style={styles.inlineError}>{error}</Text> : null}
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled: savingProfile, busy: savingProfile }} disabled={savingProfile} onPress={continueFocus} style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed, savingProfile && styles.buttonDisabled]}>
-          <Text style={styles.primaryButtonText}>{savingProfile ? 'SAVING YOUR PROFILE…' : 'ADD RECORDS OR A NOTE'}</Text>{savingProfile ? <ActivityIndicator color="#2A203B" size="small" /> : <Text style={styles.primaryArrow}>→</Text>}
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: savingProfile, busy: savingProfile }} disabled={savingProfile} onPress={continueFocus} style={({ pressed }) => [styles.primaryButton, pressed && (reducedMotion ? styles.buttonPressedReduced : styles.buttonPressed), savingProfile && styles.buttonDisabled]}>
+          <Text style={styles.primaryButtonText}>{savingProfile ? 'SAVING YOUR PROFILE…' : 'ADD RECORDS OR A NOTE'}</Text>{savingProfile ? (reducedMotion ? <Text style={styles.savingStatus}>IN PROGRESS</Text> : <ActivityIndicator color="#2A203B" size="small" />) : <Text style={styles.primaryArrow}>→</Text>}
         </Pressable>
         <Text style={styles.focusNext}>Nura will keep your topics separate from your records and show extracted suggestions for your review before saving.</Text>
       </View>
@@ -828,22 +859,40 @@ function FollowupBubbles({
 }) {
   const opacity = useMemo(() => new Animated.Value(0), []);
   const y = useMemo(() => new Animated.Value(24), []);
+  const sheetAnimation = useRef<Animated.CompositeAnimation | null>(null);
   useEffect(() => {
+    sheetAnimation.current?.stop();
+    sheetAnimation.current = null;
     opacity.setValue(reducedMotion ? 1 : 0);
     y.setValue(reducedMotion ? 0 : 24);
     if (reducedMotion) return;
-    Animated.parallel([
+    const animation = Animated.parallel([
       Animated.timing(opacity, { toValue: 1, duration: motion.cardEnter, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
       Animated.spring(y, { toValue: 0, speed: 22, bounciness: 4, useNativeDriver: animatedNativeDriver }),
-    ]).start();
+    ]);
+    sheetAnimation.current = animation;
+    animation.start(() => { if (sheetAnimation.current === animation) sheetAnimation.current = null; });
+    return () => {
+      if (sheetAnimation.current === animation) {
+        animation.stop();
+        sheetAnimation.current = null;
+      }
+    };
   }, [area.id, opacity, reducedMotion, y]);
 
   function closeSheet() {
     if (reducedMotion) { onClose(); return; }
-    Animated.parallel([
+    const animation = Animated.parallel([
       Animated.timing(opacity, { toValue: 0, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
       Animated.timing(y, { toValue: 18, duration: motion.fast, easing: Easing.bezier(...motion.easing.gentle), useNativeDriver: animatedNativeDriver }),
-    ]).start(({ finished }) => { if (finished) onClose(); });
+    ]);
+    sheetAnimation.current?.stop();
+    sheetAnimation.current = animation;
+    animation.start(({ finished }) => {
+      if (sheetAnimation.current !== animation) return;
+      sheetAnimation.current = null;
+      if (finished) onClose();
+    });
   }
 
   return (
@@ -1088,7 +1137,7 @@ const styles = StyleSheet.create({
   followupRemoveText: { color: '#F1D3C4', fontSize: 8, fontWeight: '800', letterSpacing: .7 },
   inlineError: { color: '#FFE1CF', backgroundColor: 'rgba(188,77,71,.18)', borderWidth: 1, borderColor: 'rgba(243,181,98,.45)', borderRadius: 12, padding: 10, marginBottom: 9, fontSize: 10, lineHeight: 15 },
   primaryButton: { minHeight: 56, borderRadius: 30, backgroundColor: palette.cream, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, shadowColor: '#120D1B', shadowOpacity: .14, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } },
-  buttonPressed: { opacity: .9, transform: [{ scale: motion.pressScale }] },
+  buttonPressed: { opacity: .9, transform: [{ scale: motion.pressScale }] }, buttonPressedReduced: { opacity: .9 }, savingStatus: { color: '#57486A', fontSize: 8, fontWeight: '800', letterSpacing: .5 },
   buttonDisabled: { opacity: .8 },
   primaryButtonText: { color: '#30223B', fontSize: 9, fontWeight: '800', letterSpacing: .9 },
   primaryArrow: { color: '#30223B', fontSize: 22, fontWeight: '300' },
