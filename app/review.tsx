@@ -141,6 +141,7 @@ export default function Review() {
   const reducedMotion = !shouldUseMotion(motionPreference);
   const [source, setSource] = useState<LocalSource | null>(null);
   const lastOpenedNoticeSourceId = useRef<string | null>(null);
+  const suppressNextSourceOpenNotice = useRef(false);
   const [claims, setClaims] = useState<CandidateClaim[]>([]);
   const [batchReviewRun, setBatchReviewRun] = useState<{ key: string; reviews: BatchSourceReview[]; complete: boolean }>({ key: '', reviews: [], complete: false });
   const [expandedSourceQuoteIds, setExpandedSourceQuoteIds] = useState<Record<string, boolean>>({});
@@ -254,7 +255,8 @@ export default function Review() {
       lastOpenedNoticeSourceId.current = result.source.id;
       setSource(result.source); setClaims(result.claims);
       setError('');
-      if (shouldAnnounceOpen) setNotice(result.source.origin === 'user_entered' ? 'Opened the saved local organization of your description. No provider call was made.' : 'Opened the saved extraction for this file. The original was not sent again.');
+      if (shouldAnnounceOpen && !suppressNextSourceOpenNotice.current) setNotice(result.source.origin === 'user_entered' ? 'Opened the saved local organization of your description. No provider call was made.' : 'Opened the saved extraction for this file. The original was not sent again.');
+      suppressNextSourceOpenNotice.current = false;
       const requestedClaim = result.claims.find((claim) => claim.id === requestedClaimId && claim.evidenceState === 'user_confirmed');
       if (requestedClaim) {
         setDrafts((current) => ({ ...current, [requestedClaim.id]: { label: requestedClaim.label, value: requestedClaim.value, unit: requestedClaim.unit ?? '', effectiveAt: requestedClaim.effectiveAt ?? '' } }));
@@ -676,7 +678,8 @@ export default function Review() {
     setBusy(true); setError('');
     try {
       await removeSavedSource(source.id, selectedAssetId);
-      setSource(null); setClaims([]); setConfirmRemovePurposeAssetId(null);
+      suppressNextSourceOpenNotice.current = true;
+      setSource(null); setClaims([]); setActivity([]); setConfirmRemovePurposeAssetId(null);
       setNotice('The file and any extracted details have been removed from this device and the local review service.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Nura could not remove this file.');

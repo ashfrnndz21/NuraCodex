@@ -75,6 +75,10 @@ Use the supplied health and AI interface references as composition guidance, not
 
 The supplied references support a warm paper/plum visual language, restrained category colors, grouped evidence, compact explanations and visible source context. They do not establish that Nura has processed real lab markers or that any depicted recommendation is clinically valid.
 
+## Insurance Registry — approved direction B: Policy Dossier
+
+Use the dossier as the primary view for each saved policy. Lead with the plan or insurer details the person approved, each linked to its source wording; keep the policy file name and review history visible. Follow with organized benefits and limits, explicit exclusions, wording to confirm, and details not found in the approved summary. Clearly distinguish user-approved extraction from verified insurer status or claim eligibility. Missing information stays unknown, never an exclusion. Keep policy versions and comparisons separate unless the person explicitly links a replacement. The mobile hierarchy should show the dossier before aggregate counters, with long term lists progressively disclosed.
+
 ## Implementation gate
 
 The blueprint's fictional names, diagnoses, measurements, medicines, providers, insurance terms, answers, and recommendations are design examples only and must never become seeded user health data. Some backend-dependent journeys now have local demo services: Ask, consent-gated PDF/image extraction, policy comparison, and public health search. Show their active states only while the corresponding service is actually running, and label the local-demo boundary. The browser preview uses synthetic in-memory state; native persistence uses the on-device encrypted database. Production identity, cloud storage, account-level privacy controls, and clinical governance are not connected, so real health data must not be used in the local demo.

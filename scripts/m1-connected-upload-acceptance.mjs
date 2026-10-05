@@ -14,6 +14,8 @@ import { createServer } from 'node:net';
 
 const root = process.cwd();
 const tempRoot = await mkdtemp(join(tmpdir(), 'nura-m1-connected-'));
+const wrongCategoryScreenshotPath = join(tmpdir(), 'nura-insurance-purpose-pause.png');
+const policyDossierScreenshotPath = join(tmpdir(), 'nura-insurance-policy-dossier.png');
 const dataDir = join(tempRoot, 'synthetic-repository');
 const browserProfile = join(tempRoot, 'chrome-profile');
 const providerLogPath = join(tempRoot, 'synthetic-provider.jsonl');
@@ -302,16 +304,23 @@ async function syntheticProviderSource() {
         const base64 = encoded.slice(encoded.indexOf(',') + 1);
         const text = Buffer.from(base64, 'base64').toString('utf8');
         const contentMatches = text.includes('NURA SYNTHETIC FIXTURE ONLY');
+        const purposeOnly = request.text?.format?.name === 'nura_document_purpose';
         const attempts = (globalThis.__nuraSyntheticAttempts || new Map());
         globalThis.__nuraSyntheticAttempts = attempts;
-        const attempt = (attempts.get(filename) || 0) + 1;
-        attempts.set(filename, attempt);
+        const attemptKey = `${filename}:${purposeOnly ? 'purpose' : 'details'}`;
+        const attempt = (attempts.get(attemptKey) || 0) + 1;
+        attempts.set(attemptKey, attempt);
         const { appendFileSync } = await import('node:fs');
         const logPath = process.env.NURA_FAKE_PROVIDER_LOG;
-        const logEvent = (outcome) => appendFileSync(logPath, JSON.stringify({ filename, attempt, contentMatches, outcome }) + '\n', { mode: 0o600 });
+        const logEvent = (outcome) => appendFileSync(logPath, JSON.stringify({ filename, attempt, purposeOnly, contentMatches, outcome }) + '\n', { mode: 0o600 });
         if (!contentMatches) {
           logEvent('rejected-unexpected-payload');
           return new Response(JSON.stringify({ error: { message: 'Synthetic fixture content mismatch.' } }), { status: 400 });
+        }
+        if (purposeOnly) {
+          logEvent('category-only-check');
+          const category = filename === 'holiday-itinerary.pdf' ? 'travel_document' : filename === 'ordinary-failed-policy.pdf' ? 'insurance_policy' : 'medical_record';
+          return new Response(JSON.stringify({ output_text: JSON.stringify({ documentAssessment: { category, confidence: 0.98 } }) }), { status: 200, headers: { 'content-type': 'application/json' } });
         }
         if (filename === 'ordinary-retry-report.pdf' && attempt === 1) {
           logEvent('synthetic-service-failure');
@@ -365,6 +374,7 @@ async function syntheticProviderSource() {
             page: 1, quote: 'Room and board limit: SGD 300 per day',
           }],
           documentContext: { documentType: 'Synthetic policy schedule', dates: [], entities: [], notes: [] },
+          documentAssessment: { category: 'insurance_policy', confidence: 0.98 },
         };
       }
       const fixtures = {
@@ -389,6 +399,7 @@ async function syntheticProviderSource() {
           dates: details.reportDate ? [{ kind: 'report_date', value: details.reportDate, page: 1, quote: 'Report issued ' + details.reportDate }] : [],
           entities: [], notes: [],
         },
+        documentAssessment: { category: 'medical_record', confidence: 0.98 },
       };
     }
   };
@@ -583,7 +594,9 @@ async function runRehearsal() {
   }
   const insuranceFixturePath = join(tempRoot, 'ordinary-failed-policy.pdf');
   await writeFile(insuranceFixturePath, '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nRoom and board limit: SGD 300 per day\n%%EOF\n', { mode: 0o600 });
-  record('Five health PDFs and one separate policy PDF contain synthetic text and no personal identifiers', true);
+  const holidayFixturePath = join(tempRoot, 'holiday-itinerary.pdf');
+  await writeFile(holidayFixturePath, '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nHoliday itinerary: Kuala Lumpur to Tokyo\nHotel reservation and sightseeing schedule\n%%EOF\n', { mode: 0o600 });
+  record('Health, policy, and wrong-category holiday PDFs contain synthetic text and no personal identifiers', true);
 
   await onboardToIntake();
   await pickSyntheticFiles(filePaths);
@@ -597,11 +610,11 @@ async function runRehearsal() {
   await waitText('Read these health files?');
   const firstConsent = await bodyText();
   assert(['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => firstConsent.includes(name)), 'Consent did not name every staged synthetic PDF.');
-  assert(firstConsent.includes('Your files are sent to Nura’s AI service for reading.') && firstConsent.includes('Each file gets its own review.'), 'Consent did not describe the connected service for ordinary files.');
+  assert(firstConsent.includes('category-only check first') && firstConsent.includes('If it is uncertain or seems different, detail reading pauses') && firstConsent.includes('Each file gets its own review.'), 'Consent did not explain category-first processing and the mismatch pause.');
   assert(!firstConsent.includes('No AI provider is called for these samples.'), 'Ordinary files were incorrectly described as local samples.');
   record('One explicit consent names all ordinary PDFs and identifies connected-service processing', true);
 
-  await clickVisible({ text: 'Approve and review files' });
+  await clickVisible({ text: 'Approve and review selected files' });
   await waitText('Needs another try', 60000);
   await waitFor(async () => (await readLines(providerLogPath)).some((item) => item.filename === 'ordinary-cancel-report.pdf' && item.attempt === 1 && item.outcome === 'delayed-until-user-stop'), 'The deterministic delayed synthetic extraction did not start.', 60000);
   await waitText('STOP', 15000);
@@ -624,7 +637,7 @@ async function runRehearsal() {
   await waitText('Read these health files?');
   const retryConsent = await bodyText();
   assert(['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => retryConsent.includes(name)), 'Retry did not present a fresh consent sheet naming all still-unprocessed files.');
-  await clickVisible({ text: 'Approve and review files' });
+  await clickVisible({ text: 'Approve and review selected files' });
   await waitText('Blood pressure', 60000);
   await waitText('117/74', 60000);
   await waitText('129/84', 60000);
@@ -786,8 +799,8 @@ async function runRehearsal() {
   await clickVisible({ aria: 'Review this file with Nura' });
   await waitText('Read these policy files?');
   const policyConsent = await bodyText();
-  assert(policyConsent.includes('ordinary-failed-policy.pdf') && policyConsent.includes('Your files are sent to Nura’s AI service for reading.'), 'Policy consent did not identify the selected file and processing destination.');
-  await clickVisible({ text: 'Approve and review files' });
+  assert(policyConsent.includes('ordinary-failed-policy.pdf') && policyConsent.includes('category-only check first') && policyConsent.includes('detail reading pauses'), 'Policy consent did not identify the selected file and explain the category-first processing pause.');
+  await clickVisible({ text: 'Approve and review selected files' });
   await waitText('Some files need another try');
   const failedPolicyReview = await bodyText();
   assert(failedPolicyReview.includes('ordinary-failed-policy.pdf') && failedPolicyReview.includes('Could not finish; you can try again') && failedPolicyReview.includes('Continue profile setup'), 'An unreadable policy did not show a retryable failure and a route back into setup.');
@@ -836,8 +849,8 @@ async function runRehearsal() {
   await clickVisible({ aria: 'Review this file with Nura' });
   await waitText('Read these policy files?');
   const policyRetryConsent = await bodyText();
-  assert(policyRetryConsent.includes('ordinary-failed-policy.pdf') && policyRetryConsent.includes('You choose what to save.'), 'Retry consent did not identify the policy source and preserve user control over saving.');
-  await clickVisible({ text: 'Approve and review files' });
+  assert(policyRetryConsent.includes('ordinary-failed-policy.pdf') && policyRetryConsent.includes('Suggestions stay pending until you choose what to save.'), 'Retry consent did not identify the policy source and preserve user control over saving.');
+  await clickVisible({ text: 'Approve and review selected files' });
   await waitText('Room and board limit');
   await waitText('SGD 300 per day');
   await waitText('Files ready to review');
@@ -854,8 +867,17 @@ async function runRehearsal() {
   await waitPath('/insurance');
   await waitText('Room and board limit');
   const savedPolicyRegistry = await bodyText();
+  const dossierHeadingIndex = savedPolicyRegistry.indexOf('POLICY DOSSIER · APPROVED DETAILS');
+  const overviewHeadingIndex = savedPolicyRegistry.indexOf('POLICY AT A GLANCE');
   assert(savedPolicyRegistry.includes('SGD 300 per day') && savedPolicyRegistry.includes('VIEW SOURCE QUOTE') && savedPolicyRegistry.includes('OPEN ORIGINAL SOURCE AND REVIEW'), 'The accepted policy term did not appear in the Insurance Registry with its quote control and source action.');
-  record('Accepted ordinary policy term appears in the Insurance Registry with a quote control and original source route', true);
+  assert(dossierHeadingIndex >= 0 && overviewHeadingIndex > dossierHeadingIndex, 'The Insurance Registry must lead each policy with its source-linked dossier details before summary counters.');
+  const dossierVisible = await evaluate(`(() => { const dossier = document.querySelector('[data-testid="policy-dossier"]'); dossier?.scrollIntoView({ block: 'start', behavior: 'instant' }); return Boolean(dossier); })()`);
+  assert(dossierVisible, 'Could not locate the rendered policy dossier for visual inspection.');
+  await delay(250);
+  const dossierScreenshot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  await writeFile(policyDossierScreenshotPath, Buffer.from(dossierScreenshot.data, 'base64'), { mode: 0o600 });
+  record('Captured the selected Policy Dossier layout from the rendered mobile registry', true, policyDossierScreenshotPath);
+  record('Insurance Registry leads with the source-linked policy dossier, then shows coverage and missing-detail counts', true);
   if (askEnabled) await runOrdinaryUploadAskJourney();
   await navigate(homeUrl);
   await waitPath((path) => path.includes('home'));
@@ -873,20 +895,28 @@ async function runRehearsal() {
   record('Deferral preserves health decisions; only the explicitly approved policy quote becomes an Insurance Registry claim', true);
 
   const attempts = await readLines(providerLogPath);
-  const retryAttempts = attempts.filter((item) => item.filename === 'ordinary-retry-report.pdf');
-  const cancelAttempts = attempts.filter((item) => item.filename === 'ordinary-cancel-report.pdf');
-  const untouchedAttempts = attempts.filter((item) => item.filename === 'ordinary-unstarted-report.pdf');
-  const conflictAAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-a-report.pdf');
-  const conflictBAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-b-report.pdf');
-  const policyAttempts = attempts.filter((item) => item.filename === 'ordinary-failed-policy.pdf');
+  const retryAttempts = attempts.filter((item) => item.filename === 'ordinary-retry-report.pdf' && !item.purposeOnly);
+  const cancelAttempts = attempts.filter((item) => item.filename === 'ordinary-cancel-report.pdf' && !item.purposeOnly);
+  const untouchedAttempts = attempts.filter((item) => item.filename === 'ordinary-unstarted-report.pdf' && !item.purposeOnly);
+  const conflictAAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-a-report.pdf' && !item.purposeOnly);
+  const conflictBAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-b-report.pdf' && !item.purposeOnly);
+  const policyAttempts = attempts.filter((item) => item.filename === 'ordinary-failed-policy.pdf' && !item.purposeOnly);
   assert(retryAttempts.map((item) => item.outcome).join(',') === 'synthetic-service-failure,synthetic-success', 'The failed file did not retry successfully after fresh consent.');
   assert(cancelAttempts.some((item) => item.outcome === 'aborted-after-stop') && cancelAttempts.some((item) => item.attempt === 2 && item.outcome === 'synthetic-success'), 'The cancelled file was not safely retried after fresh consent.');
   assert(untouchedAttempts.length === 1 && untouchedAttempts[0].outcome === 'synthetic-success', 'The previously unstarted file was not processed exactly once after fresh consent.');
   assert(conflictAAttempts.length === 1 && conflictAAttempts[0].outcome === 'synthetic-success', 'The first conflict fixture was not processed exactly once.');
   assert(conflictBAttempts.length === 1 && conflictBAttempts[0].outcome === 'synthetic-success', 'The second conflict fixture was not processed exactly once.');
   assert(policyAttempts.map((item) => item.outcome).join(',') === 'synthetic-service-failure,synthetic-success', 'The failed policy did not succeed exactly once after its user-approved retry.');
+  for (const filename of [...Object.keys(fixtureContents), 'ordinary-failed-policy.pdf']) {
+    const fileCalls = attempts.filter((item) => item.filename === filename);
+    const categoryCheckIndex = fileCalls.findIndex((item) => item.purposeOnly && item.outcome === 'category-only-check');
+    const firstDetailIndex = fileCalls.findIndex((item) => !item.purposeOnly);
+    // A successful category assessment remains valid for this unchanged source
+    // across a retry. The invariant is that no detail request starts before it.
+    assert(categoryCheckIndex >= 0 && (firstDetailIndex < 0 || categoryCheckIndex < firstDetailIndex), `${filename} must pass a category-only check before any detail-extraction request`);
+  }
   assert(attempts.every((item) => item.contentMatches), 'The fake provider received bytes other than the expected deterministic synthetic PDFs.');
-  record('In-memory provider trace proves fail/retry, stop/retry, and no skipped or extra requests', true, attempts.length + ' synthetic requests; no PDF bytes were written to logs');
+  record('In-memory provider trace proves category-first checks, fail/retry, stop/retry, and no skipped or extra requests', true, attempts.length + ' synthetic requests; no PDF bytes were written to logs');
 
   if (askEnabled) {
     const askEvents = await readLines(askLogPath);
@@ -895,6 +925,40 @@ async function runRehearsal() {
     assert((await readFile(blockedEgressPath, 'utf8').catch(() => '')).trim() === '', 'The connected ordinary-upload Ask rehearsal attempted external network egress.');
     record('Ordinary-upload Ask uses two synthetic model steps and zero external provider requests', true);
   }
+
+  await navigate(`${appOrigin}/intake?purpose=insurance`);
+  await waitPath('/intake?purpose=insurance');
+  await pickSyntheticFiles([holidayFixturePath]);
+  await clickVisible({ text: 'Review this intake' });
+  await waitPath((value) => value.startsWith('/review?purpose=insurance'));
+  await clickVisible({ aria: 'Review this file with Nura' });
+  await waitText('Read these policy files?');
+  const holidayConsent = await bodyText();
+  assert(holidayConsent.includes('holiday-itinerary.pdf') && holidayConsent.includes('category-only check first') && holidayConsent.includes('detail reading pauses'), 'The wrong-category upload consent did not explain the two-stage check.');
+  await clickVisible({ text: 'Approve and review selected files' });
+  await waitText('Check this file category', 30_000);
+  await waitText('travel document');
+  const pausedReview = await bodyText();
+  assert(pausedReview.includes('No details have been extracted or added.') && pausedReview.includes('Continue as insurance policy') && pausedReview.includes('Remove wrong file'), 'The wrong travel document did not pause with clear confirm-or-remove choices and no extracted details.');
+  const warningVisible = await evaluate(`(() => { const heading = [...document.querySelectorAll('*')].find((el) => el.children.length === 0 && el.textContent?.trim() === 'Check this file category'); heading?.scrollIntoView({ block: 'start', behavior: 'instant' }); return Boolean(heading); })()`);
+  assert(warningVisible, 'Could not locate the rendered category warning for visual capture.');
+  await delay(250);
+  const wrongCategoryScreenshot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  await writeFile(wrongCategoryScreenshotPath, Buffer.from(wrongCategoryScreenshot.data, 'base64'), { mode: 0o600 });
+  record('Captured the rendered mobile wrong-category screen for visual inspection', true, wrongCategoryScreenshotPath);
+  const holidayBeforeRemoval = await readRepository();
+  const holidaySource = holidayBeforeRemoval.sources.find((source) => source.displayName === 'holiday-itinerary.pdf');
+  assert(holidaySource?.state === 'purpose_confirmation_required' && !holidayBeforeRemoval.claims.some((claim) => claim.sourceId === holidaySource.id), 'The paused holiday source must have no extracted or saved claims.');
+  const holidayAttempts = (await readLines(providerLogPath)).filter((item) => item.filename === 'holiday-itinerary.pdf');
+  assert(JSON.stringify(holidayAttempts.map((item) => [item.purposeOnly, item.outcome])) === JSON.stringify([[true, 'category-only-check']]), 'The holiday document must receive only the category pass until the user confirms.');
+  await waitText('Files ready to review', 15000);
+  await clickVisible({ text: 'Remove wrong file' });
+  await waitText('Remove this file and its local extraction from Nura?');
+  await clickVisible({ text: 'Remove file' });
+  await waitText('The file and any extracted details have been removed from this device and the local review service.');
+  const holidayAfterRemoval = await readRepository();
+  assert(!holidayAfterRemoval.sources.some((source) => source.displayName === 'holiday-itinerary.pdf') && !holidayAfterRemoval.claims.some((claim) => claim.sourceId === holidaySource.id), 'Removing the wrong-category file must remove its local source and leave no claims.');
+  record('Wrong insurance document is classified, paused before details, and removable from the review screen', true, 'travel_document detected; zero detail calls before removal');
 
   const allowedOrigins = new Set([appOrigin, serviceOrigin]);
   const externalOrigins = [...networkOrigins].filter((origin) => !allowedOrigins.has(origin));

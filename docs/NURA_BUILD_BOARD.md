@@ -1,5 +1,12 @@
 # Nura build board
 
+## 5 October 2026 — Policy Dossier direction B and wrong-file removal verified
+
+- **Design selected and implemented:** Insurance Registry policy cards lead with approved, source-linked policy details, then the coverage/missing-detail overview. The heading uses the saved policy or insurer name when present; source filename and review history remain visible. Mobile labels, values, and source actions are larger. The dossier makes clear that accepted extraction is not confirmation of current eligibility or an insurer decision. The design contract is recorded in `EXPERIENCE_DESIGN_SPEC.md`.
+- **Fixed:** successful removal of a wrong-category document now clears stale activity and preserves the removal confirmation when the next saved source auto-opens.
+- **Passed:** connected synthetic phone-browser upload journey **32/32**, full repository suite **563/563**, TypeScript typecheck, no-cache Expo lint, script syntax and `git diff --check`. Visual screenshots of the rendered Policy Dossier and category-pause state were captured and inspected. The provider trace confirms category-first checking and zero detailed claims for the mismatched holiday itinerary.
+- This verifies the local synthetic web journey and selected layout only; native-device validation, real-account persistence, production identity/storage, clinical review, and release gates remain open. Whole-build acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages**.
+
 ## 5 October 2026 — approved two-stage insurance check and end-to-end status
 
 - **Passed:** insurance files now receive a separate category-only check across every page before detailed extraction. A likely wrong or uncertain category pauses the upload with no claims; a user confirmation is required before the detail-reading request. The confirmation stays attached to the same saved source, and the consent screen describes the transfer and pause.
