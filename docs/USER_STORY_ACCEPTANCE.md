@@ -22,6 +22,8 @@ This acceptance table is a product-story inventory. For the newest implementatio
 
 **Insurance dossier update — 5 October 2026:** the mobile Insurance Registry now follows the selected dossier hierarchy and includes source/original actions, the coverage list, separate explicit exclusions and unknown missing fields, plus expand/collapse for the full checklist. Connected synthetic UI evidence passes **33/33** and repository tests **564/564**. It remains a partial story: the preview deliberately has one accepted policy term, so it cannot demonstrate a fully populated real policy; native visual acceptance and the full policy conflict/recovery path remain open.
 
+**M1/Explore current-checkout update — 5 October 2026:** the reduced-motion full synthetic journey passes **99/99**, including the current Policy Dossier assertions, on-device Explore relevance, long-summary expansion, save/hide/reload, privacy export/removal, and zero-topic re-entry. A 390 px expanded Explore capture was visually inspected; horizontal overflow checks passed at 360, 390 and 430 px. This is targeted synthetic browser evidence; no story acceptance or production gate has been added.
+
 ## Stories and acceptance criteria
 
 ### 1. Create a living 720 health profile

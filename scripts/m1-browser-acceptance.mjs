@@ -557,9 +557,15 @@ async function runAskBrowserJourney() {
   assert(composerVisual?.value === composerQuestion && composerVisual.visible && composerVisual.hitIsInput && composerVisual.color === 'rgb(255, 249, 243)', 'Ask text is not visibly readable while typing.');
   record('Ask composer keeps typed text visible with readable contrast');
   await navigate(`${appOrigin}/insurance`);
-  await waitText('POLICY AT A GLANCE');
+  await waitText('Policy dossier');
   const initialPolicyText = await bodyText();
-  assert(initialPolicyText.includes('Example policy · 2025'), 'The source-backed 2025 sample policy is not saved before the independent comparison journey.');
+  assert(initialPolicyText.includes('Everyday Care Demo') && initialPolicyText.includes('Nura-Example-Policy-2025.pdf') && initialPolicyText.includes('AI summary') && initialPolicyText.includes('Coverage details') && initialPolicyText.includes('Explicit exclusions') && initialPolicyText.includes('Missing details'), 'The source-backed 2025 policy dossier is missing its identity, source, summary, coverage, exclusion or missing-detail sections.');
+  if (process.env.M1_POLICY_DOSSIER_SCREENSHOT_PATH) {
+    await evaluate(`window.scrollTo(0, 0)`);
+    const screenshot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    await writeFile(process.env.M1_POLICY_DOSSIER_SCREENSHOT_PATH, Buffer.from(screenshot.data, 'base64'), { mode: 0o600 });
+    log(`Captured source-backed policy dossier at ${process.env.M1_POLICY_DOSSIER_SCREENSHOT_PATH}`);
+  }
   const expandInitialTermsLabel = await evaluate(`([...document.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label') || '').find((label) => label.startsWith('Show all ') && label.endsWith(' approved policy terms')) || '')`);
   if (expandInitialTermsLabel) await clickVisible({ aria: expandInitialTermsLabel });
   await waitText('SGD 50,000 per insured person');
@@ -585,13 +591,13 @@ async function runAskBrowserJourney() {
   await waitText('saved to your Insurance Registry', 30_000);
   await clickVisible({ text: 'Open Insurance Registry' });
   await waitPath('/insurance');
-  await waitText('Independent example policy · 2024');
+  await waitText('Everyday Essentials Demo');
   const independentPolicyText = await bodyText();
-  assert(independentPolicyText.includes('Source file ·') && independentPolicyText.includes('Example policy · 2025') && independentPolicyText.includes('Independent example policy · 2024'), 'The registry does not show both separate source-backed policies.');
+  assert(independentPolicyText.includes('Nura-Example-Policy-2025.pdf') && independentPolicyText.includes('Nura-Independent-Policy-2024.pdf') && independentPolicyText.includes('Everyday Care Demo') && independentPolicyText.includes('Everyday Essentials Demo'), 'The registry does not show both separate source-backed policy dossiers.');
   const replacementCountBeforeIndependentCompare = await evaluate(`JSON.parse(localStorage.getItem('nura-local-demo-v1') || '{}').policyReplacements?.length || 0`);
   await clickVisible({ aria: 'Compare this policy with another saved policy' });
   await waitText('Choose another saved policy');
-  const independentPolicyChoiceLabel = await evaluate(`([...document.querySelectorAll('[role="button"][aria-label]')].map((el) => el.getAttribute('aria-label') || '').find((label) => label.startsWith('Compare Independent example policy · 2024 with Example policy · 2025')) || '')`);
+  const independentPolicyChoiceLabel = await evaluate(`([...document.querySelectorAll('[role="button"][aria-label]')].map((el) => el.getAttribute('aria-label') || '').find((label) => label.startsWith('Compare Everyday Essentials Demo with Everyday Care Demo')) || '')`);
   assert(independentPolicyChoiceLabel, 'The independent policy was not offered as a separate comparison choice.');
   await clickVisible({ aria: independentPolicyChoiceLabel });
   await waitText('SIDE-BY-SIDE · NO REPLACEMENT LINK');
@@ -623,7 +629,7 @@ async function runAskBrowserJourney() {
   assert((await readFile(syntheticModelLogPath, 'utf8').catch(() => '')).trim() === '', 'Canceling two-policy Ask consent unexpectedly invoked the model.');
   record('Canceling two-policy Ask consent sends no policy or health context');
   await navigate(`${appOrigin}/insurance`);
-  await waitText('POLICY AT A GLANCE');
+  await waitText('Policy dossier');
   const insurerReplyAction = await evaluate(`([...document.querySelectorAll('[role="button"][aria-label]')].map((el) => el.getAttribute('aria-label') || '').find((label) => label.startsWith('Record an insurer reply for ')) || '')`);
   assert(insurerReplyAction, 'An approved source-linked policy term does not offer insurer-reply capture.');
   const insurerReplyTermLabel = insurerReplyAction.slice('Record an insurer reply for '.length);
@@ -657,7 +663,7 @@ async function runAskBrowserJourney() {
   const policyAfterReplyRemoval = await evaluate(`(() => { const snapshot = JSON.parse(localStorage.getItem('nura-local-demo-v1') || '{}'); const replyTerm = snapshot.facts?.find((fact) => fact.id === ${JSON.stringify(savedInsurerReply.reply.sourceFactId)}); return { hasPolicy: snapshot.facts?.some((fact) => fact.sourceId === ${JSON.stringify(savedInsurerReply.reply.sourceId)} && /insurance coverage/i.test(fact.category || '')), term: replyTerm && { label: replyTerm.label, value: replyTerm.value } }; })()`);
   assert(policyAfterReplyRemoval?.hasPolicy && policyAfterReplyRemoval.term?.label === savedInsurerReply.term.label && policyAfterReplyRemoval.term?.value === savedInsurerReply.term.value, 'Removing the user-reported insurer note changed or removed accepted policy wording.');
   record('Insurer replies save and edit as user-reported notes, survive reload with exact policy-claim linkage, stay out of AI, and delete without changing policy wording');
-  await clickVisible({ aria: 'Check Example policy · 2025 against selected health details' });
+  await clickVisible({ aria: 'Check Everyday Care Demo against selected health details' });
   await waitPath((value) => value.startsWith('/ask') && value.includes('policySourceIds='));
   await waitText('Review this policy against only the health details you choose for this run.');
   await waitText('Ask service connected');
@@ -1848,6 +1854,13 @@ async function runJourney() {
   await clickVisible({ aria: 'Read full source summary for Synthetic reading · cholesterol overview' });
   await waitText('FINAL SOURCE SENTENCE REMAINS VISIBLE.');
   record('Explore card summaries reveal their complete source text from an accessible expand control');
+  if (process.env.M1_EXPLORE_SCREENSHOT_PATH) {
+    const exploreViewport = await evaluate(`(() => { const card = [...document.querySelectorAll('*')].find((node) => node.children.length === 0 && node.textContent?.trim() === 'Synthetic reading · cholesterol overview'); const rect = card?.getBoundingClientRect(); return rect ? { x: rect.left, y: rect.top, width: rect.width, bottom: rect.bottom, viewportWidth: innerWidth, viewportHeight: innerHeight } : null; })()`);
+    assert(exploreViewport?.width > 0 && exploreViewport.width <= exploreViewport.viewportWidth && exploreViewport.bottom > 0 && exploreViewport.y < exploreViewport.viewportHeight, `Explore's selected article is not in the rendered phone viewport: ${JSON.stringify(exploreViewport)}`);
+    const screenshot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    await writeFile(process.env.M1_EXPLORE_SCREENSHOT_PATH, Buffer.from(screenshot.data, 'base64'), { mode: 0o600 });
+    log(`Captured current Explore card on the phone viewport at ${process.env.M1_EXPLORE_SCREENSHOT_PATH}`);
+  }
   await clickVisible({ aria: 'Save Synthetic reading · cholesterol overview for later' });
   await waitFor(async () => evaluate(`JSON.parse(localStorage.getItem('nura-local-demo-v1') || '{}').feedItems?.find((item) => item.id === 'synthetic-reading-save')?.saved === true`), 'The saved reading choice was not written to the browser profile.');
   await clickVisible({ text: 'Saved · 1', exact: true });
@@ -1976,14 +1989,14 @@ async function runJourney() {
   record('Privacy export packages source-linked records with exact local originals and omits device URIs', true, `${privacyExport.includedOriginals} original files verified by byte match`);
 
   await navigate(`${appOrigin}/insurance`);
-  await waitText('POLICY AT A GLANCE');
+  await waitText('Policy dossier');
   const hasApprovedTermExpand = await evaluate("[...document.querySelectorAll('[aria-label]')].some((el) => (el.getAttribute('aria-label') || '').startsWith('Show all ') && (el.getAttribute('aria-label') || '').endsWith(' approved policy terms'))");
   assert(hasApprovedTermExpand, 'The approved policy term list does not expose an accessible expand control.');
   const savedPolicyBody = await bodyText();
-  assert(savedPolicyBody.includes('11 current entries') && savedPolicyBody.includes('EXPLICIT EXCLUSIONS') && savedPolicyBody.includes('POLICY AT A GLANCE'), 'The saved Insurance Registry does not show the linked source, approved-term summary, and evidence categories.');
+  assert(savedPolicyBody.includes('Everyday Care Demo') && savedPolicyBody.includes('Nura-Example-Policy-2025.pdf') && savedPolicyBody.includes('AI summary') && savedPolicyBody.includes('Coverage details') && savedPolicyBody.includes('Explicit exclusions') && savedPolicyBody.includes('Missing details'), 'The saved Insurance Registry does not show the source-backed dossier, approved terms and evidence categories.');
   record('The source-linked Insurance Registry opens with its approved-term summary and accessible expansion control');
   await navigate(`${appOrigin}/insurance`);
-  await waitText('POLICY AT A GLANCE');
+  await waitText('Policy dossier');
   record('The reviewed policy registry survives browser route re-entry');
   if (askEnabled) await runAskBrowserJourney();
 
