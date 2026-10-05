@@ -458,7 +458,7 @@ async function handleHealthFeed(request, response, operation = null) {
         const candidate = addHealthFeedCandidate({
           byUrl, byTitle, source, topic: topic.label,
           title: healthSourceTitle(source.title, url.pathname, topic.label),
-          detail: String(source.detail || '').replace(/\s+/g, ' ').slice(0, 520) || `Open the publisher’s page for its guidance on ${topic.label}.`,
+          detail: String(source.detail || '').replace(/\s+/g, ' ').slice(0, 2000) || `Open the publisher’s page for its guidance on ${topic.label}.`,
           retrievedAt: new Date().toISOString(),
           mergeTopic: false,
         });

@@ -66,6 +66,13 @@ test('does not deduplicate a video against an article with the same title', () =
   assert.equal(uniqueHealthFeedItems(byUrl).length, 2);
 });
 
+test('retains expandable source descriptions up to the full feed excerpt limit', () => {
+  const byUrl = new Map(); const byTitle = new Map();
+  const detail = 'source detail '.repeat(220);
+  const { item } = add(byUrl, byTitle, { url: 'https://example.org/health', title: 'Health guidance', detail }, 'Health');
+  assert.equal(item.detail.length, 2000);
+});
+
 test('preserves an unmodified YouTube API thumbnail and rejects unrelated thumbnail hosts', () => {
   const byUrl = new Map(); const byTitle = new Map();
   const valid = add(byUrl, byTitle, {
