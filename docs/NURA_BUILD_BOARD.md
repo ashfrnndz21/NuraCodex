@@ -1,5 +1,17 @@
 # Nura build board
 
+## 5 October 2026 — full current-provider and app-journey validation
+
+- **Passed:** live synthetic provider evaluation **16/16** across Ask, selected media, policy, urgent symptoms, document/media extraction, audio, trusted sources and live video search. Inputs were generated synthetic data only.
+- **Passed:** reduced-motion connected browser journey **121/121** and repository suite **561/561**; TypeScript, no-cache Expo lint and `git diff --check` pass.
+- This is connected demo and provider-integration evidence, not clinical validation, production identity/isolation, native-device acceptance or production release readiness. The strict acceptance count remains **0/11 stories, 0/8 production gates, 0/19 packages**.
+
+## 5 October 2026 — connected Ask journey verified
+
+- **Passed:** the current reduced-motion Health → Insurance → Ask browser rehearsal passes **121/121** against isolated synthetic data. It includes source-cited Ask answers, persistent titled chats, linked-chat consent, selected-video follow-up, a source-cited Registry summary/staleness path, privacy export/deletion, care, connections, and retry/revocation states.
+- The model is intercepted locally and outbound provider calls are blocked. The run verifies app wiring and UI journeys; it does not validate live answer quality, native-device behavior, or production identity/isolation.
+- Strict product acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages**.
+
 ## 5 October 2026 — insurance mismatch and fresh Explore verification
 
 - **Passed:** a live synthetic holiday-itinerary upload selected as insurance was classified as `travel_document`; no policy claims were released before the user’s purpose confirmation (**1/1**). Synthetic medical and insurance PDF extraction scenarios pass **2/2**.
