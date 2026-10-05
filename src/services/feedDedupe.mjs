@@ -4,6 +4,27 @@ function normalized(value) {
   return String(value || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
+const GENERIC_TITLE_WORDS = new Set(['a', 'an', 'and', 'are', 'about', 'article', 'for', 'from', 'guide', 'health', 'here', 'how', 'information', 'into', 'is', 'of', 'on', 'overview', 'some', 'the', 'to', 'understanding', 'what', 'with']);
+function titleTokens(value) {
+  return new Set(normalized(value).split(' ').filter((token) => token.length > 2 && !GENERIC_TITLE_WORDS.has(token)));
+}
+function isVideo(item) {
+  try { return /(^|\.)youtube\.com$|(^|\.)youtu\.be$/i.test(new URL(item.url).hostname); } catch { return false; }
+}
+function nearDuplicateTitle(left, right) {
+  const a = titleTokens(left); const b = titleTokens(right);
+  if (Math.min(a.size, b.size) < 3) return false;
+  const shared = [...a].filter((token) => b.has(token)).length;
+  return shared >= 3 && shared / Math.max(a.size, b.size) >= 0.72;
+}
+
+function nearDuplicateDetail(left, right) {
+  const a = titleTokens(left); const b = titleTokens(right);
+  if (Math.min(a.size, b.size) < 8) return false;
+  const shared = [...a].filter((token) => b.has(token)).length;
+  return shared / Math.min(a.size, b.size) >= 0.9 && shared / Math.max(a.size, b.size) >= 0.82;
+}
+
 function canonicalUrl(value) {
   try {
     const url = new URL(value);
@@ -21,14 +42,26 @@ function topicLabels(topic) {
   return String(topic || '').split(/\s+·\s+/).map((value) => value.trim()).filter(Boolean);
 }
 
+/** Arrange each reading item once under a topic tile, in the user's chosen order. */
+export function groupHealthFeedCategories(items, preferredTopics = []) {
+  const byId = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const label = topicLabels(item.topic)[0] || 'More reading';
+    const id = normalized(label) || 'more-reading';
+    if (!byId.has(id)) byId.set(id, { id, label, items: [] });
+    byId.get(id).items.push(item);
+  }
+  const preferredOrder = new Map(preferredTopics.map((topic, index) => [normalized(typeof topic === 'string' ? topic : topic?.label), index]));
+  return [...byId.values()].sort((left, right) => {
+    const leftOrder = preferredOrder.get(normalized(left.label)) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = preferredOrder.get(normalized(right.label)) ?? Number.MAX_SAFE_INTEGER;
+    return leftOrder - rightOrder || left.label.localeCompare(right.label);
+  });
+}
+
 function publisherTitleKey(item) {
   const publisher = normalized(item.publisher).replace(/^www\s+/, '');
   return `${publisher}|${normalized(item.title)}`;
-}
-
-function hasSharedTopic(left, right) {
-  const rightTopics = new Set(topicLabels(right.topic).map(normalized));
-  return topicLabels(left.topic).some((topic) => rightTopics.has(normalized(topic)));
 }
 
 /**
@@ -65,7 +98,16 @@ export function groupHealthFeedItems(items) {
     let group = urlKey ? byUrl.get(urlKey) : null;
     if (!group) {
       const titleMatches = byPublisherTitle.get(titleKey) || [];
-      group = titleMatches.find((candidate) => candidate.items.some((member) => hasSharedTopic(member, item)));
+      group = titleMatches.find((candidate) => candidate.items.some((member) => isVideo(member) === isVideo(item)));
+    }
+    if (!group) {
+      group = groups.find((candidate) => candidate.items.some((member) => {
+        if (isVideo(member) !== isVideo(item)) return false;
+        const sameHeadline = normalized(member.title) === normalized(item.title) || nearDuplicateTitle(member.title, item.title);
+        const sameExplanationAcrossPublishers = normalized(member.publisher) !== normalized(item.publisher)
+          && nearDuplicateDetail(member.detail, item.detail);
+        return sameHeadline || sameExplanationAcrossPublishers;
+      }));
     }
     if (!group) {
       group = { items: [] };
