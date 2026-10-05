@@ -40,3 +40,11 @@ export function formatClaimValue(value, unit) {
 
   return `${cleanValue} ${cleanUnit}`;
 }
+
+/** Keep units out of the value when the measurement name already says them. */
+export function formatClaimSummaryValue(label, value, unit) {
+  const unitTokens = tokens(unit);
+  const labelTokens = tokens(label);
+  const namedInLabel = unitTokens.length > 0 && containsUnitTokens(labelTokens, unitTokens);
+  return formatClaimValue(value, namedInLabel ? '' : unit);
+}

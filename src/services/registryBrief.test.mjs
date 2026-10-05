@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { registryBriefCitations, registryBriefDisplayText, registryBriefIsCurrent, registryCitationTargetId, registryEvidenceSnapshot } from './registryBrief.mjs';
+import { registryBriefCitations, registryBriefDisplayModel, registryBriefDisplayText, registryBriefIsCurrent, registryCitationTargetId, registryEvidenceSnapshot } from './registryBrief.mjs';
 
 const recordA = { id: 'fact:a', kind: 'fact', date: '2026-09-12', revision: '2026-09-12', status: 'reviewed' };
 const recordB = { id: 'asset:b', kind: 'asset', date: '2026-09-10', revision: '2026-09-10|source-b', status: 'Original source', sourceIdentity: 'source-b' };
@@ -26,6 +26,41 @@ test('brief freshness requires exact match with the current source snapshot', ()
   assert.equal(registryBriefIsCurrent(brief, 'source-snapshot-v1'), true);
   assert.equal(registryBriefIsCurrent(brief, 'source-snapshot-v2'), false);
   assert.equal(registryBriefIsCurrent(null, 'source-snapshot-v1'), false);
+});
+
+test('current summary view is allowed only after the exact linked-evidence signature matches', () => {
+  assert.deepEqual(registryBriefDisplayModel({ sourceSignature: 'a'.repeat(64) }, 'a'.repeat(64), [recordA]), {
+    mode: 'current',
+    evidence: [],
+  });
+});
+
+test('outdated summary falls back to structured current evidence without exposing saved prose or old citations', () => {
+  const view = registryBriefDisplayModel({
+    answer: 'Old summary says a value is current.',
+    citations: [{ id: 'fact:old', title: 'Old result' }],
+    sourceSignature: 'a'.repeat(64),
+  }, 'b'.repeat(64), [{
+    id: 'fact:new', title: 'HbA1c', detail: '5.8%', date: '2026-10-02', category: 'Lab result',
+    source: 'Report.pdf · page 2', status: 'Confirmed by you',
+  }]);
+
+  assert.deepEqual(view, {
+    mode: 'stale',
+    evidence: [{
+      id: 'fact:new', title: 'HbA1c', detail: '5.8%', date: '2026-10-02', category: 'Lab result',
+      source: 'Report.pdf · page 2', status: 'Confirmed by you',
+    }],
+  });
+  assert.equal('answer' in view, false);
+  assert.equal('citations' in view, false);
+});
+
+test('while the source signature is being calculated, summary text stays hidden and evidence remains available', () => {
+  const view = registryBriefDisplayModel({ answer: 'Saved answer', sourceSignature: 'a'.repeat(64) }, '', [recordB]);
+  assert.equal(view.mode, 'checking');
+  assert.equal(view.evidence[0].id, 'asset:b');
+  assert.equal('answer' in view, false);
 });
 
 test('a saved brief can retain only sources cited by the completed answer', () => {

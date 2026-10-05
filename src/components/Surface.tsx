@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { animatedNativeDriver } from '../services/animatedDriver';
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { colors, motion, radius, shadow } from '../theme';
-export function Surface({ children, style, onPress, accessibilityLabel }: { children: React.ReactNode; style?: ViewStyle; onPress?: () => void; accessibilityLabel?: string }) {
+import { GlassMaterial } from './GlassMaterial';
+export function Surface({ children, style, onPress, accessibilityLabel, tone = 'dark' }: { children: React.ReactNode; style?: ViewStyle; onPress?: () => void; accessibilityLabel?: string; tone?: 'light' | 'dark' }) {
+  const materialRadius = typeof style?.borderRadius === 'number' ? style.borderRadius : radius.lg;
   const [scale] = useState(() => new Animated.Value(1));
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
@@ -12,8 +14,8 @@ export function Surface({ children, style, onPress, accessibilityLabel }: { chil
     return () => { active = false; subscription.remove(); };
   }, []);
   const animate = (toValue: number) => { if (reducedMotion) return; Animated.timing(scale, { toValue, duration: toValue === 1 ? motion.pressOut : motion.pressIn, easing: toValue === 1 ? Easing.bezier(...motion.easing.bouncy) : Easing.linear, useNativeDriver: animatedNativeDriver }).start(); };
-  if (onPress) return <Animated.View style={{ transform: [{ scale }] }}><Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} onPressIn={() => animate(motion.pressScale)} onPressOut={() => animate(1)} style={[styles.surface, style]}>{children}</Pressable></Animated.View>;
-  return <View style={[styles.surface, style]}>{children}</View>;
+  if (onPress) return <Animated.View style={{ transform: [{ scale }] }}><Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} onPressIn={() => animate(motion.pressScale)} onPressOut={() => animate(1)} style={[styles.surface, style]}><GlassMaterial tone={tone} radius={materialRadius} />{children}</Pressable></Animated.View>;
+  return <View style={[styles.surface, style]}><GlassMaterial tone={tone} radius={materialRadius} />{children}</View>;
 }
 export function Pill({ children, selected = false, onPress }: { children: React.ReactNode; selected?: boolean; onPress?: () => void }) {
   const [scale] = useState(() => new Animated.Value(1));
@@ -28,4 +30,4 @@ export function Pill({ children, selected = false, onPress }: { children: React.
   return <Animated.View style={{ transform: [{ scale }] }}><Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} onPressIn={() => animate(motion.pressScale)} onPressOut={() => animate(1)} style={[styles.pill, selected && styles.pillSelected]}><Text style={[styles.pillText, selected && styles.pillTextSelected]}>{children}</Text></Pressable></Animated.View>;
 }
 export function Label({ children, style }: { children: React.ReactNode; style?: any }) { return <Text style={[styles.label, style]}>{children}</Text>; }
-const styles = StyleSheet.create({ surface: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 18, ...shadow }, pill: { borderRadius: radius.pill, paddingVertical: 11, paddingHorizontal: 15, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, marginRight: 8, marginBottom: 9 }, pillSelected: { backgroundColor: colors.cobalt, borderColor: colors.cobalt }, pillText: { color: colors.muted, fontSize: 14, fontWeight: '500' }, pillTextSelected: { color: '#FFFFFF' }, label: { color: colors.quiet, letterSpacing: 1.5, textTransform: 'uppercase', fontSize: 10, fontWeight: '700' } });
+const styles = StyleSheet.create({ surface: { position: 'relative', backgroundColor: colors.glassSurface, borderWidth: 1, borderColor: colors.glassBorder, borderTopColor: colors.glassHighlight, borderRadius: radius.lg, padding: 18, ...shadow }, pill: { borderRadius: radius.pill, paddingVertical: 11, paddingHorizontal: 15, borderWidth: 1, borderColor: colors.glassBorder, backgroundColor: colors.glassSurface, marginRight: 8, marginBottom: 9 }, pillSelected: { backgroundColor: colors.cobalt, borderColor: colors.cobalt }, pillText: { color: colors.muted, fontSize: 14, fontWeight: '500' }, pillTextSelected: { color: '#FFFFFF' }, label: { color: colors.quiet, letterSpacing: 1.5, textTransform: 'uppercase', fontSize: 10, fontWeight: '700' } });

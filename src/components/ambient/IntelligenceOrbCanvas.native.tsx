@@ -5,7 +5,7 @@ import { BlurMask, Canvas, Circle, Group, SweepGradient, vec } from '@shopify/re
 import type { AIState } from '../../state/AIStateContext';
 import { motion } from '../../theme';
 
-const stops = ['#FBE3CF', '#C9A9E8', '#6F4FC4', '#F0B48F', '#9FD0FF', '#FBE3CF'];
+const stops = ['#FFD2B2', '#E5A3FF', '#945BFF', '#FF9F83', '#70D5FF', '#FFD2B2'];
 const quietStops = ['#D6CCD9', '#B9ACBF', '#8A7C96', '#C7B8B4', '#A7A8B4', '#D6CCD9'];
 const periods: Record<AIState, number> = { ...motion.orb, error: motion.orb.idle };
 

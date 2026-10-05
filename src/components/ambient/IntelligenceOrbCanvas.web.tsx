@@ -5,7 +5,7 @@ import type { AIState } from '../../state/AIStateContext';
 import { motion as designMotion } from '../../theme';
 
 const periods: Record<AIState, number> = { ...designMotion.orb, error: designMotion.orb.idle };
-const gradient = 'conic-gradient(from 0deg, #fbe3cf, #c9a9e8, #6f4fc4, #f0b48f, #9fd0ff, #fbe3cf)';
+const gradient = 'conic-gradient(from 0deg, #FFD2B2, #E5A3FF, #945BFF, #FF9F83, #70D5FF, #FFD2B2)';
 const mutedGradient = 'conic-gradient(from 0deg, #d6ccd9, #b9acbf, #8a7c96, #c7b8b4, #a7a8b4, #d6ccd9)';
 
 export function IntelligenceOrbCanvas({ size, state }: { size: number; state: AIState }) {

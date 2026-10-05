@@ -40,8 +40,9 @@ test('leaves a dated report and ordinary user-entered details on their existing 
 
 test('uses the clarified date in the collapsed timeline and exposes it to screen readers', () => {
   assert.match(componentSource, /const datePresentation = timelineDatePresentation\(entry\);/);
-  assert.match(componentSource, /<View style=\{s\.dateCol\} accessible accessibilityLabel=\{datePresentation\.accessibilityLabel\}>/);
-  assert.match(componentSource, /datePresentation\.isEntryDate \? 'ADDED' : dateParts\(entry\.date\)\.month/);
-  assert.match(componentSource, /\{datePresentation\.cardDate\}/);
+  assert.match(componentSource, /style=\{s\.timelineRow\} accessible accessibilityLabel=\{datePresentation\.accessibilityLabel\}/);
+  assert.match(componentSource, /<View style=\{s\.dateColGrouped\} \/>/);
+  assert.match(componentSource, /datePresentation\.isEntryDate && <Text style=\{\{ color: C\.faint, fontSize: 9, lineHeight: 13, marginTop: 3 \}\}>\{datePresentation\.cardDate\} · event date not provided<\/Text>/);
+  assert.match(componentSource, /accessibilityLabel=\{`\$\{groupDateLabel\}, \$\{dateGroup\.entries\.length\}/);
   assert.match(componentSource, /<Text style=\{s\.sourceText\}>\{entry\.source\} · \{entry\.date\}<\/Text>/);
 });

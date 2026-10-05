@@ -1,28 +1,33 @@
 import { Platform } from 'react-native';
 
 export const colors = {
-  // Two connected color modes: immersive plum–rose for Nura-led moments,
-  // and visibly lilac paper with warm cards for health records.
-  // Keep enough separation between the canvas, cards, and secondary surfaces
-  // that the light reading screens do not flatten into one white field.
-  bg: '#EDE5EF', bg2: '#E2D7E7', surface: '#FFFBF7', surfaceStrong: '#E8DEEB',
-  border: '#D7C9DE', text: '#322936', muted: '#716977', quiet: '#928998',
-  violet: '#745487', plum: '#4A3458', mauve: '#A2768E', lilac: '#EDE1F0', cobalt: '#1769E8', aqua: '#2B8178', bluePale: '#EAF2FF', mint: '#E5F2EA', peach: '#F2DDD0',
-  accent: '#EADDED', ink: '#322936', warning: '#A76217', success: '#2E7955', cream: '#FFF8F0', rose: '#B47D92',
+  // Nura's in-app palette stays cocoa brown with warm glass and soft editorial accents.
+  // `canvas` is the light frame around the simulated phone on web; route backgrounds use `bg`.
+  canvas: '#D9C2E2', bg: '#211A17', bg2: '#30221D', surface: 'rgba(255,246,236,.09)', surfaceStrong: 'rgba(255,239,225,.14)',
+  // Shared frosted surfaces use the same translucent warm tint, luminous edge and reading contrast.
+  glassSurface: 'rgba(255,246,236,.12)', glassSurfaceStrong: 'rgba(255,239,225,.21)',
+  glassBorder: 'rgba(255,226,205,.30)', glassHighlight: 'rgba(255,246,235,.72)',
+  border: 'rgba(255,226,205,.26)', text: '#FFF8F0', muted: 'rgba(255,248,240,.78)', quiet: 'rgba(255,235,222,.60)',
+  violet: '#D9B9E8', plum: '#4A3458', mauve: '#D0A4B8', lilac: 'rgba(216,194,232,.16)', cobalt: '#1769E8', aqua: '#9FD8D4', bluePale: 'rgba(169,212,227,.15)', mint: 'rgba(159,216,199,.15)', peach: '#F2C5A7',
+  accent: 'rgba(242,197,167,.18)', ink: '#FFF8F0', warning: '#FFD097', success: '#9FD8B8', cream: '#FFF8F0', rose: '#D595A9',
 } as const;
 
 // Shared scene recipes keep the reference's plum–mauve atmosphere and
 // blue–peach–lilac editorial artwork consistent across routes.
 export const brandScenes = {
+  canvas: {
+    colors: ['#D7CFDC', '#E1D1D7', '#F0D8C5'],
+    locations: [0, 0.56, 1],
+  },
   atmosphere: {
-    base: '#30213C',
-    colors: ['#48335C', '#65466F', '#89647F', '#B27D91', '#453152'],
-    locations: [0, 0.23, 0.5, 0.77, 1],
-    peachGlow: 'rgba(243,183,155,0.30)',
-    lilacGlow: 'rgba(184,157,222,0.27)',
+    base: '#211A17',
+    colors: ['#1C1715', '#30221D', '#50352B', '#785142', '#3D2C2B'],
+    locations: [0, 0.22, 0.49, 0.77, 1],
+    peachGlow: 'rgba(234,164,124,0.30)',
+    lilacGlow: 'rgba(181,151,195,0.13)',
   },
   home: {
-    colors: ['#49345D', '#8C627F', '#B98295'],
+    colors: ['#3D2926', '#705047', '#9A6B68'],
     locations: [0, 0.56, 1],
   },
   feed: {

@@ -20,6 +20,25 @@ export function registryBriefIsCurrent(brief, sourceSignature) {
   return Boolean(brief && sourceSignature && brief.sourceSignature === sourceSignature);
 }
 
+/** Keep outdated generated prose out of the current view until it matches linked evidence again. */
+export function registryBriefDisplayModel(brief, sourceSignature, connected = []) {
+  if (!brief) return { mode: 'empty', evidence: [] };
+  if (registryBriefIsCurrent(brief, sourceSignature)) return { mode: 'current', evidence: [] };
+
+  const hasSourceSignature = /^[a-f0-9]{64}$/i.test(String(sourceSignature || ''));
+  const evidence = connected.map((record) => ({
+    id: String(record.id || ''),
+    title: String(record.title || 'Saved record'),
+    detail: String(record.detail || 'Details not recorded'),
+    date: String(record.date || ''),
+    category: String(record.category || 'Health record'),
+    source: String(record.source || 'Source not recorded'),
+    status: String(record.status || 'Status not recorded'),
+  }));
+
+  return { mode: hasSourceSignature ? 'stale' : 'checking', evidence };
+}
+
 export function registryCitationTargetId(citation, connected) {
   const citationId = String(citation?.id || '');
   if (!citationId) return null;
