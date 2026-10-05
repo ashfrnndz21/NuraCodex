@@ -5,6 +5,7 @@
  * It never reads dotenv files, inherits credentials, or makes third-party calls.
  */
 import { spawn } from 'node:child_process';
+import { Buffer } from 'node:buffer';
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -16,13 +17,16 @@ const tempRoot = await mkdtemp(join(tmpdir(), 'nura-m1-connected-'));
 const dataDir = join(tempRoot, 'synthetic-repository');
 const browserProfile = join(tempRoot, 'chrome-profile');
 const providerLogPath = join(tempRoot, 'synthetic-provider.jsonl');
+const askLogPath = join(tempRoot, 'synthetic-ask.jsonl');
 const blockedEgressPath = join(tempRoot, 'blocked-egress.log');
+const askEnabled = process.argv.includes('--ask');
 const childProcesses = [];
 const outputs = new Map();
 const checks = [];
 const failures = [];
 const networkOrigins = new Set();
 const networkFailures = [];
+const runResponses = [];
 const browserExceptions = [];
 const pendingCommands = new Map();
 const eventWaiters = new Map();
@@ -88,7 +92,7 @@ async function waitFor(check, message, timeoutMs) {
   let lastError;
   while (Date.now() < deadline) {
     for (const child of childProcesses) {
-      if (child.exit && child.label !== 'chrome') throw new Error(child.label + ' exited early (' + JSON.stringify(child.exit) + '). ' + tail(child.stderr));
+      if (child.exit) throw new Error(child.label + ' exited early (' + JSON.stringify(child.exit) + '). ' + tail(child.stderr));
     }
     try {
       const value = await check();
@@ -128,6 +132,9 @@ async function connectCdp(wsUrl) {
     if (data.method === 'Page.fileChooserOpened') fileChooserEvent = data.params;
     if (data.method === 'Network.requestWillBeSent') {
       try { networkOrigins.add(new URL(data.params.request.url).origin); } catch { /* local or data URL */ }
+    }
+    if (data.method === 'Network.responseReceived' && String(data.params.response?.url || '').includes('/v1/agent/runs')) {
+      runResponses.push({ requestId: data.params.requestId, status: data.params.response.status });
     }
     if (data.method === 'Network.loadingFailed') networkFailures.push(data.params.errorText || 'network failure');
     if (data.method === 'Runtime.exceptionThrown') browserExceptions.push(String(data.params.exceptionDetails?.text || 'page exception').slice(0, 240));
@@ -255,6 +262,41 @@ async function syntheticProviderSource() {
         const request = JSON.parse(options && options.body || '{}');
         const content = (request.input || []).flatMap((item) => item.content || []);
         const file = content.find((part) => part.type === 'input_file');
+        if (!file && process.env.NURA_FAKE_ASK_ENABLED === 'true') {
+          const { appendFileSync } = await import('node:fs');
+          const logAsk = (entry) => appendFileSync(process.env.NURA_FAKE_ASK_LOG, JSON.stringify(entry) + '\n', { mode: 0o600 });
+          const isProfileSearch = request.tool_choice?.type === 'function' && request.tool_choice?.name === 'search_profile';
+          if (isProfileSearch) {
+            logAsk({ stage: 'profile_search_requested' });
+            return new Response(JSON.stringify({ output: [{
+              type: 'function_call', call_id: 'ordinary-upload-ask-search', name: 'search_profile',
+              arguments: JSON.stringify({ query: 'Room and board limit blood pressure' }),
+            }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+          }
+          const searchCall = (request.input || []).find((item) => item.type === 'function_call_output');
+          let results = [];
+          try { results = JSON.parse(searchCall?.output || '{}').results || []; } catch { /* return a bounded synthetic provider error below */ }
+          const isPolicy = (item) => /^(insurance coverage|coverage_term|coverage term)$/i.test(String(item?.category || ''));
+          const policy = results.find((item) => isPolicy(item) && /room and board limit/i.test(item.title || ''))
+            || results.find((item) => isPolicy(item));
+          const health = results.find((item) => !isPolicy(item) && /blood pressure/i.test(item.title || ''));
+          if (!policy || !health || !policy.reference || !health.reference) {
+            logAsk({ stage: 'missing_selected_evidence', policyFound: Boolean(policy), healthFound: Boolean(health), results: results.map((item) => ({ kind: item.kind, category: item.category, title: item.title, reference: item.reference })) });
+            return new Response(JSON.stringify({ error: { message: 'The selected synthetic policy and health records were not both available to Ask.' } }), { status: 422, headers: { 'content-type': 'application/json' } });
+          }
+          const answer = {
+            answer: 'Your reviewed policy lists ' + policy.title + ': ' + policy.detail + '. Your saved health record lists ' + health.title + ': ' + health.detail + '. The selected policy wording does not establish whether this reading affects that room-and-board limit.',
+            citations: [policy.reference, health.reference],
+            meaning: { text: '', citations: [] },
+            unknowns: ['The policy excerpt does not explain how the room-and-board limit relates to this blood pressure reading.'],
+            nextSteps: ['Ask the insurer which inpatient room charges the stated daily limit applies to.'],
+            coverageAssessments: [{ kind: 'explicit_limit', policyReference: policy.reference, detail: policy.detail, relatedHealthReferences: [] }],
+            memoryProposal: { proposed: false, label: '', value: '', reason: '', sourceReferences: [] },
+          };
+          logAsk({ stage: 'grounded_response_returned', titles: [policy.title, health.title], references: [policy.reference, health.reference] });
+          return new Response(JSON.stringify({ output_text: JSON.stringify(answer) }), { status: 200, headers: { 'content-type': 'application/json' } });
+        }
+        if (!file) return new Response(JSON.stringify({ error: { message: 'Unexpected synthetic request without an uploaded file.' } }), { status: 400, headers: { 'content-type': 'application/json' } });
         const filename = file && file.filename || 'missing-filename.pdf';
         const encoded = file && file.file_data || '';
         const base64 = encoded.slice(encoded.indexOf(',') + 1);
@@ -274,6 +316,10 @@ async function syntheticProviderSource() {
         if (filename === 'ordinary-retry-report.pdf' && attempt === 1) {
           logEvent('synthetic-service-failure');
           return new Response(JSON.stringify({ error: { message: 'Synthetic temporary service interruption.' } }), { status: 503 });
+        }
+        if (filename === 'ordinary-failed-policy.pdf' && attempt === 1) {
+          logEvent('synthetic-service-failure');
+          return new Response(JSON.stringify({ error: { message: 'Synthetic policy-reading service interruption.' } }), { status: 503 });
         }
         if (filename === 'ordinary-cancel-report.pdf' && attempt === 1) {
           logEvent('delayed-until-user-stop');
@@ -311,6 +357,16 @@ async function syntheticProviderSource() {
       return originalFetch(input, options);
     };
     function answerFor(filename) {
+      if (filename === 'ordinary-failed-policy.pdf') {
+        return {
+          claims: [{
+            kind: 'coverage_term', label: 'Room and board limit', value: 'SGD 300 per day', unit: null,
+            referenceRange: null, method: null, effectiveAt: null, confidence: 0.96,
+            page: 1, quote: 'Room and board limit: SGD 300 per day',
+          }],
+          documentContext: { documentType: 'Synthetic policy schedule', dates: [], entities: [], notes: [] },
+        };
+      }
       const fixtures = {
         'ordinary-retry-report.pdf': { value: '118/76', date: '2025-02-18' },
         'ordinary-cancel-report.pdf': { value: '121/79', date: '2025-03-02' },
@@ -354,6 +410,55 @@ async function readRepository() {
   catch (error) { if (error && error.code === 'ENOENT') return null; throw error; }
 }
 
+async function runOrdinaryUploadAskJourney() {
+  // Insurance keeps the Ask action disabled while source-linked policy terms
+  // are being reconciled. Wait for that read-only preparation to finish before
+  // clicking; a visible button is not necessarily enabled yet.
+  const policyAskLabel = await waitFor(async () => evaluate(`(() => {
+    const button = [...document.querySelectorAll('[role="button"],button')]
+      .find((el) => /^Check .+ against selected health details$/.test(el.getAttribute('aria-label') || '') && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+    return button?.getAttribute('aria-label') || '';
+  })()`), 'The policy-scoped Ask action did not become ready after source review.', 30000);
+  await clickVisible({ aria: policyAskLabel });
+  await waitPath((path) => path.startsWith('/ask?') && path.includes('policySourceIds='));
+  await waitText('Review this policy against only the health details you choose for this run.');
+  await clickVisible({ aria: 'Check Nura and continue' });
+  await waitText('Choose what Nura can use.');
+  const healthFactLabel = await evaluate("([...document.querySelectorAll('[role=\\\"checkbox\\\"][aria-label]')].map((el) => el.getAttribute('aria-label') || '').find((label) => /^Share Blood pressure:/i.test(label)) || '')");
+  assert(healthFactLabel, 'The ordinary upload-to-Ask run cannot select its source-linked blood pressure fact.');
+  const checkboxSnapshot = () => evaluate(`(() => [...document.querySelectorAll('[role=\"checkbox\"][aria-label]')].map((el) => ({ label: el.getAttribute('aria-label'), rowText: el.innerText || '' })))()`);
+  const checkboxStateBefore = await checkboxSnapshot();
+  const initiallySelected = checkboxStateBefore.filter((row) => /^Share (Blood pressure|Weight|Height):/.test(row.label) && /^✓/.test(row.rowText.trim())).map((row) => row.label);
+  assert(initiallySelected.length === 0, 'A policy review preselected health details: ' + initiallySelected.join(', '));
+  const factClickResult = await evaluate(`(() => { const item = [...document.querySelectorAll('[role=\"checkbox\"]')].find((el) => el.getAttribute('aria-label') === ${JSON.stringify(healthFactLabel)}); item?.click(); return Boolean(item); })()`);
+  assert(factClickResult, 'The exact health fact checkbox could not be activated.');
+  await waitFor(async () => (await checkboxSnapshot()).some((row) => row.label === healthFactLabel && /^✓/.test(row.rowText.trim())), 'The selected blood pressure record did not enter its checked state.');
+  const checkboxStateAfter = await checkboxSnapshot();
+  const selectedHealthLabels = checkboxStateAfter.filter((row) => /^Share (Blood pressure|Weight|Height):/.test(row.label) && /^✓/.test(row.rowText.trim())).map((row) => row.label);
+  assert(selectedHealthLabels.length === 1 && selectedHealthLabels[0] === healthFactLabel, 'The policy review must share only the health fact the user selected; got ' + selectedHealthLabels.join(', '));
+  const continueClicked = await evaluate(`(() => { const item = [...document.querySelectorAll('button,[role=\"button\"],[tabindex=\"0\"]')].find((el) => (el.innerText || el.textContent || '').includes('CONTINUE WITH SELECTED DETAILS')); item?.click(); return Boolean(item); })()`);
+  assert(continueClicked, 'The selected-details consent could not be continued.');
+  await waitText('Your reviewed policy lists Room and board limit', 30_000);
+  await clickVisible({ aria: 'Show more answer and source detail' });
+  await waitText('does not establish whether this reading affects');
+  await clickVisible({ aria: 'Show 1 reviewed policy terms' });
+  await waitText('ordinary-failed-policy.pdf');
+  const answer = await bodyText();
+  assert(answer.includes('SGD 300 per day') && answer.includes('Blood pressure') && answer.includes('118/76'), 'Ask did not connect the ordinary policy PDF to the accepted ordinary health PDF.');
+  assert(answer.includes('does not establish whether this reading affects') && answer.includes('Ask the insurer which inpatient room charges'), 'Ask did not preserve the evidence boundary and insurer follow-up.');
+  const policySourceVisible = answer.includes('ordinary-failed-policy.pdf');
+  const healthSourceVisible = answer.includes('ordinary-retry-report.pdf');
+  record('One fresh ordinary-upload session continues through policy-scoped Ask with citations to both original PDFs', policySourceVisible && healthSourceVisible, `policy source visible: ${policySourceVisible}; health source visible: ${healthSourceVisible}`);
+  await navigate(`${appOrigin}/ask`);
+  await waitText('Your reviewed policy lists Room and board limit', 30_000);
+  await clickVisible({ aria: 'Show 1 reviewed policy terms' });
+  await waitText('ordinary-failed-policy.pdf');
+  await waitText('ordinary-retry-report.pdf');
+  record('Ordinary-upload Ask answer and both source citations survive app route re-entry', true);
+  await navigate(`${appOrigin}/insurance`);
+  await waitText('POLICY AT A GLANCE');
+}
+
 async function startLocalServices() {
   const backendPort = await availablePort();
   const webPort = await availablePort();
@@ -373,6 +478,8 @@ async function startLocalServices() {
     NURA_DEMO_DATA_DIR: dataDir,
     NURA_ENABLE_DEMO_INTAKE: 'true',
     NURA_FAKE_PROVIDER_LOG: providerLogPath,
+    NURA_FAKE_ASK_ENABLED: String(askEnabled),
+    NURA_FAKE_ASK_LOG: askLogPath,
     NURA_BLOCKED_EGRESS_LOG: blockedEgressPath,
   });
   launch('synthetic-only Nura service', process.execPath, ['--import', preloadPath, 'server/index.mjs'], serviceEnv);
@@ -433,18 +540,30 @@ async function onboardToIntake() {
     await clickVisible({ aria: 'Country: Malaysia. Change country' });
   });
   await waitText('Choose your country');
+  // Text appears as soon as the native-style sheet mounts; let its slide-in settle before tapping a row.
+  await delay(400);
   await fillInput('Search countries', 'Malaysia');
   await clickVisible({ text: 'Malaysia' });
+  let latestProfileFields = {};
   const completedProfile = await waitFor(async () => {
-    const fields = await evaluate("({ name: document.querySelector('[aria-label=\\\"Profile display name\\\"]')?.value || '', country: document.querySelector('[aria-label^=\\\"Country: \\\"]')?.getAttribute('aria-label') || '', visibleText: document.body.innerText.slice(-700) })");
+    const fields = await evaluate("({ name: document.querySelector('[aria-label=\\\"Profile display name\\\"]')?.value || '', country: document.querySelector('[aria-label^=\\\"Country: \\\"]')?.getAttribute('aria-label') || '' })");
+    latestProfileFields = fields || {};
     return fields?.name === 'Casey Synthetic' && fields.country === 'Country: Malaysia. Change country' ? fields : false;
-  }, 'The required synthetic profile name or selected country was not retained.', 10000);
+  }, 'The required synthetic profile name or selected country was not retained. Current form state: ' + JSON.stringify(latestProfileFields), 10000);
   log('Rendered profile fields after country selection: ' + JSON.stringify(completedProfile));
+  await fillInput('Date of birth, required', '1990-05-12');
+  await fillInput('Height in centimetres, required', '165');
+  await fillInput('Weight in kilograms, required', '58');
   await clickVisible({ text: 'CONTINUE TO HEALTH AREAS' });
   await waitText('ADD RECORDS OR A NOTE');
   await clickVisible({ text: 'ADD RECORDS OR A NOTE' });
+  await waitPath('/setup');
+  await clickVisible({ aria: 'Continue to health records' });
   const route = await waitPath('/intake?firstRun=true');
+  const sampleShortcutLabels = await evaluate(`([...document.querySelectorAll('[role="button"]')].map((el) => el.getAttribute('aria-label') || '').filter((label) => /sample report|sample policy/i.test(label)))`);
+  assert(Array.isArray(sampleShortcutLabels) && sampleShortcutLabels.length === 0, 'A sample shortcut button appeared in the clean first-run intake without being explicitly enabled.');
   record('Synthetic first-run setup reaches health record intake with no topics selected', true, route);
+  record('Clean first-run intake hides fictional sample shortcuts unless explicitly enabled', true);
 }
 
 async function runRehearsal() {
@@ -462,25 +581,27 @@ async function runRehearsal() {
     await writeFile(path, contents, { mode: 0o600 });
     filePaths.push(path);
   }
-  record('Five test-only PDF inputs contain synthetic text and no personal identifiers', true);
+  const insuranceFixturePath = join(tempRoot, 'ordinary-failed-policy.pdf');
+  await writeFile(insuranceFixturePath, '%PDF-1.4\nNURA SYNTHETIC FIXTURE ONLY\nRoom and board limit: SGD 300 per day\n%%EOF\n', { mode: 0o600 });
+  record('Five health PDFs and one separate policy PDF contain synthetic text and no personal identifiers', true);
 
   await onboardToIntake();
   await pickSyntheticFiles(filePaths);
-  await waitText('Review your health details');
+  await waitText('Review these records');
   const stagedFilesBody = await bodyText();
   record('Ordinary PDFs are staged through the app file chooser', ['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => stagedFilesBody.includes(name)));
 
-  await clickVisible({ text: 'Review your health details' });
+  await clickVisible({ text: 'Review these records' });
   await waitPath((value) => value.startsWith('/review'));
-  await clickVisible({ aria: 'Review all 5 files with Nura' });
-  await waitText('Review these health files?');
+  await clickVisible({ aria: 'Review 5 files with Nura' });
+  await waitText('Read these health files?');
   const firstConsent = await bodyText();
   assert(['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => firstConsent.includes(name)), 'Consent did not name every staged synthetic PDF.');
-  assert(firstConsent.includes('Connected AI') && firstConsent.includes('connected Nura AI service'), 'Consent did not describe the connected service for ordinary files.');
+  assert(firstConsent.includes('Your files are sent to Nura’s AI service for reading.') && firstConsent.includes('Each file gets its own review.'), 'Consent did not describe the connected service for ordinary files.');
   assert(!firstConsent.includes('No AI provider is called for these samples.'), 'Ordinary files were incorrectly described as local samples.');
   record('One explicit consent names all ordinary PDFs and identifies connected-service processing', true);
 
-  await clickVisible({ text: 'Approve and read 5 files' });
+  await clickVisible({ text: 'Approve and review files' });
   await waitText('Needs another try', 60000);
   await waitFor(async () => (await readLines(providerLogPath)).some((item) => item.filename === 'ordinary-cancel-report.pdf' && item.attempt === 1 && item.outcome === 'delayed-until-user-stop'), 'The deterministic delayed synthetic extraction did not start.', 60000);
   await waitText('STOP', 15000);
@@ -499,11 +620,11 @@ async function runRehearsal() {
   assert(!firstAttempts.some((item) => ['ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].includes(item.filename)), 'A file after cancellation unexpectedly reached extraction.');
   record('Stop aborts the active synthetic request and leaves the next file unstarted', true);
 
-  await clickVisible({ aria: 'Review all 5 files with Nura' });
-  await waitText('Review these health files?');
+  await clickVisible({ aria: 'Review 5 files with Nura' });
+  await waitText('Read these health files?');
   const retryConsent = await bodyText();
   assert(['ordinary-retry-report.pdf', 'ordinary-cancel-report.pdf', 'ordinary-unstarted-report.pdf', 'ordinary-conflict-a-report.pdf', 'ordinary-conflict-b-report.pdf'].every((name) => retryConsent.includes(name)), 'Retry did not present a fresh consent sheet naming all still-unprocessed files.');
-  await clickVisible({ text: 'Approve and read 5 files' });
+  await clickVisible({ text: 'Approve and review files' });
   await waitText('Blood pressure', 60000);
   await waitText('117/74', 60000);
   await waitText('129/84', 60000);
@@ -511,9 +632,18 @@ async function runRehearsal() {
     const text = await bodyText();
     return text.includes('Document reading complete') && text.includes('117/74');
   }, 'The second approved batch did not complete with the synthetic candidate results.', 60000);
+  await waitFor(async () => {
+    const text = await bodyText();
+    const activeStop = await evaluate('Boolean(document.querySelector("[aria-label=\\\"Stop file review\\\"]"))');
+    return text.includes('Files ready to review') && !activeStop ? text : false;
+  }, 'Finished file processing did not settle into a review state.', 15000);
+  const settledActivity = await bodyText();
+  assert(!settledActivity.includes('Nura is reading 5 files') && !settledActivity.includes('LIVE FILE CHECKS') && (settledActivity.match(/FILE REVIEW ACTIVITY/g) || []).length === 1, 'Completed processing still looks active or repeats the activity panel.');
+  record('Processing settles into one static source-linked activity summary', true);
 
   await clickVisible({ aria: 'Open ordinary-retry-report.pdf' });
   await waitText('118/76', 15000);
+  await waitText('Needs review', 15000);
   const reviewBody = await bodyText();
   assert(reviewBody.includes('Needs review'), 'Connected extraction candidates were not visibly marked as pending review.');
   const pendingLabel = await evaluate('([...document.querySelectorAll("[role=button]")].map((el)=>el.getAttribute("aria-label")||"").find((label)=>label.includes("118/76")&&label.includes("Needs review")))||""');
@@ -541,8 +671,8 @@ async function runRehearsal() {
   const crossSourceReview = await bodyText();
   assert(crossSourceReview.includes('Blood pressure · 124/82 mmhg / 129/84 mmhg · Result date 2025-04-15'), 'The same-date conflicting values were not shown together with their shared result date.');
   assert(crossSourceReview.includes('ordinary-conflict-a-report.pdf') && crossSourceReview.includes('ordinary-conflict-b-report.pdf'), 'The conflict review did not preserve links to both original reports.');
-  assert(crossSourceReview.includes('Both suggestions remain separate.'), 'The conflict was not explicitly described as separate suggestions requiring review.');
-  assert(crossSourceReview.includes('at least one source has no linked result date'), 'A differing value with a missing event date was not flagged for date review.');
+  assert(crossSourceReview.includes('Check each value against its report before keeping it.'), 'The conflict was not explained as two source-backed values requiring separate review.');
+  assert(crossSourceReview.includes('One result has no date. Check both reports before deciding whether these are separate results.'), 'A differing value with a missing event date was not flagged for date review.');
   record('Cross-file review flags same-date differences and date-uncertain values without merging suggestions', true);
 
   await clickVisible({ aria: 'Open ordinary-unstarted-report.pdf' });
@@ -551,8 +681,11 @@ async function runRehearsal() {
   assert(missingDateClaimLabel, 'Could not identify the synthetic claim whose event date was omitted.');
   await clickVisible({ aria: missingDateClaimLabel });
   const missingDateReview = await bodyText();
-  assert(missingDateReview.includes('Not stated in the source'), 'The event date was not shown as unknown.');
-  assert(missingDateReview.includes('report date 2025-03-10') && missingDateReview.includes('These dates are not linked to this result.'), 'The report date was not kept separate from the missing result date.');
+  assert(missingDateReview.includes('Not stated in report'), 'The event date was not shown as unknown.');
+  assert(missingDateReview.includes('ABOUT THIS REPORT') && missingDateReview.includes('DETAILS +') && !missingDateReview.includes('2025-03-10'), 'Report metadata was not kept collapsed in the initial claim review.');
+  await clickVisible({ aria: 'Show report details' });
+  const expandedMissingDateReview = await bodyText();
+  assert(expandedMissingDateReview.includes('Not stated in report') && expandedMissingDateReview.includes('Report date') && expandedMissingDateReview.includes('2025-03-10'), 'The unknown result date and distinct report date were not shown separately on request.');
   const sourceWithUnknownDate = repository.sources.find((item) => item.id === unstartedSource.id);
   const unknownDateClaim = repository.claims.find((claim) => claim.sourceId === unstartedSource.id);
   assert(unknownDateClaim?.effectiveAt === null, 'The server filled the missing event date from another source date.');
@@ -589,7 +722,7 @@ async function runRehearsal() {
   const conflictClaimBLabel = await evaluate('([...document.querySelectorAll("[role=button]")].map((el)=>el.getAttribute("aria-label")||"").find((label)=>label.includes("129/84")&&label.includes("Needs review")))||""');
   assert(conflictClaimBLabel, 'The second same-date conflict suggestion did not remain independently pending.');
   const queueBeforeSave = await bodyText();
-  assert(queueBeforeSave.includes('2 ITEMS READY TO SAVE') && queueBeforeSave.includes('Leave any of the 3 undecided suggestions untouched to keep it pending'), 'The review queue does not show two staged choices and three untouched pending suggestions.');
+  assert(queueBeforeSave.includes('2 ITEMS READY TO SAVE') && queueBeforeSave.includes('Only the choices you select will be saved. Suggestions left undecided stay pending.'), 'The review queue does not show two staged choices and leave untouched suggestions pending.');
   record('Review stages one accept and one dismissal while both conflict results and the undated result remain pending', true);
 
   await clickVisible({ aria: 'Save 2 reviewed items' });
@@ -613,32 +746,131 @@ async function runRehearsal() {
   assert(acceptedSource && acceptedAssertion.sourceId === acceptedSource.id, 'The accepted assertion lost its original report source.');
   record('Repository persists exactly one accepted assertion with its source; dismissal and untouched claim remain distinct', true);
 
-  await clickVisible({ text: 'View your health history' });
-  const healthRoute = await waitPath((value) => /health/.test(value));
-  await waitText('Casey Synthetic', 30000);
-  await waitText('118/76', 30000);
+  await clickVisible({ text: 'Continue profile setup' });
+  await waitPath('/setup');
+  const setupWithPendingReviews = await bodyText();
+  assert(setupWithPendingReviews.includes('Health records') && setupWithPendingReviews.includes('Files ready to review'), 'Setup did not keep unresolved health suggestions in the records step.');
+  record('Profile setup keeps the records step active while three suggestions remain undecided', true);
+  await clickVisible({ text: 'Review health records' });
+  await waitPath('/review?purpose=medical&firstRun=true');
+  const reviewUrl = await evaluate('location.href');
+  await navigate(reviewUrl);
+  await waitPath('/review?purpose=medical&firstRun=true');
   await waitText('ordinary-retry-report.pdf', 15000);
-  const savedHealthHistory = await bodyText();
-  const acceptedSourceRows = savedHealthHistory.match(/ordinary-retry-report\.pdf/g) || [];
-  assert(savedHealthHistory.includes('SOURCE FILE · ordinary-retry-report.pdf'), 'The accepted health event does not show its source file in history.');
-  assert(acceptedSourceRows.length === 1, `The accepted report is duplicated in the health timeline (${acceptedSourceRows.length} visible source rows).`);
-  assert(['121/79', '117/74', '124/82', '129/84'].every((value) => !savedHealthHistory.includes(value)), 'A dismissed, undated or conflicting pending suggestion appeared as a saved health event.');
-  record('Health history shows the accepted source-linked event once and excludes dismissed and pending values', true, healthRoute);
+  await clickVisible({ text: 'Open ordinary-retry-report.pdf' });
+  await waitText('118/76', 15000);
+  const reloadedReview = await bodyText();
+  assert(reloadedReview.includes('In your record') && reloadedReview.includes('ordinary-retry-report.pdf'), 'The accepted source-linked result did not survive a full review-page reload.');
+  record('Accepted source-linked review survives reload while undecided suggestions keep setup at records', true);
 
-  const healthUrl = await evaluate('location.href');
-  await navigate(healthUrl);
-  await waitPath((value) => /health/.test(value));
-  await waitFor(async () => {
-    const text = await bodyText();
-    return text.includes('Casey Synthetic') && text.includes('118/76') && text.includes('ordinary-retry-report.pdf');
-  }, 'Saved source-linked health event did not survive reload.', 30000);
-  const reloadedHealthHistory = await bodyText();
-  const reloadedSourceRows = reloadedHealthHistory.match(/ordinary-retry-report\.pdf/g) || [];
-  const reloadedSourceLinkIsUnique = reloadedHealthHistory.includes('SOURCE FILE · ordinary-retry-report.pdf') && reloadedSourceRows.length === 1;
-  const unreviewedValuesStayOut = ['121/79', '117/74', '124/82', '129/84'].every((value) => !reloadedHealthHistory.includes(value));
-  assert(reloadedSourceLinkIsUnique, `Reload duplicated or detached the accepted source row (${reloadedSourceRows.length} visible source rows).`);
-  assert(unreviewedValuesStayOut, 'Dismissed or pending data appeared after reloading health history.');
-  record('Accepted event and its single source link survive a full health-page reload', reloadedSourceLinkIsUnique && unreviewedValuesStayOut);
+  await waitText('Continue setup · 3 left for later', 15000);
+  const deferNotice = await bodyText();
+  assert(deferNotice.includes('will not be added to your profile until you approve them'), 'The continue action did not explain that pending suggestions stay out of the profile.');
+  await clickVisible({ text: 'Continue setup · 3 left for later' });
+  await waitPath('/setup');
+  const deferredSetup = await bodyText();
+  assert(deferredSetup.includes('LEFT FOR LATER') && deferredSetup.includes('Source suggestions remain for later'), 'Deferring suggestions did not preserve a visible pending state.');
+  await clickVisible({ text: 'Continue to medicines' });
+  await waitPath('/treatment?firstRun=true');
+  await waitText('I take no current medicines');
+  await clickVisible({ text: 'I take no current medicines' });
+  await waitPath('/setup');
+  await clickVisible({ text: 'Continue to insurance' });
+  await waitPath('/insurance?firstRun=true');
+  await clickVisible({ text: 'Add a policy document' });
+  await waitPath('/intake?purpose=insurance&firstRun=true');
+  await pickSyntheticFiles([insuranceFixturePath]);
+  await waitText('Review these records');
+  await clickVisible({ text: 'Review these records' });
+  await waitPath((path) => path.startsWith('/review?purpose=insurance'));
+  await clickVisible({ aria: 'Review this file with Nura' });
+  await waitText('Read these policy files?');
+  const policyConsent = await bodyText();
+  assert(policyConsent.includes('ordinary-failed-policy.pdf') && policyConsent.includes('Your files are sent to Nura’s AI service for reading.'), 'Policy consent did not identify the selected file and processing destination.');
+  await clickVisible({ text: 'Approve and review files' });
+  await waitText('Some files need another try');
+  const failedPolicyReview = await bodyText();
+  assert(failedPolicyReview.includes('ordinary-failed-policy.pdf') && failedPolicyReview.includes('Could not finish; you can try again') && failedPolicyReview.includes('Continue profile setup'), 'An unreadable policy did not show a retryable failure and a route back into setup.');
+  record('Unreadable insurance file shows its failure and leaves a clear route back to setup', true);
+  await clickVisible({ text: 'Continue profile setup' });
+  await waitPath('/setup');
+  const failedPolicySetup = await bodyText();
+  assert(failedPolicySetup.includes('Insurance') && failedPolicySetup.includes('Leave policy file for later'), 'Setup did not offer to defer the unprocessed policy without marking it reviewed.');
+  await clickVisible({ text: 'Leave policy file for later' });
+  await waitText('Policy source saved for later');
+  await waitPath('/setup');
+  await waitText('FINISH SETUP');
+  const finalReview = await bodyText();
+  assert(finalReview.includes('Pending source review') && finalReview.includes('not part of your profile') && finalReview.includes('Pending policy review') && finalReview.includes('No policy terms were added'), 'Final review did not disclose deferred, unapproved health and policy sources.');
+  await clickVisible({ text: 'FINISH SETUP' });
+  await waitPath((path) => path.includes('home'));
+  const homeAfterSetup = await bodyText();
+  assert(homeAfterSetup.includes('Source reviews to finish') && homeAfterSetup.includes('Health records') && homeAfterSetup.includes('Unreviewed suggestions remain') && homeAfterSetup.includes('Insurance') && homeAfterSetup.includes('Policy terms remain unreviewed'), 'Home did not provide return paths to deferred health and policy reviews.');
+  const homeUrl = await evaluate('location.href');
+  await navigate(homeUrl);
+  await waitPath((path) => path.includes('home'));
+  await waitText('Source reviews to finish');
+  record('Fresh setup advances through steps 4–6; deferred status and Home return reminder survive refresh', true);
+
+  const deferredRepository = await readRepository();
+  assert(!deferredRepository.claims.some((claim) => deferredRepository.sources.find((source) => source.id === claim.sourceId)?.displayName === 'ordinary-failed-policy.pdf'), 'A failed policy extraction created a policy claim before retry.');
+  record('Failed policy stays source-only and creates no terms before retry', true);
+
+  await clickVisible({ text: 'Review pending health records' });
+  await waitPath('/review?purpose=medical');
+  await waitText('ordinary-unstarted-report.pdf');
+  await clickVisible({ text: 'Open ordinary-unstarted-report.pdf' });
+  await waitText('Needs review');
+  const reopenedDeferredReview = await bodyText();
+  assert(reopenedDeferredReview.includes('Blood pressure') && reopenedDeferredReview.includes('Needs review'), 'Home did not reopen the still-pending source suggestions.');
+  await clickVisible({ text: 'Go back' });
+  await waitPath((path) => path.includes('home'));
+  record('The Home reminder reopens the deferred source queue without changing its claim status', true);
+
+  await clickVisible({ aria: 'Review pending insurance' });
+  await waitPath('/review?purpose=insurance');
+  await waitText('ordinary-failed-policy.pdf');
+  const reopenedPolicy = await bodyText();
+  assert(reopenedPolicy.includes('Ready') || reopenedPolicy.includes('Needs another try'), 'The deferred policy source could not be reopened from Home.');
+  record('The Home reminder reopens the deferred failed policy source for a later retry', true);
+  await clickVisible({ aria: 'Review this file with Nura' });
+  await waitText('Read these policy files?');
+  const policyRetryConsent = await bodyText();
+  assert(policyRetryConsent.includes('ordinary-failed-policy.pdf') && policyRetryConsent.includes('You choose what to save.'), 'Retry consent did not identify the policy source and preserve user control over saving.');
+  await clickVisible({ text: 'Approve and review files' });
+  await waitText('Room and board limit');
+  await waitText('SGD 300 per day');
+  await waitText('Files ready to review');
+  await clickVisible({ text: 'Review details' });
+  await clickVisible({ aria: 'View source wording for Room and board limit, page 1' });
+  const pendingPolicyTerm = await bodyText();
+  assert(pendingPolicyTerm.includes('Room and board limit: SGD 300 per day') && pendingPolicyTerm.includes('Needs review'), 'The retried policy did not produce an exact-quote term that remains pending approval.');
+  record('Retry after service recovery shows the quoted policy term as unapproved evidence', true);
+  await clickVisible({ aria: 'Include policy term: Room and board limit' });
+  await waitText('Included in save');
+  await clickVisible({ text: 'Save reviewed items' });
+  await waitText('1 reviewed item saved to your Insurance Registry.');
+  await clickVisible({ text: 'Open Insurance Registry' });
+  await waitPath('/insurance');
+  await waitText('Room and board limit');
+  const savedPolicyRegistry = await bodyText();
+  assert(savedPolicyRegistry.includes('SGD 300 per day') && savedPolicyRegistry.includes('VIEW SOURCE QUOTE') && savedPolicyRegistry.includes('OPEN ORIGINAL SOURCE AND REVIEW'), 'The accepted policy term did not appear in the Insurance Registry with its quote control and source action.');
+  record('Accepted ordinary policy term appears in the Insurance Registry with a quote control and original source route', true);
+  if (askEnabled) await runOrdinaryUploadAskJourney();
+  await navigate(homeUrl);
+  await waitPath((path) => path.includes('home'));
+
+  const afterSetupRepository = await readRepository();
+  const afterSetupStates = Object.fromEntries(afterSetupRepository.claims.map((claim) => [afterSetupRepository.sources.find((source) => source.id === claim.sourceId)?.displayName, claim.evidenceState]));
+  assert(afterSetupStates['ordinary-retry-report.pdf'] === 'user_confirmed'
+    && afterSetupStates['ordinary-cancel-report.pdf'] === 'rejected'
+    && afterSetupStates['ordinary-unstarted-report.pdf'] === 'needs_review'
+    && afterSetupStates['ordinary-conflict-a-report.pdf'] === 'needs_review'
+    && afterSetupStates['ordinary-conflict-b-report.pdf'] === 'needs_review', 'Deferring suggestions changed their source review decisions.');
+  const savedPolicyClaim = afterSetupRepository.claims.find((claim) => afterSetupRepository.sources.find((source) => source.id === claim.sourceId)?.displayName === 'ordinary-failed-policy.pdf');
+  assert(savedPolicyClaim?.kind === 'coverage_term' && savedPolicyClaim.evidenceState === 'user_confirmed' && savedPolicyClaim.sourceLocation?.quote === 'Room and board limit: SGD 300 per day', 'The retried policy term was not saved as an approved, source-quoted coverage claim.');
+  assert(afterSetupRepository.assertions.length === 2, 'Health and policy review did not create exactly two user-approved assertions.');
+  record('Deferral preserves health decisions; only the explicitly approved policy quote becomes an Insurance Registry claim', true);
 
   const attempts = await readLines(providerLogPath);
   const retryAttempts = attempts.filter((item) => item.filename === 'ordinary-retry-report.pdf');
@@ -646,13 +878,23 @@ async function runRehearsal() {
   const untouchedAttempts = attempts.filter((item) => item.filename === 'ordinary-unstarted-report.pdf');
   const conflictAAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-a-report.pdf');
   const conflictBAttempts = attempts.filter((item) => item.filename === 'ordinary-conflict-b-report.pdf');
+  const policyAttempts = attempts.filter((item) => item.filename === 'ordinary-failed-policy.pdf');
   assert(retryAttempts.map((item) => item.outcome).join(',') === 'synthetic-service-failure,synthetic-success', 'The failed file did not retry successfully after fresh consent.');
   assert(cancelAttempts.some((item) => item.outcome === 'aborted-after-stop') && cancelAttempts.some((item) => item.attempt === 2 && item.outcome === 'synthetic-success'), 'The cancelled file was not safely retried after fresh consent.');
   assert(untouchedAttempts.length === 1 && untouchedAttempts[0].outcome === 'synthetic-success', 'The previously unstarted file was not processed exactly once after fresh consent.');
   assert(conflictAAttempts.length === 1 && conflictAAttempts[0].outcome === 'synthetic-success', 'The first conflict fixture was not processed exactly once.');
   assert(conflictBAttempts.length === 1 && conflictBAttempts[0].outcome === 'synthetic-success', 'The second conflict fixture was not processed exactly once.');
+  assert(policyAttempts.map((item) => item.outcome).join(',') === 'synthetic-service-failure,synthetic-success', 'The failed policy did not succeed exactly once after its user-approved retry.');
   assert(attempts.every((item) => item.contentMatches), 'The fake provider received bytes other than the expected deterministic synthetic PDFs.');
   record('In-memory provider trace proves fail/retry, stop/retry, and no skipped or extra requests', true, attempts.length + ' synthetic requests; no PDF bytes were written to logs');
+
+  if (askEnabled) {
+    const askEvents = await readLines(askLogPath);
+    assert(askEvents.length === 2 && askEvents[0].stage === 'profile_search_requested' && askEvents[1].stage === 'grounded_response_returned', 'The ordinary-upload Ask path did not perform one synthetic retrieval and one grounded response.');
+    assert(askEvents[1].titles.includes('Room and board limit') && askEvents[1].titles.includes('Blood pressure'), 'The synthetic Ask response did not use the exact uploaded policy and health evidence.');
+    assert((await readFile(blockedEgressPath, 'utf8').catch(() => '')).trim() === '', 'The connected ordinary-upload Ask rehearsal attempted external network egress.');
+    record('Ordinary-upload Ask uses two synthetic model steps and zero external provider requests', true);
+  }
 
   const allowedOrigins = new Set([appOrigin, serviceOrigin]);
   const externalOrigins = [...networkOrigins].filter((origin) => !allowedOrigins.has(origin));
@@ -684,7 +926,23 @@ try {
   failures.push({ name: 'Rehearsal stopped safely', detail: error instanceof Error ? error.message : String(error) });
   log('FAIL Rehearsal stopped safely — ' + (error instanceof Error ? error.message : String(error)));
   try { log('Current route: ' + await evaluate('location.pathname + location.search') + '\nVisible page text: ' + (await bodyText()).slice(-4500)); } catch { /* browser may not be connected */ }
-  for (const child of childProcesses) log('\n[' + child.label + ' stderr]\n' + tail(child.stderr));
+  if (askEnabled) log('Synthetic Ask trace: ' + JSON.stringify(await readLines(askLogPath)));
+  if (askEnabled) log('Blocked provider egress trace: ' + JSON.stringify(await readLines(blockedEgressPath)));
+  if (askEnabled) {
+    const responses = [];
+    for (const response of runResponses.slice(-3)) {
+      try {
+        const body = await cdp('Network.getResponseBody', { requestId: response.requestId });
+        const text = body.base64Encoded ? Buffer.from(body.body, 'base64').toString('utf8') : body.body;
+        const messages = [...text.matchAll(/data:\s*(\{[^\n]+\})/g)].map((match) => {
+          try { const parsed = JSON.parse(match[1]); return parsed.type === 'run_error' ? parsed.message : parsed.type; } catch { return 'unreadable-event'; }
+        });
+        responses.push({ status: response.status, messages });
+      } catch (error) { responses.push({ status: response.status, bodyUnavailable: error instanceof Error ? error.message : String(error) }); }
+    }
+    log('Ask run transport diagnostics: ' + JSON.stringify(responses));
+  }
+  for (const child of childProcesses) log('\n[' + child.label + ' stdout]\n' + tail(child.stdout) + '\n[' + child.label + ' stderr]\n' + tail(child.stderr));
 } finally {
   await cleanup();
 }
