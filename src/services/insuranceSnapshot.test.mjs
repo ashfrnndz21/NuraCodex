@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildInsuranceRegistryOverview, buildInsuranceSnapshot, clarificationQuestion, classifyInsuranceTerm, interpretInsuranceTerm } from './insuranceSnapshot.mjs';
+import { buildPolicyExtractionReview } from './policyExtractionReview.mjs';
 
 const term = (label, value) => ({ label, value });
 
@@ -165,4 +166,64 @@ test('flags policy phrases that need definitions and suggests a concrete follow-
   assert.equal(classifyInsuranceTerm(unclear), 'needs_clarification');
   assert.match(clarificationQuestion(unclear), /which rate schedule/i);
   assert.match(interpretInsuranceTerm(term('Generic prescription reimbursement', '80 percent after deductible')), /eligible costs/i);
+});
+
+const extractedPolicyClaim = (label, value, options = {}) => ({
+  id: options.id ?? `${label}-${value}`,
+  kind: options.kind ?? 'coverage_term',
+  label,
+  value,
+  confidence: options.confidence ?? 0.94,
+  sourceLocation: { quote: Object.hasOwn(options, 'quote') ? options.quote : `${label}: ${value}`, page: options.page ?? 2 },
+});
+
+test('organizes source-quoted extracted insurance terms into a stable coverage review', () => {
+  const review = buildPolicyExtractionReview({
+    claims: [
+      extractedPolicyClaim('Outpatient benefit', 'MYR 10,000 a year'),
+      extractedPolicyClaim('Annual medical limit', 'MYR 80,000'),
+      extractedPolicyClaim('Deductible', 'MYR 500'),
+      extractedPolicyClaim('Pre-existing condition waiting period', '24 months'),
+      extractedPolicyClaim('Claims notification deadline', '30 days'),
+      extractedPolicyClaim('HbA1c', '5.8%', { kind: 'measurement' }),
+    ],
+    documentContext: { documentType: 'Medical insurance policy', entities: [{ kind: 'insurer', value: 'Example Mutual' }] },
+  });
+
+  assert.equal(review.insurer, 'Example Mutual');
+  assert.equal(review.documentType, 'Medical insurance policy');
+  assert.deepEqual(review.sections.filter((section) => section.status === 'identified').map((section) => section.id), ['benefits', 'limits', 'costs', 'exclusions', 'eligibility', 'claims']);
+  assert.ok(review.sections.every((section) => section.evidence.every((item) => item.quote && item.page === 2)));
+  assert.equal(review.counts.total, 7);
+  assert.match(review.note, /not a completeness guarantee/i);
+});
+
+test('labels gaps as not identified in the extraction, never as policy exclusions', () => {
+  const review = buildPolicyExtractionReview({ claims: [extractedPolicyClaim('Annual medical limit', 'MYR 80,000')] });
+  const gap = review.sections.find((section) => section.id === 'claims');
+
+  assert.equal(gap.status, 'not_identified');
+  assert.equal(gap.evidence.length, 0);
+  assert.match(review.note, /Check the full policy/);
+  assert.equal(review.sections.find((section) => section.id === 'exclusions').status, 'not_identified');
+});
+
+test('marks weakly sourced, ambiguous, or conflicting extracted terms for review', () => {
+  const review = buildPolicyExtractionReview({ claims: [
+    extractedPolicyClaim('Deductible', 'MYR 500', { id: 'deductible-1' }),
+    extractedPolicyClaim('Deductible', 'MYR 1,000', { id: 'deductible-2', quote: null }),
+    extractedPolicyClaim('Exclusion wording', 'Subject to confirmation', { confidence: 0.55 }),
+  ] });
+
+  assert.equal(review.sections.find((section) => section.id === 'costs').status, 'needs_review');
+  assert.equal(review.sections.find((section) => section.id === 'exclusions').status, 'needs_review');
+  assert.equal(review.sections.find((section) => section.id === 'costs').evidence.length, 2);
+});
+
+test('handles absent or malformed source details without fabricating evidence', () => {
+  const review = buildPolicyExtractionReview({ claims: null, documentContext: null });
+  assert.equal(review.insurer, null);
+  assert.equal(review.documentType, null);
+  assert.equal(review.counts.notIdentified, 7);
+  assert.ok(review.sections.every((section) => section.status === 'not_identified' && section.evidence.length === 0));
 });
