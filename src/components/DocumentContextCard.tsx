@@ -1,56 +1,77 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { DocumentContext, DocumentContextEntry } from '../services/intakeClient';
-import { colors } from '../theme';
+import { GlassMaterial } from './GlassMaterial';
 
 const dateLabels: Record<string, string> = {
-  report_date: 'Report date', collected_at: 'Collected', received_at: 'Received',
-  approved_at: 'Approved', issued_at: 'Issued', effective_period: 'Effective period',
+  report_date: 'Report date', collected_at: 'Collected', issued_at: 'Issued', effective_period: 'Effective period',
 };
 const entityLabels: Record<string, string> = {
   laboratory: 'Laboratory', provider: 'Provider', insurer: 'Insurer',
-  analyzer: 'Analyzer', technology: 'Technology',
 };
 const noteLabels: Record<string, string> = {
-  fasting_guidance: 'Fasting guidance', clinical_significance: 'Clinical notes',
-  clinical_decision_limits: 'Decision limits', remarks: 'Report remarks',
-  sample_notice: 'Sample report notice', other: 'Source note',
+  fasting_guidance: 'Fasting guidance', clinical_significance: 'Clinical note',
+  clinical_decision_limits: 'Decision limits', remarks: 'Report note',
 };
 
 function ContextRows({ rows, labels }: { rows: DocumentContextEntry[]; labels: Record<string, string> }) {
   return <>{rows.map((row, index) => <View key={`${row.kind}-${index}`} style={styles.row}>
-    <Text style={styles.rowLabel}>{labels[row.kind] ?? 'Document detail'}</Text>
+    <Text style={styles.rowLabel}>{labels[row.kind]}</Text>
     <Text style={styles.rowValue}>{row.value}</Text>
-    {row.page ? <Text style={styles.page}>PAGE {row.page}</Text> : null}
-    {row.quote && row.quote.trim() !== row.value.trim() ? <Text style={styles.quote}>“{row.quote}”</Text> : null}
+    {row.page ? <Text style={styles.page}>Page {row.page}</Text> : null}
   </View>)}</>;
 }
 
+/** Source-level context stays available, but never crowds the claim review by default. */
 export function DocumentContextCard({ context, compact = false }: { context: DocumentContext | null | undefined; compact?: boolean }) {
-  if (!context || (!context.documentType && !context.dates.length && !context.entities.length && !context.notes.length)) return null;
+  const [expanded, setExpanded] = useState(false);
+  const rows = useMemo(() => {
+    if (!context) return { dates: [], entities: [], notes: [] };
+    return {
+      dates: context.dates.filter((row) => Boolean(dateLabels[row.kind])).slice(0, 2),
+      entities: context.entities.filter((row) => Boolean(entityLabels[row.kind])).slice(0, 2),
+      notes: context.notes.filter((row) => Boolean(noteLabels[row.kind])).slice(0, 2),
+    };
+  }, [context]);
+  const detailCount = rows.dates.length + rows.entities.length + rows.notes.length;
+  if (!context || (!context.documentType && detailCount === 0)) return null;
+
   return <View style={[styles.card, compact && styles.compact]}>
-    <Text style={styles.heading}>REPORT DETAILS</Text>
-    <Text style={styles.caption}>Kept with the source. General report notes are not personal health facts.</Text>
-    {context.documentType ? <Text style={styles.documentType}>{context.documentType}</Text> : null}
-    <ContextRows rows={context.dates} labels={dateLabels} />
-    <ContextRows rows={context.entities} labels={entityLabels} />
-    {context.notes.length ? <>
-      <Text style={styles.notesHeading}>NOTES FROM THE REPORT</Text>
-      <ContextRows rows={context.notes} labels={noteLabels} />
-    </> : null}
+    <GlassMaterial tone="dark" intensity={24} radius={compact ? 15 : 18} />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      accessibilityLabel={`${expanded ? 'Hide' : 'Show'} report details${detailCount ? `, ${detailCount} items` : ''}`}
+      onPress={() => setExpanded((value) => !value)}
+      style={styles.disclosure}
+    >
+      <View style={styles.disclosureCopy}>
+        <Text style={styles.heading}>ABOUT THIS REPORT</Text>
+        {context.documentType ? <Text numberOfLines={expanded ? 2 : 1} style={styles.documentType}>{context.documentType}</Text> : null}
+      </View>
+      <Text style={styles.disclosureAction}>{expanded ? 'HIDE −' : 'DETAILS +'}</Text>
+    </Pressable>
+    {expanded ? <View style={styles.details}>
+      <ContextRows rows={rows.dates} labels={dateLabels} />
+      <ContextRows rows={rows.entities} labels={entityLabels} />
+      <ContextRows rows={rows.notes} labels={noteLabels} />
+      {detailCount === 0 ? <Text style={styles.empty}>No additional report details.</Text> : null}
+    </View> : null}
   </View>;
 }
 
 const styles = StyleSheet.create({
-  card: { marginTop: 14, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceStrong },
-  compact: { marginTop: 10, padding: 12, borderRadius: 15 },
-  heading: { color: colors.violet, fontSize: 9, fontWeight: '700', letterSpacing: 1.1 },
-  caption: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
-  documentType: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 10 },
-  notesHeading: { color: colors.violet, fontSize: 8, fontWeight: '700', letterSpacing: .8, marginTop: 12, marginBottom: 3 },
-  row: { marginTop: 10, paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.border },
-  rowLabel: { color: colors.muted, fontSize: 9, fontWeight: '600' },
-  rowValue: { color: colors.text, fontSize: 11, lineHeight: 16, marginTop: 3 },
-  page: { color: colors.cobalt, fontSize: 8, fontWeight: '700', letterSpacing: .5, marginTop: 4 },
-  quote: { color: colors.muted, fontSize: 9, lineHeight: 14, fontStyle: 'italic', marginTop: 4 },
+  card: { position: 'relative', overflow: 'hidden', marginTop: 12, padding: 12, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,235,218,.28)', backgroundColor: 'rgba(255,236,220,.075)' },
+  compact: { marginTop: 10, padding: 10, borderRadius: 15 },
+  disclosure: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  disclosureCopy: { flex: 1 },
+  heading: { color: '#F1C2A7', fontSize: 8, fontWeight: '800', letterSpacing: 1 },
+  documentType: { color: '#FFF7EF', fontSize: 11, fontWeight: '600', marginTop: 4 },
+  disclosureAction: { color: '#AFCDFB', fontSize: 8, fontWeight: '800', letterSpacing: .55 },
+  details: { marginTop: 3 },
+  row: { marginTop: 8, paddingTop: 7, borderTopWidth: 1, borderTopColor: 'rgba(255,238,224,.16)' },
+  rowLabel: { color: 'rgba(255,244,234,.66)', fontSize: 9, fontWeight: '600' },
+  rowValue: { color: '#FFF7EF', fontSize: 11, lineHeight: 16, marginTop: 2 },
+  page: { color: '#AFCDFB', fontSize: 8, fontWeight: '700', marginTop: 3 },
+  empty: { color: 'rgba(255,244,234,.7)', fontSize: 9, lineHeight: 13, marginTop: 7 },
 });

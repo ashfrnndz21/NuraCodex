@@ -1,3 +1,5 @@
+import { getYouTubeVideoId } from './youtubeVideo.mjs';
+
 /** Return a concise first view for long answers without changing the stored answer. */
 export function answerFirstView(answer, maxCharacters = 200) {
   const text = String(answer ?? '');
@@ -13,6 +15,228 @@ export function answerFirstView(answer, maxCharacters = 200) {
   const end = sentenceEnd ?? (wordEnd > 0 ? wordEnd : limit);
 
   return { text: text.slice(0, end).trimEnd(), expandable: true };
+}
+
+/** Keep conversational answers focused while leaving the original available to expand. */
+export function conversationalAnswerPreview(answer, { maxCharacters = 640, maxWords = 90 } = {}) {
+  const paragraphs = String(answer ?? '').replace(/\r\n?/g, '\n').trim().split(/\n\s*\n+/u)
+    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (!paragraphs.length) return { text: '', expandable: false };
+
+  const sourceText = paragraphs.join('\n\n');
+  const sentences = paragraphs.flatMap((paragraph, paragraphIndex) => paragraph
+    .split(/(?<=[.!?])\s+(?=[A-Z"'“])/u)
+    .map((sentence) => ({ text: sentence.trim(), paragraphIndex }))
+    .filter((sentence) => sentence.text));
+  const inventoryLead = /^(?:the (?:available )?records? reviewed include|records? reviewed include|the records reviewed (?:are|show)|records reviewed (?:are|show))\b/i;
+  const omittedInventory = sentences.length > 1 && inventoryLead.test(sentences[0].text);
+  if (omittedInventory) sentences.shift();
+
+  const withoutAreaMetadata = sentences.filter(({ text }) => !/^.{1,140}\b(?:is|are)\s+selected health areas?,\s*not confirmed diagnoses?\.?$/i.test(text));
+  const omittedAreaMetadata = withoutAreaMetadata.length > 0 && withoutAreaMetadata.length < sentences.length;
+  if (omittedAreaMetadata) sentences.splice(0, sentences.length, ...withoutAreaMetadata);
+
+  const selected = [];
+  for (const sentence of sentences) {
+    const candidateItems = [...selected, sentence];
+    const candidate = candidateItems.map((item, index) => index === 0 || item.paragraphIndex === candidateItems[index - 1].paragraphIndex
+      ? item.text
+      : `\n\n${item.text}`).join(' ');
+    if (candidate.length > maxCharacters || candidate.split(/\s+/).length > maxWords) break;
+    selected.push(sentence);
+  }
+
+  if (!selected.length) {
+    const first = answerFirstView(sentences[0]?.text ?? sourceText, maxCharacters);
+    return { text: first.text, expandable: omittedInventory || omittedAreaMetadata || first.expandable || first.text !== sourceText };
+  }
+
+  const preview = selected.reduce((result, item, index) => {
+    if (!index) return item.text;
+    return result + (item.paragraphIndex === selected[index - 1].paragraphIndex ? ' ' : '\n\n') + item.text;
+  }, '');
+  return { text: preview, expandable: omittedInventory || omittedAreaMetadata || preview !== sourceText };
+}
+
+/** Preserve answer structure and break oversized prose into readable paragraphs. */
+export function conversationalAnswerBlocks(answer, { maxWordsPerParagraph = 52 } = {}) {
+  const text = String(answer ?? '').replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+  if (!text) return [];
+  const blocks = [];
+  let paragraphLines = [];
+  const flushParagraph = () => {
+    const paragraph = paragraphLines.join(' ').replace(/[ \t]+/g, ' ').trim();
+    paragraphLines = [];
+    if (!paragraph) return;
+    const sentences = paragraph.split(/(?<=[.!?])\s+(?=[A-Z"'“(])/u).filter(Boolean);
+    let group = [];
+    let wordCount = 0;
+    const flushGroup = () => {
+      if (group.length) blocks.push({ kind: 'paragraph', text: group.join(' ').trim() });
+      group = [];
+      wordCount = 0;
+    };
+    for (const sentence of sentences) {
+      const sentenceWords = sentence.split(/\s+/).length;
+      if (group.length && (group.length >= 2 || wordCount + sentenceWords > maxWordsPerParagraph)) flushGroup();
+      group.push(sentence.trim());
+      wordCount += sentenceWords;
+    }
+    flushGroup();
+  };
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) { flushParagraph(); continue; }
+    const heading = line.match(/^(?:#{1,3}\s+(.+?)\s*|\*\*(.+?)\*\*:?\s*)$/u);
+    if (heading) {
+      flushParagraph();
+      blocks.push({ kind: 'heading', text: (heading[1] ?? heading[2]).trim() });
+      continue;
+    }
+    const listItem = line.match(/^([-*•]|(\d+)[.)])\s+(.+)$/u);
+    if (listItem) {
+      flushParagraph();
+      blocks.push({ kind: listItem[2] ? 'number' : 'bullet', marker: listItem[2] ? `${listItem[2]}.` : '•', text: listItem[3].trim() });
+      continue;
+    }
+    paragraphLines.push(line);
+  }
+  flushParagraph();
+  return blocks;
+}
+
+/** Present generated follow-ups as compact topic pills while preserving the useful Ask prompt. */
+export function askFollowUpOption(value, { maxLabelCharacters = 52 } = {}) {
+  const raw = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (!raw) return null;
+
+  // Preserve an already well-formed question for the composer. Keep imperatives
+  // as imperatives so the chip and the question sent to Nura read naturally.
+  const imperative = /^(?:explain|compare|summarize|show|teach me|help me understand|walk me through|find|look up)\b/i.test(raw);
+  const question = imperative
+    ? raw.replace(/[.!?]+$/, '')
+    : `${raw.replace(/[.!]+$/, '')}${raw.trimEnd().endsWith('?') ? '' : '?'}`;
+  const text = raw.replace(/[.!?]+$/, '');
+
+  const normalizeLabel = (label) => {
+    const compact = label.replace(/\band\b/gi, '&').replace(/\s+/g, ' ').trim();
+    const shortened = compact.length <= maxLabelCharacters
+      ? compact
+      : `${compact.slice(0, maxLabelCharacters - 1).replace(/\s+\S*$/, '')}…`;
+    return shortened.charAt(0).toLocaleUpperCase() + shortened.slice(1);
+  };
+
+  // Convert model-generated natural questions into a concise, tappable topic.
+  const knowAbout = text.match(/^(?:what should i (?:notice|know|learn|understand) about|tell me about)\s+(.+?)(?:\s+(?:while|as|because|given)\b.+)?$/i);
+  if (knowAbout) {
+    const focus = knowAbout[1].replace(/^(?:my|your|the|a|an)\s+/i, '').trim();
+    const label = /\b(?:video|article|source)\b/i.test(focus) ? 'Key takeaway' : `Understand ${focus}`;
+    return { label: normalizeLabel(label), question };
+  }
+
+  const showOrMean = text.match(/^(?:what does|what do)\s+(.+?)\s+(?:show|mean|tell me)\b.*$/i);
+  if (showOrMean) {
+    const focus = showOrMean[1].replace(/^(?:my|your|the|a|an)\s+/i, '').trim();
+    return { label: normalizeLabel(`Understand ${focus}`), question };
+  }
+
+  const relationship = text.match(/^(?:how does|how do|how can)\s+(.+?)\s+(affect|change|relate to|compare with|work with|help)\s+(.+)$/i);
+  if (relationship) {
+    const left = relationship[1].replace(/^(?:my|your|the|a|an)\s+/i, '').trim();
+    const right = relationship[3].replace(/^(?:my|your|the|a|an)\s+/i, '').trim();
+    return { label: normalizeLabel(`${left} & ${right}`), question };
+  }
+
+  const compare = text.match(/^(?:compare|show me|help me compare)\s+(.+)$/i);
+  if (compare) return { label: normalizeLabel(`Compare ${compare[1]}`), question };
+
+  const action = text.match(/^(?:review|discuss|compare|check|look at|explore|learn about|understand|ask about|consider)\s+(.+)$/i);
+  if (action) {
+    const questionFocus = action[1]
+      .split(/\s+(?:because|since|if|when|while|with|at|before|during|so)\b|,\s*(?:if|when|unless)\b/i)[0]
+      .trim().replace(/[.!?]+$/, '');
+    const focus = questionFocus.replace(/^(?:my|your|the|a|an)\s+/i, '');
+    if (focus) {
+      const subject = /^(?:my|your|the|a|an)\s+/i.test(questionFocus)
+        ? questionFocus
+        : /\b(?:value|result|panel|record|report)s?$/i.test(focus) ? `my ${focus}` : focus;
+      return { label: normalizeLabel(focus), question: `What should I know about ${subject}?` };
+    }
+  }
+
+  return { label: normalizeLabel(text), question };
+}
+
+/** Compare canonical source URLs so YouTube watch and short links count as one cited item. */
+export function sameAskPublicSource(left, right) {
+  const leftUrl = typeof left?.url === 'string' ? left.url.trim() : '';
+  const rightUrl = typeof right?.url === 'string' ? right.url.trim() : '';
+  if (!leftUrl || !rightUrl) return false;
+  const leftVideo = getYouTubeVideoId(leftUrl);
+  const rightVideo = getYouTubeVideoId(rightUrl);
+  if (leftVideo || rightVideo) return Boolean(leftVideo && rightVideo && leftVideo === rightVideo);
+  try {
+    const leftParsed = new URL(leftUrl);
+    const rightParsed = new URL(rightUrl);
+    if (leftParsed.protocol !== 'https:' || rightParsed.protocol !== 'https:') return false;
+    const canonical = (url) => `${url.hostname.toLowerCase().replace(/^www\./, '')}${url.pathname.replace(/\/$/, '')}`;
+    return canonical(leftParsed) === canonical(rightParsed);
+  } catch { return false; }
+}
+
+/**
+ * Fill missing selected-reading follow-ups from the source and cited personal context.
+ * @param {string[]} steps
+ * @param {{source?: {mediaType?: string, title?: string, topic?: string}|null, records?: Array<{title?: string}>}} options
+ */
+export function askSelectedReadingFollowUps(steps = [], { source, records = [] } = {}) {
+  const options = (Array.isArray(steps) ? steps : [])
+    .slice(0, 2)
+    .map((step) => askFollowUpOption(step))
+    .filter((item) => item !== null);
+  if (!source) return options;
+  const mediaLabel = source.mediaType === 'video' ? 'video' : 'article';
+  const fallback = [
+    `What should I learn about this ${mediaLabel}?`,
+    records[0]?.title
+      ? `What should I notice about my saved ${records[0].title} while I watch?`
+      : `What should I know about ${source.topic || 'this topic'}?`,
+  ];
+  const seen = new Set(options.map((item) => item.question.toLocaleLowerCase()));
+  for (const question of fallback) {
+    if (options.length >= 2) break;
+    const option = askFollowUpOption(question);
+    if (option && !seen.has(option.question.toLocaleLowerCase())) {
+      options.push(option);
+      seen.add(option.question.toLocaleLowerCase());
+    }
+  }
+  return options.slice(0, 2);
+}
+
+/**
+ * Explain the visible personal connection without repeating a citation inventory.
+ * @param {{source?: {topic?: string, mediaType?: string}|null, records?: Array<{title?: string}>, hasSelectedArea?: boolean}} options
+ * @returns {string}
+ */
+export function askRelevanceSummary({ source, records = [], hasSelectedArea = false } = {}) {
+  const topic = typeof source?.topic === 'string' ? source.topic.trim() : '';
+  const recordTitles = [...new Set((Array.isArray(records) ? records : [])
+    .map((record) => typeof record?.title === 'string' ? record.title.trim() : '')
+    .filter(Boolean))];
+
+  if (topic && recordTitles.length) {
+    return `This ${source?.mediaType === 'video' ? 'video' : 'source'} appeared because you follow ${topic}. Nura connected the explanation to ${recordTitles.slice(0, 2).join(' and ')}.`;
+  }
+  if (topic) {
+    return `This ${source?.mediaType === 'video' ? 'video' : 'source'} appeared because you follow ${topic}. It gives background on the topic.`;
+  }
+  if (recordTitles.length) {
+    return `Nura connected this answer to ${recordTitles.slice(0, 2).join(' and ')} from your saved health details.`;
+  }
+  if (hasSelectedArea) return 'This answer relates to a health area you follow. Open the details below to see the records and sources Nura used.';
+  return 'Open the details below to see which saved health information and sources Nura used.';
 }
 
 /** Show meaning only when it names a returned public source and stays compact. */

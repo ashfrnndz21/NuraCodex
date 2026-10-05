@@ -3,8 +3,8 @@
  * user-authored links. The unscoped profile is returned only when the user
  * starts Ask from the general profile rather than a record.
  */
-export function scopeProfileContext(profile, recordId) {
-  if (!recordId) return profile;
+export function scopeProfileContext(profile, recordId, { includeWholeProfile = false } = {}) {
+  if (!recordId || includeWholeProfile) return profile;
 
   if (recordId.startsWith('asset:')) {
     return { facts: [], topics: [], links: [], treatments: [], visits: [] };

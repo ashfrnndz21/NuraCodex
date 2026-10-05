@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { answerFirstView, askAnswerFirstView, askEvidencePreview, askMeaningView, coveragePanelReferences, groupAskEvidence } from './askAnswerPresentation.mjs';
+import { answerFirstView, askAnswerFirstView, askEvidencePreview, askFollowUpOption, askMeaningView, askRelevanceSummary, askSelectedReadingFollowUps, sameAskPublicSource, conversationalAnswerBlocks, conversationalAnswerPreview, coveragePanelReferences, groupAskEvidence } from './askAnswerPresentation.mjs';
 
 test('Ask evidence preview returns an empty compact summary when no cited evidence exists', () => {
   assert.deepEqual(askEvidencePreview([]), { visible: [], hiddenCount: 0, totalCount: 0 });
@@ -77,6 +77,119 @@ test('a single unusually long sentence is shortened at a word boundary', () => {
   assert.ok(firstView.text.length <= 360);
   assert.doesNotMatch(firstView.text, /\s$/);
   assert.ok(answer.startsWith(firstView.text));
+});
+
+test('conversational answers preserve headings, bullets, and paragraph breaks', () => {
+  assert.deepEqual(conversationalAnswerBlocks('A useful opening sentence.\n\n**What to notice**\n- Compare each value with the range printed on its report.\n2) Check the date.'), [
+    { kind: 'paragraph', text: 'A useful opening sentence.' },
+    { kind: 'heading', text: 'What to notice' },
+    { kind: 'bullet', marker: '•', text: 'Compare each value with the range printed on its report.' },
+    { kind: 'number', marker: '2.', text: 'Check the date.' },
+  ]);
+});
+
+test('long plain-language answers are split into short readable paragraph groups', () => {
+  const blocks = conversationalAnswerBlocks('First point is clear. Second point adds context. Third point gives a next step. Fourth point closes the answer.');
+  assert.deepEqual(blocks.map(({ text }) => text), [
+    'First point is clear. Second point adds context.',
+    'Third point gives a next step. Fourth point closes the answer.',
+  ]);
+});
+
+test('conversational preview skips a report inventory lead and keeps a short answer expandable', () => {
+  const answer = 'The records reviewed include: HbA1c 5.7 mg/dl dated October 1, 2026 (R1); weight 70 kg and height 165 cm, both dated October 1, 2026 (R2, R3). Cholesterol and blood sugar are selected health areas, not confirmed diagnoses. The HbA1c record does not include a reference interval or interpretation, so this record alone cannot establish what it means medically. To support overall health, focus on regular physical activity, a varied nutrient-dense eating pattern, adequate sleep, stress management, avoiding tobacco, moderating alcohol if applicable, and keeping preventive-care visits and screenings up to date.';
+  const preview = conversationalAnswerPreview(answer);
+
+  assert.doesNotMatch(preview.text, /records reviewed include|October 1, 2026|selected health areas/);
+  assert.match(preview.text, /reference interval/);
+  assert.match(preview.text, /physical activity/);
+  assert.ok(preview.text.split(/\s+/).length <= 90);
+  assert.equal(preview.expandable, true);
+});
+
+test('conversational preview keeps a short useful answer complete', () => {
+  const answer = 'This video explains how cholesterol levels can be influenced by family history, health conditions, and daily habits. The useful takeaway is to understand LDL, HDL, and triglycerides together rather than judging one number alone.';
+  assert.deepEqual(conversationalAnswerPreview(answer), { text: answer, expandable: false });
+});
+
+test('conversational preview keeps short, intentional health-answer paragraphs', () => {
+  const answer = 'Your cholesterol stands out: total cholesterol is high at 7.9 mmol/L and LDL cholesterol is very high at 5.6 mmol/L, compared with common adult guides; triglycerides are within guide at 1.4 mmol/L.\n\nAt 70 kg and 163 cm, your BMI is 26.3. If you are 20 or older, it is in the adult overweight screening range; BMI is one clue, not a diagnosis.\n\nA routine clinician review is sensible. Your age helps tailor next steps; how old are you?';
+  const preview = conversationalAnswerPreview(answer);
+  assert.deepEqual(preview, { text: answer, expandable: false });
+  assert.equal(conversationalAnswerBlocks(preview.text).length, 3);
+});
+
+test('the educational video answer stays visible instead of being cut to a short teaser', () => {
+  const answer = 'This video asks why cholesterol can be high. A key idea is that levels can be shaped by inherited traits, health conditions and lifestyle, so food is only one part of the picture. Since cholesterol is one of the areas you follow, it is useful to understand what LDL, HDL and triglycerides each tell you on a lipid panel.';
+  assert.deepEqual(conversationalAnswerPreview(answer), { text: answer, expandable: false });
+});
+
+test('follow-up button labels are short, contextual, and still open a natural question', () => {
+  assert.deepEqual(askFollowUpOption('Review blood pressure and lipid results at a routine healthcare visit, if available.'), {
+    label: 'Blood pressure & lipid results',
+    question: 'What should I know about my blood pressure and lipid results?',
+  });
+  assert.deepEqual(askFollowUpOption('Discuss the HbA1c value with a clinician because its record lacks units context, a reference interval, and interpretation.'), {
+    label: 'HbA1c value',
+    question: 'What should I know about the HbA1c value?',
+  });
+  assert.deepEqual(askFollowUpOption('Explain LDL vs HDL'), { label: 'Explain LDL vs HDL', question: 'Explain LDL vs HDL' });
+});
+
+test('follow-up questions become concise learning chips and preserve a useful Ask prompt', () => {
+  assert.deepEqual(askFollowUpOption('What should I notice about my saved LDL cholesterol while I watch?'), {
+    label: 'Understand saved LDL cholesterol',
+    question: 'What should I notice about my saved LDL cholesterol while I watch?',
+  });
+  assert.deepEqual(askFollowUpOption('What does my lipid panel show?'), {
+    label: 'Understand lipid panel',
+    question: 'What does my lipid panel show?',
+  });
+  assert.deepEqual(askFollowUpOption('How can diet affect my cholesterol results?'), {
+    label: 'Diet & cholesterol results',
+    question: 'How can diet affect my cholesterol results?',
+  });
+  assert.deepEqual(askFollowUpOption('What should I learn about this video?'), {
+    label: 'Key takeaway',
+    question: 'What should I learn about this video?',
+  });
+});
+
+test('selected video follow-ups stay available and personalize the second chip to cited records', () => {
+  assert.deepEqual(askSelectedReadingFollowUps([], {
+    source: { mediaType: 'video', title: 'What causes high cholesterol?', topic: 'Cholesterol' },
+    records: [{ title: 'LDL cholesterol' }],
+  }), [
+    { label: 'Key takeaway', question: 'What should I learn about this video?' },
+    { label: 'Understand saved LDL cholesterol', question: 'What should I notice about my saved LDL cholesterol while I watch?' },
+  ]);
+  assert.equal(askSelectedReadingFollowUps(['Explain LDL vs HDL'], {
+    source: { mediaType: 'video', title: 'Cholesterol basics', topic: 'Cholesterol' },
+  }).length, 2, 'one service suggestion is filled with a context-aware video follow-up');
+});
+
+test('selected-source citation matching recognizes alternate YouTube URL forms without hiding other videos', () => {
+  assert.equal(sameAskPublicSource(
+    { url: 'https://youtu.be/abcdefghijk' },
+    { url: 'https://www.youtube.com/watch?v=abcdefghijk&feature=share' },
+  ), true);
+  assert.equal(sameAskPublicSource(
+    { url: 'https://youtube.com/watch?v=abcdefghijk' },
+    { url: 'https://youtube.com/watch?v=zzzzzzzzzzz' },
+  ), false);
+  assert.equal(sameAskPublicSource(
+    { url: 'https://www.example.org/article?utm_source=feed' },
+    { url: 'https://example.org/article' },
+  ), true);
+});
+
+test('relevance explanation names the topic match and only records actually cited', () => {
+  assert.equal(askRelevanceSummary({
+    source: { mediaType: 'video', topic: 'Cholesterol' },
+    records: [{ title: 'LDL cholesterol' }],
+  }), 'This video appeared because you follow Cholesterol. Nura connected the explanation to LDL cholesterol.');
+  assert.equal(askRelevanceSummary({ source: { mediaType: 'video', topic: 'Blood sugar' } }), 'This video appeared because you follow Blood sugar. It gives background on the topic.');
+  assert.equal(askRelevanceSummary({ records: [{ title: 'HbA1c' }], hasSelectedArea: true }), 'Nura connected this answer to HbA1c from your saved health details.');
 });
 
 test('Ask first view keeps only explicitly cited returned evidence beside the answer', () => {

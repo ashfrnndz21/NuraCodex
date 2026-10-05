@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classifyIntent, coverageTraceDetail, createEvidenceTools, sanitizeRunBody, validateAnswer } from './context.mjs';
+import { resolveAuthorizedAskContext } from './authorizedAskContext.mjs';
 
 const sampleTreatment = {
   id: 'medicine-1', name: 'Sample medicine', dose: 'Example 10 mg', schedule: 'Example once daily',
@@ -92,6 +93,21 @@ test('coverage validation does not turn missing exclusion wording into a no-excl
   assert.ok(answer.unknowns.some((item) => /do not establish that the policy has no exclusions/i.test(item)));
 });
 
+test('coverage validation preserves supported terms when it removes an unsupported no-exclusions sentence', () => {
+  const source = { reference: 'R1', title: 'Outpatient diagnostic limit', detail: 'Outpatient diagnostic tests are covered up to MYR 1,000 per policy year.', kind: 'user_record', category: 'Insurance coverage' };
+  const answer = validateAnswer({
+    answer: 'The policy states outpatient diagnostic tests are covered up to MYR 1,000 per policy year. The policy has no exclusions.',
+    citations: ['R1'],
+    coverageAssessments: [{ kind: 'explicit_benefit', policyReference: 'R1', detail: 'Outpatient diagnostic tests are covered up to MYR 1,000 per policy year.', relatedHealthReferences: [] }],
+    unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, [source], { key: 'coverage', question: 'Does this test have a coverage limit?' });
+
+  assert.match(answer.answer, /covered up to MYR 1,000/);
+  assert.doesNotMatch(answer.answer, /no exclusions/i);
+  assert.equal(answer.coverageAssessments.length, 1);
+  assert.ok(answer.unknowns.some((item) => /do not establish that the policy has no exclusions/i.test(item)));
+});
+
 test('coverage validation preserves exact supported limits, exclusions, and unclear findings', () => {
   const sources = [
     { reference: 'R1', title: 'Annual medical limit', detail: 'USD 50,000 per policy year.', kind: 'user_record', category: 'Insurance coverage' },
@@ -110,6 +126,30 @@ test('coverage validation preserves exact supported limits, exclusions, and uncl
 
   assert.deepEqual(answer.coverageAssessments.map((item) => item.kind), ['explicit_limit', 'explicit_exclusion', 'unclear']);
   assert.deepEqual(answer.citations, ['R1', 'R2', 'R3']);
+});
+
+test('coverage validation classifies mixed benefit and cap wording from each exact quoted clause', () => {
+  const source = {
+    reference: 'R1', title: 'Outpatient diagnostic test limit',
+    detail: 'Outpatient diagnostic tests are covered up to MYR 1,000 per policy year. Pre-approval is required for non-emergency diagnostic tests.',
+    kind: 'user_record', category: 'Insurance coverage',
+  };
+  const answer = validateAnswer({
+    answer: 'The policy lists outpatient diagnostic tests as covered up to MYR 1,000 per policy year, with pre-approval required for non-emergency tests. It does not specifically confirm whether this cholesterol test qualifies.',
+    citations: ['R1'],
+    coverageAssessments: [
+      { kind: 'explicit_benefit', policyReference: 'R1', detail: 'Outpatient diagnostic tests are covered up to MYR 1,000 per policy year.', relatedHealthReferences: [] },
+      { kind: 'explicit_limit', policyReference: 'R1', detail: 'Pre-approval is required for non-emergency diagnostic tests.', relatedHealthReferences: [] },
+    ],
+    unknowns: ['Whether a cholesterol blood test qualifies under this wording.'],
+    nextSteps: ['Ask the insurer whether this test qualifies and whether pre-approval is needed.'],
+    memoryProposal: { proposed: false },
+  }, [source], { key: 'coverage', question: 'Does my policy cover an outpatient cholesterol blood test?' });
+
+  assert.match(answer.answer, /covered up to MYR 1,000/);
+  assert.doesNotMatch(answer.answer, /could not verify that policy interpretation/i);
+  assert.deepEqual(answer.coverageAssessments.map((item) => item.kind), ['explicit_benefit', 'unclear']);
+  assert.deepEqual(answer.citations, ['R1']);
 });
 
 test('coverage validation accepts the normalized policy-term category variants', () => {
@@ -147,6 +187,132 @@ test('profile revision runs are labeled separately from the first synthesis', ()
   });
 });
 
+test('broad overall-health questions trigger synthesis of the selected profile', () => {
+  assert.deepEqual(classifyIntent('How is my overall health?'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+  assert.deepEqual(classifyIntent('Tell me how good my health is'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+  assert.deepEqual(classifyIntent('How healthy am I?'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+  assert.deepEqual(classifyIntent('How is my health state?'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+  assert.deepEqual(classifyIntent('Can you summarize my health records?'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+  assert.deepEqual(classifyIntent('What should I focus about my health?'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+  assert.deepEqual(classifyIntent('What should I pay attention to in my health?'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+  assert.deepEqual(classifyIntent('How does my cholesterol result sit alongside my weight and height?'), {
+    key: 'profile_summary', label: 'connected health-results review',
+  });
+});
+
+test('Ask routes five different questions using consented conversation and selected-video context', () => {
+  const history = [
+    { role: 'user', content: 'How is my overall health?' },
+    { role: 'assistant', content: 'Your cholesterol result is above a common adult guide, and BMI is one useful clue.' },
+    { role: 'user', content: 'Any of mine high?' },
+    { role: 'assistant', content: 'Total cholesterol is high; one HbA1c entry also needs its unit checked.' },
+  ];
+  const selectedVideo = {
+    title: 'Cholesterol Numbers: Mayo Clinic', publisher: 'Mayo Clinic', topic: 'Cholesterol',
+    mediaType: 'video', summary: 'Explains what total cholesterol, LDL, HDL, and triglycerides can indicate.',
+    url: 'https://youtu.be/abcdefghijk',
+  };
+  assert.equal(classifyIntent('How is my overall health?').key, 'profile_summary');
+  assert.equal(classifyIntent('What do you know of me?').key, 'profile_summary');
+  assert.equal(classifyIntent('Any of mine high?').key, 'result_check');
+  assert.equal(classifyIntent('What does that mean for my cholesterol?', { history }).key, 'profile_follow_up');
+  assert.equal(classifyIntent('What should I check next?', { history }).key, 'profile_follow_up');
+  assert.equal(classifyIntent('cholesterol then?', { history }).key, 'profile_follow_up');
+  assert.equal(classifyIntent('but am I having good vitals?', { history }).key, 'profile_follow_up');
+  assert.equal(classifyIntent('What should I pick up from this?', { history, readingSource: selectedVideo }).key, 'selected_reading');
+  assert.equal(classifyIntent('How does that connect to my results?', {
+    history: [...history, { role: 'assistant', content: 'The selected video is about cholesterol.', readingSource: selectedVideo }],
+  }).key, 'selected_reading', 'a follow-up can recover the video context from an earlier consented turn');
+});
+
+test('recent Ask history is bounded, sanitized, consent-gated, and omitted in symptom support', () => {
+  const selectedVideo = {
+    title: '  Cholesterol basics  ', publisher: 'Publisher', topic: 'Cholesterol', mediaType: 'video',
+    summary: '  A short overview.  ', url: 'https://youtu.be/abcdefghijk',
+  };
+  const history = Array.from({ length: 10 }, (_, index) => ({
+    role: index % 2 ? 'assistant' : 'user', content: 'turn ' + index, readingSource: selectedVideo,
+  }));
+  assert.deepEqual(run({ history, recentMessagesConsent: false }).history, []);
+  const shared = run({ history, recentMessagesConsent: true });
+  assert.equal(shared.history.length, 8);
+  assert.equal(shared.history[0].content, 'turn 2');
+  assert.equal(shared.history[0].readingSource.title, 'Cholesterol basics');
+  assert.equal(shared.history[0].readingSource.summary, 'A short overview.');
+  assert.equal(shared.history[0].readingSource.url, 'https://youtu.be/abcdefghijk');
+  assert.deepEqual(run({ mode: 'symptom_support', history, recentMessagesConsent: true }).history, []);
+});
+
+test('health-record quality questions are distinct from questions about the person’s health', () => {
+  for (const question of [
+    'How good are my health records?',
+    'Tell me how is good is my health records?',
+    'Are my records complete and reliable?',
+  ]) assert.deepEqual(classifyIntent(question), { key: 'record_quality', label: 'health record quality review' });
+
+  assert.deepEqual(classifyIntent('Give me an insight about my health.'), {
+    key: 'profile_summary', label: 'overall health review',
+  });
+});
+
+test('record-quality answers preserve both sides of same-marker unit differences and avoid health-rating refusals', () => {
+  const sources = [
+    { reference: 'R1', id: 'fact:a1c-1', title: 'HbA1c', detail: '5.7 mmol/mol', date: '2026-10-02', source: 'Provided by you', status: 'confirmed', kind: 'user_record', category: 'Blood sugar' },
+    { reference: 'R2', id: 'fact:a1c-2', title: 'HbA1c', detail: '5.8%', date: '2026-10-01', source: 'Provided by you', status: 'confirmed', kind: 'user_record', category: 'Blood sugar' },
+    { reference: 'R3', id: 'fact:cholesterol-1', title: 'Total cholesterol', detail: '8.5 mmol/L', date: '2026-10-02', source: 'Provided by you', status: 'confirmed', kind: 'user_record', category: 'Cholesterol' },
+    { reference: 'R4', id: 'fact:cholesterol-2', title: 'Total cholesterol', detail: '8.5 mg/dL', date: '2026-10-01', source: 'Provided by you', status: 'confirmed', kind: 'user_record', category: 'Cholesterol' },
+  ];
+  const answer = validateAnswer({
+    answer: 'I can’t rate your overall health from these records alone. The current records show two HbA1c entries and one current cholesterol value; the 8.5 mg/dL value is an earlier saved version.',
+    citations: ['R1', 'R2', 'R3'], unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, sources, { key: 'record_quality', question: 'Tell me how good are my health records?' });
+
+  assert.match(answer.answer, /useful starting point/);
+  assert.match(answer.answer, /HbA1c and total cholesterol entries use different units/);
+  assert.match(answer.answer, /check the units and reference intervals against the original lab reports/);
+  assert.doesNotMatch(answer.answer, /can’t rate|current records|earlier saved version|8\.5 mg\/dL/i);
+  assert.deepEqual(answer.citations, ['R1', 'R2', 'R3', 'R4'], 'each conflicting original remains available in the cited evidence');
+  assert.deepEqual(answer.unknowns, []);
+  assert.deepEqual(answer.nextSteps, [
+    'Check the HbA1c units against the original report',
+    'Check the total cholesterol units against the original report',
+  ]);
+});
+
+test('a concise grounded record-quality answer is not replaced when no unit discrepancy is present', () => {
+  const sources = [{ reference: 'R1', id: 'fact:a1c', title: 'HbA1c', detail: '5.8%. Reference interval printed in report: 4.0–5.6%.', date: '2026-10-02', source: 'lab-report.pdf', status: 'reviewed', kind: 'user_record', category: 'Blood sugar' }];
+  const answer = validateAnswer({
+    answer: 'Your saved record is useful for tracking because it includes a date, unit, source, and the report’s reference interval.',
+    citations: ['R1'], unknowns: [], nextSteps: ['Compare the next HbA1c result'], memoryProposal: { proposed: false },
+  }, sources, { key: 'record_quality', question: 'Are my records useful?' });
+
+  assert.match(answer.answer, /useful for tracking/);
+  assert.deepEqual(answer.citations, ['R1']);
+});
+
+test('diet and food follow-ups are classified for general nutrition education', () => {
+  assert.deepEqual(classifyIntent('What foods should I know about for cholesterol?'), {
+    key: 'education', label: 'food and nutrition education',
+  });
+  assert.deepEqual(classifyIntent('Can you explain protein and fiber?'), {
+    key: 'education', label: 'food and nutrition education',
+  });
+});
+
 test('first profile synthesis retrieves all selected facts and topics rather than the eight-item Ask shortlist', () => {
   const context = {
     facts: Array.from({ length: 5 }, (_, index) => ({
@@ -173,6 +339,193 @@ test('first profile synthesis retrieves all selected facts and topics rather tha
   ]));
   assert.equal(ordinaryAsk.results.length, 5);
   assert.equal(evidence.sources().length, 12);
+});
+
+test('broad Ask calculates BMI from same-date selected measures and keeps the birth date out of the request', () => {
+  const request = run({
+    derivedAgeConsent: true,
+    question: 'What can you say about my overall health?',
+    context: {
+      facts: [
+        { id: 'weight-1', label: 'Weight', value: '70 kg', date: '2026-10-03T00:00:00.000Z', category: 'Body measurement', source: 'Entered by you', status: 'confirmed' },
+        { id: 'height-1', label: 'Height', value: '163 cm', date: '2026-10-03', category: 'Body measurement', source: 'Entered by you', status: 'confirmed' },
+        { id: 'a1c-1', label: 'HbA1c', value: '5.6 mmol/mol', date: '2026-10-03', category: 'Blood sugar', source: 'Entered by you', status: 'confirmed' },
+      ], topics: [], links: [], treatments: [], visits: [],
+      demographics: { ageAtMeasurement: 38, measurementDate: '2026-10-03', dateOfBirth: '1987-10-04' },
+    },
+  });
+  const evidence = createEvidenceTools(request.context);
+  const result = evidence.execute('search_profile', { query: 'overall health' }, { includeAllSelected: true, includeDerivedMeasurements: true });
+  const bmi = result.derivedMeasurements[0];
+  assert.equal(request.context.demographics.ageAtMeasurement, 38);
+  assert.equal(Object.hasOwn(request.context.demographics, 'dateOfBirth'), false);
+  assert.equal(bmi.value, '26.3 kg/m²');
+  assert.equal(bmi.ageAtMeasurement, 38);
+  assert.match(bmi.method, /same date/);
+  assert.deepEqual([bmi.weightReference, bmi.heightReference], ['R1', 'R2']);
+  assert.ok(evidence.sources().some((source) => source.reference === bmi.educationalReference && source.url === 'https://www.cdc.gov/bmi/adult-calculator/index.html'));
+  assert.ok(evidence.sources().some((source) => source.reference === bmi.a1cEducationalReference && source.url === 'https://www.niddk.nih.gov/health-information/diagnostic-tests/A1C-test'));
+});
+
+test('Ask ignores a calculated age that does not match the selected measurement date', () => {
+  const request = run({ derivedAgeConsent: true, context: {
+    facts: [
+      { id: 'weight-1', label: 'Weight', value: '70 kg', date: '2026-10-03', category: 'Body measurement', source: 'Entered by you', status: 'confirmed' },
+      { id: 'height-1', label: 'Height', value: '163 cm', date: '2026-10-03', category: 'Body measurement', source: 'Entered by you', status: 'confirmed' },
+    ], topics: [], links: [], treatments: [], visits: [],
+    demographics: { ageAtMeasurement: 38, measurementDate: '2026-10-02' },
+  } });
+  const evidence = createEvidenceTools(request.context);
+  const result = evidence.execute('search_profile', { query: 'overall health' }, { includeAllSelected: true, includeDerivedMeasurements: true });
+  assert.equal(result.derivedMeasurements[0].ageAtMeasurement, null);
+  assert.ok(result.derivedMeasurements[0].educationalReference);
+  assert.ok(evidence.sources().some((source) => source.reference === result.derivedMeasurements[0].educationalReference && source.url === 'https://www.cdc.gov/bmi/adult-calculator/index.html'));
+});
+
+test('symptom support never retains calculated demographic context', () => {
+  const request = run({ mode: 'symptom_support', derivedAgeConsent: true, context: {
+    facts: [], topics: [], links: [], treatments: [], visits: [],
+    demographics: { ageAtMeasurement: 38, measurementDate: '2026-10-03' },
+  } });
+  assert.equal(request.context.demographics, null);
+  assert.equal(request.derivedAgeConsent, false);
+});
+
+test('calculated age is dropped unless the user makes its separate share choice', () => {
+  const request = run({ context: {
+    facts: [], topics: [], links: [], treatments: [], visits: [],
+    demographics: { ageAtMeasurement: 38, measurementDate: '2026-10-03' },
+  } });
+  assert.equal(request.context.demographics, null);
+  assert.equal(request.derivedAgeConsent, false);
+});
+
+test('Ask resolves selected document claims and report details from the authorized repository', () => {
+  const assertion = {
+    id: 'assertion-lipid', profileId: 'demo-profile', sourceId: 'source-lab', claimId: 'claim-lipid',
+    kind: 'lab_result', label: 'LDL cholesterol', value: '3.1', unit: 'mmol/L',
+    referenceRange: '0 - 3.0', method: 'Direct measurement',
+    sourceLocation: { page: 1, quote: 'LDL cholesterol 3.1 mmol/L; reference range 0 - 3.0 mmol/L' },
+    effectiveAt: '2026-09-20', evidenceState: 'user_confirmed', validUntil: null,
+  };
+  const source = {
+    id: 'source-lab', profileId: 'demo-profile', displayName: 'September health report.pdf',
+    origin: 'document_extraction', documentContext: {
+      documentType: 'Lipid panel', dates: [{ kind: 'collected_at', value: '20 Sep 2026', page: 1, quote: 'Collected 20 Sep 2026' }],
+      entities: [], notes: [],
+    },
+  };
+  const body = {
+    sourceContextConsent: true,
+    context: {
+      facts: [{ id: 'local-fact-id', sourceId: 'source-lab', sourceClaimId: 'claim-lipid', label: 'Spoofed lab result', value: '9000 mg/dL', date: '2099-01-01', category: 'Insurance coverage', source: 'made-up.pdf', status: 'reviewed' }],
+      documentSources: [{ id: 'source-lab', title: 'Spoofed document', documentType: 'Policy', dates: [], entities: [], notes: [{ kind: 'other', value: 'client supplied text', quote: 'invented quote' }] }],
+    },
+  };
+
+  const resolved = resolveAuthorizedAskContext(body, { profileId: 'demo-profile', assertions: [assertion], sources: [source] });
+  assert.deepEqual(resolved.context.facts, [{
+    id: 'local-fact-id', label: 'LDL cholesterol', value: '3.1 mmol/L', date: '2026-09-20',
+    category: 'lab_result', source: 'September health report.pdf', status: 'reviewed',
+    referenceRange: '0 - 3.0', method: 'Direct measurement',
+    sourceQuote: 'LDL cholesterol 3.1 mmol/L; reference range 0 - 3.0 mmol/L', page: 1,
+  }]);
+  assert.deepEqual(resolved.context.documentSources, [{
+    id: 'source-lab', title: 'September health report.pdf', documentType: 'Lipid panel',
+    dates: [{ kind: 'collected_at', value: '20 Sep 2026', page: 1, quote: 'Collected 20 Sep 2026' }],
+    entities: [], notes: [],
+  }]);
+  const authorized = sanitizeRunBody({ consentConfirmed: true, question: 'How is my overall health?', ...resolved });
+  const evidence = createEvidenceTools(authorized.context);
+  const search = evidence.execute('search_profile', { query: 'overall health' }, { includeAllSelected: true });
+  assert.match(search.results[0].detail, /Reference interval printed in report: 0 - 3\.0/);
+  assert.match(search.results[0].detail, /Source wording: “LDL cholesterol 3\.1 mmol\/L; reference range 0 - 3\.0 mmol\/L” \(page 1\)/);
+});
+
+test('Ask refuses a selected claim unless it is current, user-confirmed, and belongs to the authorized profile and source', () => {
+  const assertion = {
+    id: 'assertion-lipid', profileId: 'demo-profile', sourceId: 'source-lab', claimId: 'claim-lipid',
+    kind: 'lab_result', label: 'LDL cholesterol', value: '3.1', unit: 'mmol/L',
+    effectiveAt: '2026-09-20', evidenceState: 'user_confirmed', validUntil: null,
+  };
+  const source = { id: 'source-lab', profileId: 'demo-profile', displayName: 'September health report.pdf', origin: 'document_extraction' };
+  const body = { context: { facts: [{ id: 'local-fact-id', sourceId: 'source-lab', sourceClaimId: 'claim-lipid', label: 'LDL', value: '3.1' }] } };
+  for (const invalidAssertion of [
+    { ...assertion, profileId: 'another-profile' }, { ...assertion, sourceId: 'another-source' },
+    { ...assertion, evidenceState: 'needs_review' }, { ...assertion, validUntil: '2026-09-25T00:00:00.000Z' },
+  ]) assert.throws(() => resolveAuthorizedAskContext(body, {
+    profileId: 'demo-profile', assertions: [invalidAssertion], sources: [source],
+  }), /no longer available for review/i);
+});
+
+test('Ask includes earlier source values when the user explicitly selects them for this question', () => {
+  const earlierAssertion = {
+    id: 'assertion-earlier', profileId: 'demo-profile', sourceId: 'source-lab', claimId: 'claim-lipid',
+    kind: 'lab_result', label: 'LDL cholesterol', value: '3.1', unit: 'mmol/L',
+    effectiveAt: '2026-01-20', evidenceState: 'superseded', validFrom: '2026-01-21T08:00:00.000Z',
+    validUntil: '2026-06-01T08:00:00.000Z', recordedAt: '2026-01-21T08:00:00.000Z',
+  };
+  const source = { id: 'source-lab', profileId: 'demo-profile', displayName: 'Lipid report.pdf', origin: 'document_extraction' };
+  const earlierFact = {
+    id: 'local-earlier-fact', label: 'LDL cholesterol', value: '3.1 mmol/L', date: '2026-01-20',
+    category: 'lab_result', source: 'Lipid report.pdf', status: 'reviewed', reviewState: 'user_confirmed',
+    sourceId: 'source-lab', sourceClaimId: 'claim-lipid', validFrom: '2026-01-21T08:00:01.000Z',
+    validUntil: '2026-06-01T08:00:01.000Z',
+  };
+  const body = {
+    question: 'What should I know about my health profile?', consentConfirmed: true, historyContextConsent: true,
+    context: { facts: [earlierFact] },
+  };
+
+  const resolved = resolveAuthorizedAskContext(body, { profileId: 'demo-profile', assertions: [earlierAssertion], sources: [source] });
+  assert.deepEqual(resolved.context.facts, [{
+    id: 'local-earlier-fact', label: 'LDL cholesterol', value: '3.1 mmol/L', date: '2026-01-20',
+    category: 'lab_result', source: 'Lipid report.pdf', status: 'reviewed',
+    referenceRange: '', method: '', sourceQuote: '', page: null,
+    validFrom: '2026-01-21T08:00:00.000Z', validUntil: '2026-06-01T08:00:00.000Z', versionStatus: 'earlier',
+  }]);
+  const sanitized = sanitizeRunBody(resolved);
+  assert.equal(sanitized.historyContextConsent, true);
+  assert.equal(sanitized.context.facts[0].versionStatus, 'earlier');
+  const evidence = createEvidenceTools(sanitized.context);
+  evidence.execute('search_profile', { query: 'LDL history' });
+  assert.match(evidence.sources()[0].detail, /no longer current/i);
+
+  for (const invalidBody of [
+    { ...body, historyContextConsent: false },
+    { ...body, context: { facts: [{ ...earlierFact, value: 'spoofed result' }] } },
+    { ...body, context: { facts: [{ ...earlierFact, reviewState: 'user_retracted' }] } },
+  ]) assert.throws(() => resolveAuthorizedAskContext(invalidBody, {
+    profileId: 'demo-profile', assertions: [earlierAssertion], sources: [source],
+  }), /no longer available for review/i);
+});
+
+test('Ask sanitizer drops earlier values without history consent and an explicit history question', () => {
+  const earlierFact = {
+    id: 'earlier', label: 'LDL cholesterol', value: '3.1 mmol/L', date: '2026-01-20', category: 'lab_result',
+    source: 'Lipid report.pdf', status: 'reviewed', validFrom: '2026-01-21T08:00:00.000Z',
+    validUntil: '2026-06-01T08:00:00.000Z', versionStatus: 'earlier',
+  };
+  const sanitized = sanitizeRunBody({ consentConfirmed: true, question: 'What does LDL mean?', context: { facts: [earlierFact] } });
+  assert.deepEqual(sanitized.context.facts, []);
+});
+
+test('Ask keeps unlinked on-device facts as user-provided context and drops source detail when that scope is off', () => {
+  const source = {
+    id: 'source-lab', profileId: 'demo-profile', displayName: 'September health report.pdf', origin: 'document_extraction',
+    documentContext: { documentType: 'Lipid panel', dates: [], entities: [], notes: [] },
+  };
+  const body = {
+    sourceContextConsent: false,
+    context: {
+      facts: [{ id: 'manual-fact', label: 'Headache', value: 'Started yesterday', date: '2026-09-27', category: 'Symptoms', source: 'Made-up source.pdf', status: 'reviewed' }],
+      documentSources: [{ id: 'source-lab', title: 'Report', documentType: 'Report', dates: [], entities: [], notes: [] }],
+    },
+  };
+  const resolved = resolveAuthorizedAskContext(body, { profileId: 'demo-profile', assertions: [], sources: [source] });
+  assert.equal(resolved.context.facts[0].source, 'Provided by you for this answer');
+  assert.equal(resolved.context.facts[0].status, 'confirmed');
+  assert.deepEqual(resolved.context.documentSources, []);
 });
 
 test('dangling relationship endpoints stay in the profile but never become Ask evidence', () => {
@@ -361,6 +714,30 @@ test('memory proposals require a positive save request, not a recall or opt-out 
   assert.deepEqual(answerFor('Add this to my profile: I prefer morning appointments.', { ...candidate, value: 'morning appointments' }), {
     label: 'Synthetic preference', value: 'morning appointments', reason: 'The user asked to remember it.', sourceKind: 'user_request', sourceReferences: [],
   });
+});
+
+test('a clear health statement becomes a review-only self-reported context proposal', () => {
+  const answer = validateAnswer({
+    answer: 'I can answer your question using saved records.', citations: [], unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+  }, [], { key: 'profile', question: 'I was diagnosed with asthma. Is this in my health profile?' });
+
+  assert.deepEqual(answer.memoryProposal, {
+    label: 'Self-reported condition',
+    value: 'asthma',
+    reason: 'You mentioned “I was diagnosed with asthma” in your question. Review it before saving; this is your self-reported context, not a verified medical conclusion.',
+    sourceKind: 'user_statement',
+    sourceReferences: [],
+  });
+  assert.deepEqual(answer.citations, [], 'a question statement is not a source citation');
+});
+
+test('a question or symptom does not create a health-context proposal', () => {
+  for (const question of ['Could I have diabetes?', 'I have been getting headaches.']) {
+    const answer = validateAnswer({
+      answer: 'I cannot infer that from this information.', citations: [], unknowns: [], nextSteps: [], memoryProposal: { proposed: false },
+    }, [], { key: 'profile', question });
+    assert.equal(answer.memoryProposal, null, question);
+  }
 });
 
 test('memory proposals need a directly stated value or a citeable personal source', () => {

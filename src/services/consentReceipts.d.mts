@@ -1,0 +1,10 @@
+export type ConsentPurpose = 'ask' | 'profile_summary' | 'symptom_support' | 'health_search' | 'document_review';
+export type ConsentScope = 'user_question' | 'ask_clarification_reply' | 'saved_details' | 'health_areas' | 'record_links' | 'earlier_values' | 'recent_messages' | 'treatments' | 'visits' | 'linked_report_text' | 'policy_terms' | 'public_health_search' | 'derived_age' | 'selected_public_source' | 'symptom_description' | 'selected_files' | 'ai_service_review' | 'on_device_sample' | 'self_report_note';
+export type ConsentReceipt = { id: string; purpose: ConsentPurpose; scopes: ConsentScope[]; approvedAt: string };
+export type ConsentReceiptApproval = { consentConfirmed: true; purpose: ConsentPurpose; scopes: ConsentScope[] };
+export declare const CONSENT_RECEIPT_LIMIT: number;
+export declare const CONSENT_PURPOSE_LABELS: Readonly<Record<ConsentPurpose, string>>;
+export declare const CONSENT_SCOPE_LABELS: Readonly<Record<ConsentScope, string>>;
+export declare function normalizeConsentReceipt(input: unknown): ConsentReceipt | null;
+export declare function normalizeConsentReceipts(receipts: unknown): ConsentReceipt[];
+export declare function appendConsentReceipt(receipts: readonly unknown[], input: unknown): ConsentReceipt[];

@@ -43,3 +43,7 @@ test('asset Ask scope does not inherit unrelated personal records', () => {
 test('general Ask may use the profile selected in the consent sheet', () => {
   assert.equal(scopeProfileContext(profile, null), profile);
 });
+
+test('an asset Ask can include the whole profile when the user expands its scope', () => {
+  assert.equal(scopeProfileContext(profile, 'asset:paper-a', { includeWholeProfile: true }), profile);
+});

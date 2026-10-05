@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getHealthAreaContext } from '../src/services/healthAreaContext.mjs';
 
 export const CONTRACT_VERSION = 1;
 export const DEMO_PROFILE_ID = 'demo-profile';
@@ -23,6 +24,7 @@ export const MAX_VALUE_LENGTH = 1200;
  * @property {string} importedAt
  * @property {SourceState} state
  * @property {string|null} duplicateOfSourceId
+ * @property {string=} healthAreaId
  * @property {string} environment
  * @property {DocumentContext} documentContext
  */
@@ -79,7 +81,7 @@ export function createDocumentContext(input) {
     : null;
 }
 
-export function createSourceRecord({ profileId = DEMO_PROFILE_ID, displayName, mediaType, sizeBytes, sha256, origin = 'document_extraction', state = 'selected', duplicateOfSourceId = null, documentContext = null, processingMode = null }) {
+export function createSourceRecord({ profileId = DEMO_PROFILE_ID, displayName, mediaType, sizeBytes, sha256, origin = 'document_extraction', state = 'selected', duplicateOfSourceId = null, documentContext = null, processingMode = null, healthAreaId = null, documentPurpose = 'medical' }) {
   const name = clean(displayName, 180).replace(/[\\/\0-\x1f]/g, '_');
   const mime = clean(mediaType, 100).toLowerCase();
   const hash = clean(sha256, 64).toLowerCase();
@@ -91,7 +93,9 @@ export function createSourceRecord({ profileId = DEMO_PROFILE_ID, displayName, m
     origin: origin === 'user_entered' ? 'user_entered' : 'document_extraction', importedAt: new Date().toISOString(), state,
     duplicateOfSourceId: duplicateOfSourceId || null, environment: 'local_demo', storage: 'device_original_only',
     processingMode: ['local_sample_fixture', 'connected_ai_provider', 'local_rule_based'].includes(processingMode) ? processingMode : null,
+    documentPurpose: documentPurpose === 'insurance' ? 'insurance' : 'medical',
     documentContext: createDocumentContext(documentContext),
+    ...(getHealthAreaContext(healthAreaId) ? { healthAreaId: getHealthAreaContext(healthAreaId).id } : {}),
   };
 }
 

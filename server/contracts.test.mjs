@@ -23,6 +23,20 @@ test('empty document context remains absent on an unprocessed or legacy source',
   assert.equal(source.documentContext, null);
 });
 
+test('source records retain only a canonical selected health area', () => {
+  const source = createSourceRecord({ displayName: 'report.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'f'.repeat(64), healthAreaId: 'cholesterol' });
+  assert.equal(source.healthAreaId, 'cholesterol');
+  const invalid = createSourceRecord({ displayName: 'report.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'e'.repeat(64), healthAreaId: 'take diagnosis from file' });
+  assert.equal('healthAreaId' in invalid, false);
+});
+
+test('source records retain the purpose used to review an uploaded document', () => {
+  const policy = createSourceRecord({ displayName: 'policy.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'd'.repeat(64), documentPurpose: 'insurance' });
+  assert.equal(policy.documentPurpose, 'insurance');
+  const defaultSource = createSourceRecord({ displayName: 'report.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'c'.repeat(64) });
+  assert.equal(defaultSource.documentPurpose, 'medical');
+});
+
 test('source records retain an explicit processing mode without changing legacy defaults', () => {
   const sample = createSourceRecord({ displayName: 'sample.pdf', mediaType: 'application/pdf', sizeBytes: 10, sha256: 'a'.repeat(64), processingMode: 'local_sample_fixture' });
   assert.equal(sample.processingMode, 'local_sample_fixture');

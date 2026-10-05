@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ageFromDateOfBirth, hasExistingProfileEvidence, validateRequiredProfileDetails } from './profileDemographics.mjs';
+import { ageFromDateOfBirth, hasExistingProfileEvidence, validateRequiredMeasurements, validateRequiredProfileDetails } from './profileDemographics.mjs';
 
 const today = new Date(2026, 8, 26, 12);
 const completeProfile = { name: 'Jordan Sample', country: 'Malaysia', birthday: '1990-05-12' };
 
-test('new profile setup requires display name and country while birth date remains optional', () => {
+test('new profile setup requires display name, country, and a valid birth date', () => {
   assert.match(validateRequiredProfileDetails({ ...completeProfile, name: ' ' }, today), /name or nickname/);
   assert.match(validateRequiredProfileDetails({ ...completeProfile, country: '' }, today), /country/);
-  assert.equal(validateRequiredProfileDetails({ ...completeProfile, birthday: '' }, today), null);
+  assert.match(validateRequiredProfileDetails({ ...completeProfile, birthday: '' }, today), /date of birth/);
   assert.equal(validateRequiredProfileDetails(completeProfile, today), null);
 });
 
@@ -19,7 +19,7 @@ test('Other country requires an entered country name and accepts a user-entered 
 
 test('an existing profile can continue without a newly required country', () => {
   assert.equal(validateRequiredProfileDetails({ ...completeProfile, country: '', requireCountry: false }, today), null);
-  assert.equal(validateRequiredProfileDetails({ ...completeProfile, birthday: 'legacy-date', requireCountry: false, validateBirthday: false }, today), null);
+  assert.match(validateRequiredProfileDetails({ ...completeProfile, birthday: 'legacy-date', requireCountry: false }, today), /valid date of birth/);
 });
 
 test('new profiles require a display name while an existing profile can continue without adding one', () => {
@@ -65,4 +65,13 @@ test('birth date age uses completed years without adding a stored age field', ()
   assert.equal(ageFromDateOfBirth('2000-09-27', today), 25);
   assert.equal(ageFromDateOfBirth('2026-09-27', today), null);
   assert.equal(ageFromDateOfBirth('not-a-date', today), null);
+});
+
+test('new profile setup requires valid height and weight', () => {
+  assert.match(validateRequiredMeasurements({ heightCm: '', weightKg: '' }), /height to continue/);
+  assert.match(validateRequiredMeasurements({ heightCm: '163', weightKg: '' }), /weight to continue/);
+  assert.match(validateRequiredMeasurements({ heightCm: '', weightKg: '70' }), /height to continue/);
+  assert.match(validateRequiredMeasurements({ heightCm: '999', weightKg: '70' }), /height/);
+  assert.match(validateRequiredMeasurements({ heightCm: '163', weightKg: '0' }), /weight/);
+  assert.equal(validateRequiredMeasurements({ heightCm: '163.5 cm', weightKg: '70,2' }), null);
 });

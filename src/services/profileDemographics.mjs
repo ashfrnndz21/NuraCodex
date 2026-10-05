@@ -31,12 +31,28 @@ export function hasExistingProfileEvidence(profile = {}) {
   return savedRecords.some(hasNonSampleRecord);
 }
 
-export function validateRequiredProfileDetails({ name, country, customCountry = '', birthday, requireName = true, requireCountry = true, validateBirthday = true }, now = new Date()) {
+export function validateRequiredProfileDetails({ name, country, customCountry = '', birthday, requireName = true, requireCountry = true }, now = new Date()) {
   if (requireName && !String(name ?? '').trim()) return 'Add a name or nickname to continue.';
   const selectedCountry = String(country ?? '').trim();
   const enteredCountry = String(customCountry).trim();
   const countryValue = enteredCountry || selectedCountry;
   if (requireCountry && (!countryValue || countryValue === 'Other')) return 'Choose or enter your country to continue.';
-  if (validateBirthday && String(birthday ?? '').trim() && ageFromDateOfBirth(birthday, now) === null) return 'Enter a valid date of birth in YYYY-MM-DD format. It must be a real date and cannot be in the future.';
+  if (!String(birthday ?? '').trim()) return 'Enter your date of birth to continue.';
+  if (ageFromDateOfBirth(birthday, now) === null) return 'Enter a valid date of birth in YYYY-MM-DD format. It must be a real date and cannot be in the future.';
+  return null;
+}
+
+function measurementNumber(value, unit) {
+  const normalized = String(value ?? '').trim().replace(new RegExp('\\s*' + unit + '$', 'i'), '').replace(',', '.');
+  return normalized ? Number(normalized) : NaN;
+}
+
+export function validateRequiredMeasurements({ heightCm, weightKg }) {
+  if (!String(heightCm ?? '').trim()) return 'Enter your height to continue.';
+  const height = measurementNumber(heightCm, 'cm');
+  if (!Number.isFinite(height) || height < 30 || height > 275) return 'Enter a valid height between 30 and 275 cm.';
+  if (!String(weightKg ?? '').trim()) return 'Enter your weight to continue.';
+  const weight = measurementNumber(weightKg, 'kg');
+  if (!Number.isFinite(weight) || weight < 0.5 || weight > 700) return 'Enter a valid weight between 0.5 and 700 kg.';
   return null;
 }
