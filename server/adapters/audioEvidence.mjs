@@ -10,20 +10,24 @@ export function mapAudioTranscriptClaims(claims, segments) {
     const quote = typeof claim?.quote === 'string' ? claim.quote.trim() : '';
     const segmentText = typeof segment?.text === 'string' ? segment.text : '';
     const start = Number(segment?.start);
-    if (!AUDIO_CLAIM_KINDS.has(claim?.kind) || !Number.isFinite(start) || start < 0 || !quote || !segmentText.includes(quote)) return [];
+    if (claim?.subject !== 'self' || !AUDIO_CLAIM_KINDS.has(claim?.kind) || !Number.isFinite(start) || start < 0 || !quote || !segmentText.includes(quote)) return [];
     if (typeof claim?.label !== 'string' || !claim.label.trim() || typeof claim?.value !== 'string' || !claim.value.trim()) return [];
-    const { segmentIndex: _segmentIndex, ...fields } = claim;
+    const { segmentIndex: _segmentIndex, subject: _subject, ...fields } = claim;
     return [{ ...fields, segmentIndex: index, label: claim.label.trim(), value: claim.value.trim(), quote, page: null, timestampSeconds: start }];
   }).slice(0, 40);
 }
 
 export function boundedTranscriptSegments(transcription) {
   if (!Array.isArray(transcription?.segments)) return [];
+  let remainingCharacters = 60_000;
   return transcription.segments.flatMap((segment) => {
+    if (remainingCharacters <= 0) return [];
     const start = Number(segment?.start);
     const end = Number(segment?.end);
-    const text = typeof segment?.text === 'string' ? segment.text.trim().slice(0, 1200) : '';
+    const rawText = typeof segment?.text === 'string' ? segment.text.trim() : '';
+    const text = rawText.slice(0, Math.min(1200, remainingCharacters));
     if (!Number.isFinite(start) || start < 0 || !Number.isFinite(end) || end <= start || !text) return [];
+    remainingCharacters -= text.length;
     return [{ start, end, text }];
   }).slice(0, 600);
 }

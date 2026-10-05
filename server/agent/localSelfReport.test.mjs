@@ -55,7 +55,7 @@ test('a real numeric result remains extractable when the same sentence includes 
 
 test('unclear and unrecognized passages are never promoted into claims', async () => {
   const result = await interpretSelfReportRequest({
-    consentForThisNote: true, syntheticDemoConfirmed: true, noteId: 'note-02',
+    consentForThisNote: true, noteId: 'note-02',
     text: 'I feel strange sometimes. The scan was last year, but I do not remember what it showed.',
   }, { interpret: async ({ text }) => organizeSelfReportLocally(text) });
   assert.equal(result.claims.length, 0);

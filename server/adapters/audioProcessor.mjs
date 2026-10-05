@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { Buffer } from 'node:buffer';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -86,6 +86,66 @@ export async function inspectAudioDuration({ bytes, mediaType, signal }) {
     let probe;
     try { probe = JSON.parse(result.toString('utf8')); } catch { throw new Error('This audio file could not be inspected.'); }
     return validateAudioProbe(probe);
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
+
+const OPENAI_TRANSCRIPTION_MEDIA_TYPES = new Set(['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm']);
+const TRANSCODE_AUDIO_MEDIA_TYPES = new Map([
+  ['audio/flac', '.flac'],
+  ['audio/ogg', '.ogg'],
+]);
+const MAX_TRANSCRIPTION_FILE_BYTES = 25 * 1024 * 1024;
+
+function runTranscode(command, args, { signal }) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(abortError()); return; }
+    const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'ignore'], windowsHide: true });
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      if (error) reject(error); else resolve();
+    };
+    const onAbort = () => { child.kill('SIGKILL'); finish(abortError()); };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish(new Error('Audio preparation took too long. No health details were added.'));
+    }, AUDIO_LIMITS.processTimeoutMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    child.once('error', () => finish(new Error('Audio format conversion is unavailable on this server. Choose an MP3, M4A, WAV or WEBM recording.')));
+    child.once('close', (code) => code === 0
+      ? finish()
+      : finish(new Error('This audio format could not be prepared for transcription. The original was not changed.')));
+  });
+}
+
+/** Convert app-supported FLAC/OGG recordings to a provider-supported MP3 without persisting source bytes. */
+export async function prepareAudioForOpenAITranscription({ bytes, filename, mediaType, signal }) {
+  const source = Buffer.from(bytes);
+  if (source.byteLength > MAX_TRANSCRIPTION_FILE_BYTES) throw new Error('This recording is larger than the 25 MB transcription limit. Choose a shorter or smaller copy.');
+  if (OPENAI_TRANSCRIPTION_MEDIA_TYPES.has(mediaType)) return { bytes: source, filename, mediaType };
+  const extension = TRANSCODE_AUDIO_MEDIA_TYPES.get(mediaType);
+  if (!extension) throw new Error('Choose an MP3, M4A, WAV, WEBM, OGG or FLAC recording.');
+
+  const workDir = await mkdtemp(join(tmpdir(), 'nura-audio-transcode-'));
+  const inputPath = join(workDir, `selected${extension}`);
+  const outputPath = join(workDir, 'transcription.mp3');
+  const safeStem = (typeof filename === 'string' ? filename : 'recording')
+    .split(/[\\/]/).pop()?.replace(/\.[^.]*$/, '').replace(/[\0-\x1f\x7f]/g, '').slice(0, 120).trim() || 'recording';
+  try {
+    await writeFile(inputPath, source, { flag: 'wx', mode: 0o600 });
+    await runTranscode(process.env.NURA_FFMPEG_PATH || 'ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-nostdin', '-protocol_whitelist', 'file,pipe', '-threads', '1',
+      '-i', inputPath, '-map', '0:a:0', '-vn', '-sn', '-dn', '-c:a', 'libmp3lame', '-b:a', '64k', '-ar', '16000', '-ac', '1',
+      '-f', 'mp3', outputPath,
+    ], { signal });
+    const outputInfo = await stat(outputPath);
+    if (!outputInfo.size || outputInfo.size > MAX_TRANSCRIPTION_FILE_BYTES) throw new Error('The prepared recording is empty or exceeds the transcription limit. No health details were added.');
+    return { bytes: await readFile(outputPath), filename: `${safeStem}.mp3`, mediaType: 'audio/mpeg' };
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }

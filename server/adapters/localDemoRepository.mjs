@@ -6,7 +6,7 @@ import { DEMO_PROFILE_ID } from '../contracts.mjs';
 import { normalizeReviewEventDate } from '../../src/utils/healthDate.mjs';
 
 const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '.nura-dev');
-const EMPTY = () => ({ schemaVersion: 1, sources: [], claims: [], assertions: [], runEvents: [] });
+const EMPTY = () => ({ schemaVersion: 1, sources: [], claims: [], assertions: [], runEvents: [], sourceDeletionReceipts: [], privacyConsentSettings: [], privacyConsentEvents: [] });
 const clone = (value) => structuredClone(value);
 
 export class LocalDemoRepository {
@@ -26,7 +26,13 @@ export class LocalDemoRepository {
       await mkdir(this.#dir, { recursive: true, mode: 0o700 });
       try {
         const parsed = JSON.parse(await readFile(this.#file, 'utf8'));
-        this.#state = { ...EMPTY(), ...parsed };
+        this.#state = {
+          ...EMPTY(),
+          ...parsed,
+          sourceDeletionReceipts: Array.isArray(parsed.sourceDeletionReceipts) ? parsed.sourceDeletionReceipts : [],
+          privacyConsentSettings: Array.isArray(parsed.privacyConsentSettings) ? parsed.privacyConsentSettings : [],
+          privacyConsentEvents: Array.isArray(parsed.privacyConsentEvents) ? parsed.privacyConsentEvents : [],
+        };
       } catch (error) {
         if (error?.code !== 'ENOENT') throw new Error('The local demo repository could not be read.');
         this.#state = EMPTY();
@@ -50,12 +56,25 @@ export class LocalDemoRepository {
     return clone(select(state));
   }
 
-  async #mutate(change) {
+  async #mutate(change, { signal } = {}) {
     const operation = this.#queue.then(async () => {
       const current = await this.#load();
       const next = clone(current);
       const result = change(next);
+      if (signal?.aborted) {
+        const error = new Error('Processing stopped before its results could be saved.');
+        error.name = 'AbortError';
+        throw error;
+      }
       await this.#write(next);
+      // If withdrawal arrived during the atomic file write, restore the prior
+      // snapshot before releasing the serialized repository queue to readers.
+      if (signal?.aborted) {
+        await this.#write(current);
+        const error = new Error('Processing stopped before its results could be saved.');
+        error.name = 'AbortError';
+        throw error;
+      }
       this.#state = next;
       this.#loadPromise = Promise.resolve(next);
       return clone(result);
@@ -92,14 +111,19 @@ export class LocalDemoRepository {
     });
   }
 
-  saveCandidateClaims(claims) {
+  saveCandidateClaims(claims, { signal } = {}) {
     return this.#mutate((state) => {
+      if (signal?.aborted) {
+        const error = new Error('Processing stopped before the extracted suggestions could be saved.');
+        error.name = 'AbortError';
+        throw error;
+      }
       for (const claim of claims) {
         if (!state.sources.some((source) => source.id === claim.sourceId && source.profileId === claim.profileId)) throw new Error('The claim source is unavailable.');
         state.claims.unshift(claim);
       }
       return claims;
-    });
+    }, { signal });
   }
 
   listClaims(sourceId) { return this.#read((state) => state.claims.filter((claim) => claim.sourceId === sourceId)); }
@@ -239,6 +263,69 @@ export class LocalDemoRepository {
 
   listAssertions(profileId = DEMO_PROFILE_ID) { return this.#read((state) => state.assertions.filter((assertion) => assertion.profileId === profileId)); }
 
+  removeSource(sourceId, profileId = DEMO_PROFILE_ID) {
+    if (profileId !== DEMO_PROFILE_ID) throw new Error('This local repository can only remove a source from its synthetic demo profile.');
+    return this.#mutate((state) => {
+      const source = state.sources.find((item) => item.id === sourceId && item.profileId === profileId);
+      if (!source) {
+        const receipt = state.sourceDeletionReceipts.find((item) => item.sourceId === sourceId && item.profileId === profileId);
+        if (!receipt) return null;
+        return { ...clone(receipt), source: 0, claims: 0, assertions: 0, activityEvents: 0, alreadyRemoved: true };
+      }
+      const removedClaims = state.claims.filter((item) => item.sourceId === sourceId && item.profileId === profileId);
+      const claimIds = new Set(removedClaims.map((item) => item.id));
+      const removedAssertions = state.assertions.filter((item) => item.sourceId === sourceId && item.profileId === profileId);
+      const assertionIds = new Set(removedAssertions.map((item) => item.id));
+      const referencedIds = new Set([sourceId, ...claimIds, ...assertionIds]);
+      const retainedEvents = state.runEvents.filter((event) => !Array.isArray(event.refs)
+        || !event.refs.some((reference) => referencedIds.has(reference?.id)));
+      const activityEvents = state.runEvents.length - retainedEvents.length;
+      state.sources = state.sources.filter((item) => item.id !== sourceId || item.profileId !== profileId);
+      state.claims = state.claims.filter((item) => item.sourceId !== sourceId || item.profileId !== profileId);
+      state.assertions = state.assertions.filter((item) => item.sourceId !== sourceId || item.profileId !== profileId);
+      state.runEvents = retainedEvents;
+      const receipt = {
+        sourceId,
+        profileId,
+        claimIds: [...claimIds],
+        assertionIds: [...assertionIds],
+      };
+      state.sourceDeletionReceipts.push(receipt);
+      return {
+        ...receipt,
+        source: 1,
+        claims: removedClaims.length,
+        assertions: removedAssertions.length,
+        activityEvents,
+        alreadyRemoved: false,
+      };
+    });
+  }
+
+  getPrivacyConsentState(profileId = DEMO_PROFILE_ID) {
+    if (profileId !== DEMO_PROFILE_ID) throw new Error('This local repository only stores privacy choices for its synthetic demo profile.');
+    return this.#read((state) => ({
+      settings: state.privacyConsentSettings.find((item) => item.profileId === profileId) ?? null,
+      events: state.privacyConsentEvents.filter((event) => event.profileId === profileId),
+    }));
+  }
+
+  savePrivacyConsentState(profileId, settings, events) {
+    if (profileId !== DEMO_PROFILE_ID) throw new Error('This local repository only stores privacy choices for its synthetic demo profile.');
+    return this.#mutate((state) => {
+      state.privacyConsentSettings = state.privacyConsentSettings.filter((item) => item.profileId !== profileId);
+      state.privacyConsentSettings.push({ ...settings, profileId });
+      const knownIds = new Set(state.privacyConsentEvents.map((event) => event.id));
+      for (const event of events) {
+        if (event.profileId !== profileId || knownIds.has(event.id)) continue;
+        state.privacyConsentEvents.push(event);
+        knownIds.add(event.id);
+      }
+      if (state.privacyConsentEvents.length > 5_000) state.privacyConsentEvents.splice(0, state.privacyConsentEvents.length - 5_000);
+      return { settings: state.privacyConsentSettings.find((item) => item.profileId === profileId), events: state.privacyConsentEvents.filter((event) => event.profileId === profileId) };
+    });
+  }
+
   clearDemoProfile(profileId = DEMO_PROFILE_ID) {
     if (profileId !== DEMO_PROFILE_ID) throw new Error('This local repository can only clear its synthetic demo profile.');
     return this.#mutate((state) => {
@@ -247,10 +334,12 @@ export class LocalDemoRepository {
         claims: state.claims.filter((item) => item.profileId === profileId).length,
         assertions: state.assertions.filter((item) => item.profileId === profileId).length,
         activityEvents: state.runEvents.length,
+        deletionReceipts: state.sourceDeletionReceipts.filter((item) => item.profileId === profileId).length,
       };
       state.sources = state.sources.filter((item) => item.profileId !== profileId);
       state.claims = state.claims.filter((item) => item.profileId !== profileId);
       state.assertions = state.assertions.filter((item) => item.profileId !== profileId);
+      state.sourceDeletionReceipts = state.sourceDeletionReceipts.filter((item) => item.profileId !== profileId);
       // This development repository is restricted to one synthetic profile and does not
       // attach a profile ID to its safe activity envelope, so clear its complete event log.
       state.runEvents = [];

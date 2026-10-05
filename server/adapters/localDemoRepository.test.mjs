@@ -49,16 +49,67 @@ test('clearing the local synthetic profile removes its sources, claims, accepted
     }));
 
     assert.deepEqual(await repository.clearDemoProfile(DEMO_PROFILE_ID), {
-      sources: 1, claims: 1, assertions: 1, activityEvents: 1,
+      sources: 1, claims: 1, assertions: 1, activityEvents: 1, deletionReceipts: 0,
     });
     assert.deepEqual(await repository.listSources(DEMO_PROFILE_ID), []);
     assert.deepEqual(await repository.listClaims(source.id), []);
     assert.deepEqual(await repository.listAssertions(DEMO_PROFILE_ID), []);
     assert.deepEqual(await repository.listRunEvents('sample-run'), []);
     assert.deepEqual(await repository.clearDemoProfile(DEMO_PROFILE_ID), {
-      sources: 0, claims: 0, assertions: 0, activityEvents: 0,
+      sources: 0, claims: 0, assertions: 0, activityEvents: 0, deletionReceipts: 0,
     });
     assert.throws(() => repository.clearDemoProfile('another-profile'), /synthetic demo profile/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('removing one source deletes only its claims, assertions, and referenced activity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nura-source-remove-'));
+  try {
+    const repository = new LocalDemoRepository(directory);
+    const target = createSourceRecord({ displayName: 'remove-this.pdf', mediaType: 'application/pdf', sizeBytes: 17, sha256: 'f'.repeat(64) });
+    const retained = createSourceRecord({ displayName: 'keep-this.pdf', mediaType: 'application/pdf', sizeBytes: 18, sha256: '1'.repeat(64) });
+    await repository.createSource(target);
+    await repository.createSource(retained);
+    const targetClaim = createCandidateClaim({ sourceId: target.id, kind: 'lab_result', label: 'Target result', value: '5.1', sourceLocation: { page: 1, quote: 'Target result 5.1' } });
+    const retainedClaim = createCandidateClaim({ sourceId: retained.id, kind: 'lab_result', label: 'Retained result', value: '4.2', sourceLocation: { page: 1, quote: 'Retained result 4.2' } });
+    await repository.saveCandidateClaims([targetClaim, retainedClaim]);
+    const accepted = await repository.decideClaim(targetClaim.id, { decision: 'accept' });
+    await repository.appendRunEvent(createRunEvent({ runId: 'target-run', sequence: 1, type: 'source_received', stage: 'intake', status: 'complete', displayLabel: 'Target source received', refs: [{ kind: 'source', id: target.id }, { kind: 'claim', id: targetClaim.id }, { kind: 'assertion', id: accepted.assertion.id }] }));
+    await repository.appendRunEvent(createRunEvent({ runId: 'retained-run', sequence: 1, type: 'source_received', stage: 'intake', status: 'complete', displayLabel: 'Other source received', refs: [{ kind: 'source', id: retained.id }] }));
+
+    const removed = await repository.removeSource(target.id);
+    assert.deepEqual(removed, {
+      sourceId: target.id,
+      profileId: target.profileId,
+      claimIds: [targetClaim.id],
+      assertionIds: [accepted.assertion.id],
+      source: 1,
+      claims: 1,
+      assertions: 1,
+      activityEvents: 1,
+      alreadyRemoved: false,
+    });
+    assert.equal(await repository.getSource(target.id), null);
+    assert.deepEqual(await repository.listClaims(target.id), []);
+    assert.deepEqual(await repository.listAssertions(DEMO_PROFILE_ID), []);
+    assert.deepEqual(await repository.listRunEvents('target-run'), []);
+    assert.equal((await repository.getSource(retained.id)).displayName, 'keep-this.pdf');
+    assert.deepEqual((await repository.listClaims(retained.id)).map((claim) => claim.id), [retainedClaim.id]);
+    assert.equal((await repository.listRunEvents('retained-run')).length, 1);
+    const repeated = await repository.removeSource(target.id);
+    assert.deepEqual(repeated, {
+      ...removed,
+      source: 0,
+      claims: 0,
+      assertions: 0,
+      activityEvents: 0,
+      alreadyRemoved: true,
+    });
+    const restartedRepository = new LocalDemoRepository(directory);
+    assert.deepEqual(await restartedRepository.removeSource(target.id), repeated, 'the identifier-only receipt survives a local preview service restart');
+    assert.throws(() => repository.removeSource(target.id, 'another-profile'), /synthetic demo profile/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -169,7 +220,7 @@ test('a stale profile assertion cannot be retracted by an old review', async () 
     const claim = createCandidateClaim({ sourceId: source.id, kind: 'condition', label: 'Fasting guidance', value: '10 hours before testing', confidence: 0.9, sourceLocation: { page: 1, quote: 'Lipid profiles are best obtained after 10 hours fasting.' } });
     assert.ok(claim);
     await repository.saveCandidateClaims([claim]);
-    const accepted = await repository.decideClaim(claim.id, { decision: 'accept' });
+    await repository.decideClaim(claim.id, { decision: 'accept' });
 
     await assert.rejects(
       repository.retractClaim(claim.id, { expectedAssertionId: 'older-assertion', reason: 'not_personal' }),

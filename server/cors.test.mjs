@@ -15,13 +15,20 @@ test('development defaults allow the current Nura preview ports and hosts', () =
   assert.equal(isAllowedOrigin('http://localhost:8094', allowed), true);
   assert.equal(isAllowedOrigin('http://localhost:8095', allowed), true);
   assert.equal(isAllowedOrigin('http://nura.localhost:8095', allowed), true);
-  assert.equal(isAllowedOrigin('http://localhost:9999', allowed), false);
+  assert.equal(isAllowedOrigin('http://localhost:8099', allowed), true);
+  assert.equal(isAllowedOrigin('http://127.0.0.1:8099', allowed), true);
+  assert.equal(isAllowedOrigin('http://localhost:8100', allowed), true);
+  assert.equal(isAllowedOrigin('http://localhost:45243', allowed), true);
+  assert.equal(isAllowedOrigin('http://nura.localhost:45243', allowed), true);
+  assert.equal(isAllowedOrigin('https://localhost:8100', allowed), false);
+  assert.equal(isAllowedOrigin('http://localhost.example.test:8100', allowed), false);
 });
 
 test('explicit allowed-origin configuration stays an exact override', () => {
   const allowed = allowedOriginsFromEnv('https://preview.example.test, http://localhost:8081');
   assert.deepEqual([...allowed], ['https://preview.example.test', 'http://localhost:8081']);
   assert.equal(isAllowedOrigin('http://localhost:8094', allowed), false);
+  assert.equal(isAllowedOrigin('http://localhost:8099', allowed), false);
 });
 
 test('CORS headers echo only an allowed origin', () => {
@@ -36,8 +43,14 @@ test('CORS headers echo only an allowed origin', () => {
   assert.equal(headers.get('access-control-allow-origin'), 'http://localhost:8094');
   assert.equal(headers.get('vary'), 'Origin');
   headers.clear();
-  applyCorsHeaders('http://localhost:9999', response, allowed);
+  applyCorsHeaders('http://localhost:8100', response, allowed);
+  assert.equal(headers.get('access-control-allow-origin'), 'http://localhost:8100');
+  assert.equal(headers.get('vary'), 'Origin');
+  headers.clear();
+  applyCorsHeaders('http://preview.example.test', response, allowed);
   assert.equal(headers.has('access-control-allow-origin'), false);
   assert.equal(headers.get('access-control-allow-methods'), 'GET, POST, PUT, DELETE, OPTIONS');
   assert.match(headers.get('access-control-allow-headers'), /x-nura-local-sample-fixture/);
+  assert.match(headers.get('access-control-allow-headers'), /x-nura-health-area/);
+  assert.match(headers.get('access-control-allow-headers'), /x-nura-audio-processing-consent/);
 });

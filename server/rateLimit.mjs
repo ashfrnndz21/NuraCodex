@@ -14,3 +14,9 @@ export function createRateLimiter({ windowMs = 60_000, defaultLimit = 8, now = D
     return false;
   };
 }
+
+/** Keep one client's budgets independent across API purposes while retaining per-purpose limits. */
+export function createScopedRateLimiter(options = {}) {
+  const limited = createRateLimiter(options);
+  return (scope, clientKey, limit) => limited(`${String(scope || 'default')}:${String(clientKey || 'unknown')}`, limit);
+}
