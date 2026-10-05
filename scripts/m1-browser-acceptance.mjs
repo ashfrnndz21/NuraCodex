@@ -1938,18 +1938,26 @@ async function runJourney() {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const decoder = new TextDecoder();
     const entries = new Map();
-    let offset = 0;
-    while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
-      const method = view.getUint16(offset + 8, true);
-      const size = view.getUint32(offset + 22, true);
-      const nameLength = view.getUint16(offset + 26, true);
-      const extraLength = view.getUint16(offset + 28, true);
-      const nameStart = offset + 30;
-      const name = decoder.decode(bytes.slice(nameStart, nameStart + nameLength));
-      const contentsStart = nameStart + nameLength + extraLength;
+    const endOffset = bytes.length - 22;
+    if (view.getUint32(endOffset, true) !== 0x06054b50) return { error: 'archive end record is missing' };
+    const entryCount = view.getUint16(endOffset + 10, true);
+    let offset = view.getUint32(endOffset + 16, true);
+    for (let index = 0; index < entryCount; index += 1) {
+      if (view.getUint32(offset, true) !== 0x02014b50) return { error: 'archive central directory is invalid' };
+      const method = view.getUint16(offset + 10, true);
+      const size = view.getUint32(offset + 20, true);
+      const nameLength = view.getUint16(offset + 28, true);
+      const extraLength = view.getUint16(offset + 30, true);
+      const commentLength = view.getUint16(offset + 32, true);
+      const name = decoder.decode(bytes.slice(offset + 46, offset + 46 + nameLength));
+      const localOffset = view.getUint32(offset + 42, true);
+      if (view.getUint32(localOffset, true) !== 0x04034b50) return { error: 'archive local entry is invalid' };
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const contentsStart = localOffset + 30 + localNameLength + localExtraLength;
       if (method !== 0) return { error: 'archive entry used an unsupported compression mode' };
       entries.set(name, bytes.slice(contentsStart, contentsStart + size));
-      offset = contentsStart + size;
+      offset += 46 + nameLength + extraLength + commentLength;
     }
     const manifestBytes = entries.get('nura-export.json');
     if (!manifestBytes) return { error: 'archive manifest is missing' };

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildNuraLocalExport, createNuraExportArchive } from './privacyExport.mjs';
+import { buildNuraLocalExport, estimateNuraExportArchiveSize, MAX_BROWSER_EXPORT_BYTES, writeNuraExportArchive } from './privacyExport.mjs';
 
 test('local export contains the saved profile, history, citations, approvals, and preferences', () => {
   const result = buildNuraLocalExport({
@@ -54,7 +54,7 @@ test('local export works for a truly empty profile and labels its storage bounda
   assert.deepEqual(result.askHistory, []);
 });
 
-test('export archive contains a readable manifest and exact original file bytes', () => {
+test('export archive contains a readable manifest and exact original file bytes', async () => {
   const bytes = new Uint8Array([0, 1, 2, 37, 80, 68, 70, 255]);
   const manifest = buildNuraLocalExport({
     exportedAt: '2026-09-30T10:00:00.000Z',
@@ -64,7 +64,7 @@ test('export archive contains a readable manifest and exact original file bytes'
       { id: 'source-2', name: 'scan.png', uri: 'nura-local-asset://source-2', kind: 'image' },
     ],
   });
-  const archive = createNuraExportArchive(manifest, [{ assetId: 'source-1', bytes }]);
+  const archive = await createArchive(manifest, [{ assetId: 'source-1', bytes }]);
   const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
   const endOffset = archive.length - 22;
   assert.equal(view.getUint32(endOffset, true), 0x06054b50);
@@ -86,8 +86,13 @@ test('export archive contains a readable manifest and exact original file bytes'
     const localNameLength = view.getUint16(localOffset + 26, true);
     const localExtraLength = view.getUint16(localOffset + 28, true);
     const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
-    const size = view.getUint32(localOffset + 22, true);
-    dataByName.set(name, archive.slice(dataOffset, dataOffset + size));
+    const size = view.getUint32(cursor + 24, true);
+    const data = archive.slice(dataOffset, dataOffset + size);
+    assert.equal(view.getUint32(cursor + 20, true), size);
+    assert.equal(view.getUint32(cursor + 16, true), crc32(data));
+    dataByName.set(name, data);
+    assert.equal(view.getUint32(dataOffset + size, true), 0x08074b50);
+    assert.equal(view.getUint32(dataOffset + size + 4, true), crc32(data));
     cursor += 46 + nameLength + extraLength + commentLength;
   }
 
@@ -104,18 +109,50 @@ test('export archive contains a readable manifest and exact original file bytes'
   assert.equal(JSON.stringify(exportedManifest).includes('file:///private/path'), false);
 });
 
-test('archive paths cannot escape the source folder and duplicate source bytes fail closed', () => {
+test('archive paths cannot escape the source folder and duplicate source bytes fail closed', async () => {
   const manifest = buildNuraLocalExport({
     exportedAt: '2026-09-30T10:00:00.000Z',
     assets: [{ id: '../source', name: '../../private/identity.pdf', uri: 'file:///private/identity.pdf' }],
   });
-  const archive = createNuraExportArchive(manifest, [{ assetId: '../source', bytes: new Uint8Array([1]) }]);
+  const archive = await createArchive(manifest, [{ assetId: '../source', bytes: new Uint8Array([1]) }]);
   assert.deepEqual(zipEntryNames(archive), ['nura-export.json', 'original-files/source-identity.pdf']);
-  assert.throws(() => createNuraExportArchive(manifest, [
+  await assert.rejects(() => createArchive(manifest, [
     { assetId: '../source', bytes: new Uint8Array([1]) },
     { assetId: '../source', bytes: new Uint8Array([2]) },
   ]), /duplicate source-file reference/);
 });
+
+test('streamed originals are written in chunks and a sink failure aborts the archive', async () => {
+  const manifest = buildNuraLocalExport({ exportedAt: '2026-09-30T10:00:00.000Z', assets: [{ id: 'source-1', name: 'report.pdf' }] });
+  const inputChunks = [new Uint8Array([1, 2]), new Uint8Array([3, 4, 5])];
+  const writes = [];
+  await writeNuraExportArchive(manifest, [{
+    assetId: 'source-1',
+    openStream: () => new ReadableStream({ start(controller) { inputChunks.forEach((chunk) => controller.enqueue(chunk)); controller.close(); } }),
+  }], async (chunk) => { writes.push(chunk); });
+  assert.equal(writes.some((chunk) => chunk.buffer === inputChunks[0].buffer), true);
+  assert.equal(writes.some((chunk) => chunk.buffer === inputChunks[1].buffer), true);
+  await assert.rejects(() => writeNuraExportArchive(manifest, [], async () => { throw new Error('disk full'); }), /disk full/);
+});
+
+test('archive size preflight accounts for manifest, source bytes, and ZIP records', () => {
+  const manifest = buildNuraLocalExport({ exportedAt: '2026-09-30T10:00:00.000Z', assets: [{ id: 'source-1', name: 'report.pdf' }] });
+  const smallSize = estimateNuraExportArchiveSize(manifest, [{ assetId: 'source-1', sizeBytes: 10 }]);
+  const largeSize = estimateNuraExportArchiveSize(manifest, [{ assetId: 'source-1', sizeBytes: MAX_BROWSER_EXPORT_BYTES }]);
+  assert.ok(smallSize > 10);
+  assert.ok(largeSize > MAX_BROWSER_EXPORT_BYTES);
+  assert.throws(() => estimateNuraExportArchiveSize(manifest, [{ assetId: 'source-1', sizeBytes: -1 }]), /size could not be checked/);
+});
+
+async function createArchive(manifest, sourceFiles) {
+  const chunks = [];
+  await writeNuraExportArchive(manifest, sourceFiles, (chunk) => { chunks.push(chunk); });
+  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const archive = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) { archive.set(chunk, offset); offset += chunk.length; }
+  return archive;
+}
 
 function zipEntryNames(archive) {
   const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
@@ -132,4 +169,13 @@ function zipEntryNames(archive) {
     cursor += 46 + nameLength + extraLength + commentLength;
   }
   return names;
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }

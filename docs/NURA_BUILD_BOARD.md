@@ -1166,3 +1166,15 @@ The user should review a stable story slice, not act as the team's error detecto
 - The journey’s former `POLICY AT A GLANCE` selectors and assertions were stale after the Insurance Registry moved to the Policy Dossier. They now verify the policy identity, source, summary, coverage, exclusions, missing details and approved-term disclosure actually rendered by the app.
 - A fresh 390 px reduced-motion Explore capture at `/private/tmp/nura-explore-current.png` shows the expanded source summary, on-device relevance note, Save/Ask actions and fixed tab bar. Full source text remains reachable; horizontal overflow checks passed at 360, 390 and 430 px. TypeScript, no-cache Expo lint and `git diff --check` pass.
 - This verifies local synthetic navigation and saved state, not live search freshness/provider ranking or whole-story acceptance. Strict totals remain **0/11 stories, 0/8 production gates, 0/19 packages**.
+### Bounded-memory privacy export — 5 October 2026
+
+- Export now prepares lazy readers for browser Blob and native file streams; it no longer reads all source files into byte arrays before creating the ZIP.
+- ZIP entries are emitted one at a time with data descriptors, incremental CRC-32, and a small in-memory central directory. Native output streams to an Expo FileSystem cache file before the existing share action. Browser output computes exact archive size before allocation and uses a 64 MiB preview cap, with a clear message if the cap is exceeded.
+- Verification: focused privacy export/storage **12/12**, complete browser journey **99/99** (including exact-byte match for all three originals and no private URI), repository suite **564/564**, TypeScript, no-cache lint, and diff checks pass.
+- The native device/share sheet is not available in this environment; that behavior remains unverified. This advances Privacy story 11 but does not close it or any production gate. Account/cloud export, verified deletion/retention and provider-aware withdrawal remain open.
+
+### Insurance extraction brief correction — 5 October 2026
+
+- Fixed section mapping that incorrectly treated the word “schedule” in a benefit quote as policy identity. Competing plan-tier terms are now called out as options needing confirmation; the app does not infer which tier the user has.
+- Simplified the pre-approval brief: policy sections are collapsed until opened, source evidence is on demand, and the duplicated candidate-term preview has been removed. Text and touch targets were increased for phone readability.
+- Verification: focused insurance extraction/snapshot **19/19**, repository suite **565/565**, reduced-motion browser journey **99/99**, TypeScript, no-cache Expo lint, and `git diff --check` pass. The journey uses synthetic records and currently does not include the user's multi-tier policy fixture; native visual review and extraction coverage for full real policies remain open. Strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages**.

@@ -7,7 +7,7 @@ import { Label, Surface } from '../src/components/Surface';
 import { clearLocalDemoProcessingData } from '../src/services/agentClient';
 import { getSourceClaims, retractAcceptedCandidate } from '../src/services/intakeClient';
 import { CONSENT_PURPOSE_LABELS, CONSENT_SCOPE_LABELS } from '../src/services/consentReceipts.mjs';
-import { buildNuraLocalExport, createNuraExportArchive } from '../src/services/privacyExport.mjs';
+import { buildNuraLocalExport, estimateNuraExportArchiveSize, MAX_BROWSER_EXPORT_BYTES, writeNuraExportArchive } from '../src/services/privacyExport.mjs';
 import { privacyStorageMap } from '../src/services/privacyStorageMap.mjs';
 import { readSavedSourceFilesForExport } from '../src/services/localSourceExport';
 import { getPrivacyConsentState, updatePrivacyConsentState, type PrivacyConsentState, type PrivacyPreferencePurpose } from '../src/services/privacyConsentClient';
@@ -315,24 +315,37 @@ export default function Privacy() {
           processingPreferences,
           sourceFiles,
         });
-        const archive = createNuraExportArchive(data, sourceFiles);
         const fileName = `nura-record-export-${new Date().toISOString().slice(0, 10)}-${Date.now()}.zip`;
         if (Platform.OS === 'web') {
           if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') throw new Error('This browser cannot create a local export file.');
-          const archiveBuffer = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer;
-          const url = URL.createObjectURL(new Blob([archiveBuffer], { type: 'application/zip' }));
+          if (estimateNuraExportArchiveSize(data, sourceFiles) > MAX_BROWSER_EXPORT_BYTES) {
+            throw new Error('This browser preview can prepare exports up to 64 MB. Your records are unchanged. Use the Nura mobile app to export this larger archive.');
+          }
+          const archiveParts: BlobPart[] = [];
+          let archiveSize = 0;
+          await writeNuraExportArchive(data, sourceFiles, (chunk) => {
+            archiveSize += chunk.byteLength;
+            if (archiveSize > MAX_BROWSER_EXPORT_BYTES) throw new Error('This browser preview can prepare exports up to 64 MB. Your records are unchanged. Use the Nura mobile app to export this larger archive.');
+            archiveParts.push(new Uint8Array(chunk).buffer);
+          });
+          const url = URL.createObjectURL(new Blob(archiveParts, { type: 'application/zip' }));
           const link = document.createElement('a');
           link.href = url;
           link.download = fileName;
           link.click();
           window.setTimeout(() => URL.revokeObjectURL(url), 1000);
         } else {
+          if (!await Sharing.isAvailableAsync()) throw new Error('The device share sheet is unavailable.');
           const file = new File(Paths.cache, fileName);
           file.create();
+          const writer = file.writableStream().getWriter();
           try {
-            file.write(archive);
-            if (!await Sharing.isAvailableAsync()) throw new Error('The device share sheet is unavailable.');
+            await writeNuraExportArchive(data, sourceFiles, (chunk) => writer.write(chunk));
+            await writer.close();
             await Sharing.shareAsync(file.uri, { mimeType: 'application/zip', dialogTitle: 'Export your Nura data' });
+          } catch (error) {
+            await writer.abort(error).catch(() => undefined);
+            throw error;
           } finally {
             if (file.exists) file.delete();
           }

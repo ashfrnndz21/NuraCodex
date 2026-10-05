@@ -1,8 +1,9 @@
-export function collectLocalSourceFiles(
+export type LocalExportSource = { assetId: string; sizeBytes: number; openStream: () => ReadableStream<Uint8Array> };
+export function prepareLocalSourceStreams(
   assets: Array<{ id: string; uri: string }>,
-  options: {
+  readers: {
     platform: string;
-    readBrowserFile?: (uri: string) => Promise<Uint8Array | ArrayBuffer | null>;
-    readDeviceFile?: (uri: string) => Promise<Uint8Array | ArrayBuffer | null>;
+    readBrowserFile?: (uri: string) => Promise<Blob | null>;
+    readDeviceFile?: (uri: string) => Promise<{ size: number | null; stream: () => ReadableStream<Uint8Array> } | null>;
   },
-): Promise<Array<{ assetId: string; bytes: Uint8Array }>>;
+): Promise<LocalExportSource[]>;
