@@ -237,7 +237,7 @@ export default function Services() {
   const relevanceRankedItems = useMemo(() => feedView === 'forYou'
     ? rankHealthFeedItemsByLocalContext(visibleItems, { topics: selectedTopics, facts, treatments, links, registryBriefs, recentQuestionCues: useRecentAskContext ? recentAskContext.questions : [] }, [name, email, phone])
     : visibleItems,
-  [agentMessages, askConversations, email, facts, feedView, links, name, phone, recentAskContext.questions, registryBriefs, selectedTopics, treatments, useRecentAskContext, visibleItems]);
+  [email, facts, feedView, links, name, phone, recentAskContext.questions, registryBriefs, selectedTopics, treatments, useRecentAskContext, visibleItems]);
   const searchedItems = useMemo(() => {
     const query = editionSearch.trim().toLowerCase();
     if (!query) return relevanceRankedItems;
