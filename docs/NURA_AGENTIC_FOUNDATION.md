@@ -4,7 +4,7 @@
 
 **Scope note:** this document describes the current local/demo foundation and its implementation boundary. It does not narrow the complete-build objective; production identity, privacy, persistence, safety, operations, and release gates are required by [NURA_COMPLETE_BUILD_SCOPE.md](NURA_COMPLETE_BUILD_SCOPE.md).
 
-**Scope boundary:** all examples in demo mode are synthetic. Never use real health records or real policy documents against the unauthenticated local-development server. Keep provider keys only in the backend environment; never use `EXPO_PUBLIC_` for secrets.
+**Scope boundary:** all examples in demo mode are synthetic. The local-development server now verifies a short-lived bearer for its single fictional profile, but the public preview code does not verify identity or isolate accounts. Never use real health records or real policy documents with this demo service or its configured provider. Keep provider keys only in the backend environment; never use `EXPO_PUBLIC_` for secrets.
 
 ## 1. Current foundation and gaps
 
@@ -25,7 +25,7 @@
 - Video/audio understanding (frames plus timestamped transcription), robust perceptual-image duplicate suggestions, batch intake, and a persistent source/claim registry shared with the mobile app.
 - Complete Insurance Registry and evidence-based coverage comparison; complete personalized cited health feed; medicine and visit workflows; clinically validated and jurisdiction-aware symptom routing; full registry/wiki pages and timeline reconciliation for corrections, conflicts and superseded values. Partial local demo flows already exist for insurance comparison and health search; production identities and complete story journeys do not.
 - Dedicated bounded specialist workers for policy analysis, health discovery and symptom routing; a versioned/replayable event service; formal orchestration and retrieval evaluation; and the remaining story-to-service integrations.
-- Production deployment, monitoring, retention controls and health-data security review. The local demo is single-profile and unauthenticated and must use synthetic examples only.
+- Production deployment, monitoring, retention controls and health-data security review. The local demo is single-profile with synthetic-only authentication and must use synthetic examples only.
 
 **Integration rule:** the project integration owner maintains the story → screen → service/tool → persisted state → public event → animation → acceptance map. A UI behavior becomes a connected feature only after its service event and persistence contract exist; design-only behavior stays explicitly labeled in the storyboard. The Nura runtime supervisor is separate: it routes one user request through consent, permitted retrieval/tools, evidence validation, answer, and approval before any durable write. Neither role may expose hidden model reasoning.
 
@@ -145,7 +145,7 @@ authenticate principal + active profile
 → render cited answer, uncertainty, missing evidence, and optional proposed write
 ```
 
-Never send an entire profile by default. Don’t treat topic selections as diagnoses. Don’t infer `false` from absent data. Use a per-run consent preview with categories/counts and explicit exclusions; backend re-checks consent and profile access on every tool call. The model gets only the compact authorized evidence needed for this intent. No raw DB access.
+Never send an entire profile by default. Don’t treat area selections as diagnoses; pass explicit diagnosis/condition bubbles only as user-reported context, never as verified clinical facts. Don’t infer `false` from absent data. Use a per-run consent preview with categories/counts and explicit exclusions; backend re-checks consent and profile access on every tool call. The model gets only the compact authorized evidence needed for this intent. No raw DB access.
 
 ## 4. Multimodal intake contract
 

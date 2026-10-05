@@ -113,7 +113,7 @@ Display only operational milestones that the app or agent service actually repor
 
 ## 5. Story 1 — Create a living 720 profile
 
-**Goal:** the first run starts with a real account, then turns the person’s own details, chosen topics, notes and records into a reviewed, source-linked profile. A selected topic is a tracking preference, not a diagnosis or a medical record.
+**Goal:** the first run starts with a real account, then turns the person’s own details, chosen topics, notes and records into a reviewed, source-linked profile. Selecting a main area says the person wants to follow it. Related context bubbles may also record a user report such as “I have a diagnosis or condition,” plus symptoms, medicines, treatment, or care; they remain self-reported context, not clinically verified facts or source records.
 
 **First-run sequence:** sign in → identify who the profile is for → add the minimum profile details → choose health topics → add historical sources and/or a plain-language note in one intake → review real AI results → save approved information → see the dated timeline → add insurance now or later.
 
@@ -147,9 +147,9 @@ Do not force a person to complete every topic before uploading. The topic cloud 
 
 **Hierarchy:** active profile owner → default **For me** → separate **Someone I care for** route → required profile name → demographics with a clear reason and progressive disclosure → continue.
 
-**Components:** “For me” owner card; distinct care-recipient card; required name field; country/region when needed; optional, purpose-explained date-of-birth/age and measurements; privacy note.
+**Components:** “For me” owner card; distinct care-recipient card; required display name, country, date of birth, height and weight; privacy note that distinguishes self-reported measurements from reviewed health records.
 
-**Interactions/states:** the active person is established before any records are attached. A caregiver route requires a separately authenticated, authorized person profile; never create a pretend-secure dependent profile. The profile name is required and must not be labelled optional. Ask for exact identity details only when needed to verify a document belongs to this person. Country/region is collected before country-specific insurance interpretation. Do not require height, weight, sex or full birth date merely to pass onboarding; request them when a feature has a clear need and explain it.
+**Interactions/states:** the active person is established before any records are attached. A caregiver route requires a separately authenticated, authorized person profile; never create a pretend-secure dependent profile. The profile name, country, date of birth, height and weight are required per the user's explicit onboarding direction. Explain that date of birth calculates the displayed age; height and weight are self-reported, editable profile measurements and are not diagnoses. Do not infer missing values or share these details without the user's scoped consent. Country/region is collected before country-specific insurance interpretation.
 
 **Motion:** choosing the owner anchors the identity node; the name appears there after save. No health nodes are preselected. Input changes update only the visible field until the user commits.
 
@@ -169,15 +169,15 @@ Do not force a person to complete every topic before uploading. The topic cloud 
 
 ### 1E. Add useful details without mistaking them for records
 
-**Hierarchy:** selected topic name → “What would be useful for Nura to know?” → topic-appropriate detail choices → add a short note or continue.
+**Hierarchy:** selected health area → related context bubbles (diagnosis or condition, symptoms, medicines, treatment/care, tests or changes) → add exact details in the shared note/file intake or continue.
 
-**Components:** detail choices grouped under the selected topic; “I have a result/report,” “I want to track a change,” “I take/use something,” “I have a question,” and “Other” as appropriate; plain-language note action.
+**Components:** context bubbles grouped under the selected area, including “I have a diagnosis or condition” as an explicit self-report signal, plus area-specific symptoms, medicines, tests, treatment and care; plain-language note action in the single health intake.
 
-**Interactions/states:** detail choices help organize the later intake; they do not claim a diagnosis and do not launch a scan/report upload by themselves. A chip labelled “X-ray or scan” is not an upload action. Real files enter through the single, explicit intake screen in 1F. One chosen topic’s details cannot overwrite another topic’s details.
+**Interactions/states:** area selection expresses interest; an explicit diagnosis/condition bubble records what the person reports, while remaining distinct from verified evidence. Context bubbles organize the later intake and do not launch a scan/report upload by themselves. A chip labelled “X-ray or scan” is not an upload action. Real files enter through the single, explicit intake screen in 1F. One chosen topic’s details cannot overwrite another topic’s details.
 
 **Motion:** the detail panel expands from the selected word-cloud node and retains the other selected topics in view. Switching topics changes the anchored panel in place. No pile of overlapping sheets.
 
-**Acceptance:** every topic/detail choice has a clear meaning; no selection is displayed as extracted, confirmed or current medical evidence.
+**Acceptance:** every topic/detail choice has a clear meaning; a user-selected diagnosis/condition signal is labeled as self-reported context; no bubble is displayed as source-extracted, clinically verified, or current unless the person or reviewed evidence supplies that status.
 
 ### 1F. Add records and your own description in one health intake
 
@@ -665,7 +665,9 @@ At every gate, share the working app/prototype, screenshots and short interactio
 
 ---
 
-## 20. Current app audit and design implications
+## 20. Historical app audit and design implications
+
+**Historical snapshot reviewed on 23 September 2026.** Keep this section as a dated design/build record; its route list and implementation notes are superseded by [`NURA_BUILD_AUDIT.md`](NURA_BUILD_AUDIT.md). The focus-area chooser described below as the shared `FocusCloud` prototype was later replaced by the live setup UI in `app/index.tsx`; the unused prototype has been removed.
 
 Current routes in Nura include:
 

@@ -1,37 +1,46 @@
 # Nura local intelligence demo
 
-This is a local, single-profile demonstration of sourced memory and agent activity. It is not a production health service. It binds to loopback only, refuses `NODE_ENV=production`, has no account authentication or cloud database, and stores metadata and reviewed claims in a private local JSON file. It does not provide production isolation between people.
+Nura’s current server is a loopback-only, single-profile development demo. It refuses `NODE_ENV=production`, uses a synthetic demo identity, and is not a production health service. It does not provide account identity, profile isolation, a cloud database, or production privacy controls.
 
 ## Configure and run
 
-1. Copy `.env.example` to `.env`; add the API key to `OPENAI_API_KEY` in the server environment only. Never use an `EXPO_PUBLIC_` variable for it.
-2. Run `npm run agent:dev` from the project folder, then start Expo as usual. A physical phone cannot reach a backend bound to `127.0.0.1`; do not expose it to a LAN as a workaround.
-3. The fallback model is `gpt-5.6-luna`; `NURA_MODEL` overrides `OPENAI_MODEL`. The model account must have API access to the selected model.
+1. Copy `.env.example` to `.env` and add `OPENAI_API_KEY` on the server only. Never put provider credentials in an `EXPO_PUBLIC_` variable.
+2. Run `npm run web` for the app plus loopback service at `http://localhost:8099`. `npm run web:expo` starts the interface without the service. For a separate mobile development session, run `npm run agent:dev` and start Expo. A phone cannot reach a backend bound to `127.0.0.1`; do not expose this demo to a LAN as a workaround.
+3. The default model is `gpt-5.6-luna`; `NURA_MODEL` overrides `OPENAI_MODEL`. The OpenAI project needs access to the selected model.
+4. Audio review is available when the OpenAI provider is configured. Set `NURA_ENABLE_AUDIO_INTAKE=false` to disable it. Each recording also requires a separate in-app approval; general file-review consent does not approve audio processing.
+5. Public health search remains off unless `NURA_HEALTH_SEARCH_ENABLED=true` and `NURA_ENABLE_DEMO_WEB_SEARCH=true`; Ask still requires explicit opt-in for that run. Explore’s YouTube search uses the separate server-only `NURA_YOUTUBE_DATA_API_KEY` and a trusted-channel list.
 
-## Working backend paths
+## Live provider-backed paths
 
-- `POST /v1/agent/runs`: per-run consent is required. The orchestration retrieves the selected profile facts, topics and user-authored links, and the accepted claims in the local demo repository. It streams SSE activity and emits only citations actually returned by the evidence tools. The server persists event envelopes without prompts, answers, filenames, health values or tool arguments.
-- `POST /v1/intake/extract`: accepts one PDF, JPEG, PNG or WEBP body up to 15 MiB by default. Requires `x-nura-consent-confirmed: true`. It computes SHA-256, detects exact duplicates, calls the configured Responses model, and saves extracted content only as review-required claims with page/quote provenance. Raw file bytes are used in memory for the request and are not persisted. The filename is source metadata, not an activity event.
-- `GET /v1/intake/sources/:id/claims`: reads a source and its review candidates.
-- `POST /v1/intake/claims/:id/decision`: accepts `{ "decision": "accept" }`, `{ "decision": "edit", "editedValue": { "label": "...", "value": "...", "unit": "...", "effectiveAt": "..." } }`, or `{ "decision": "reject" }`. The Expo review screen calls this endpoint; only it can turn a candidate into a user-confirmed assertion. Ask can retrieve accepted assertions.
-- Trusted health web search uses the provider's built-in web-search tool and a fixed domain allowlist. It requires both `NURA_HEALTH_SEARCH_ENABLED=true` and `NURA_ENABLE_DEMO_WEB_SEARCH=true`, plus explicit per-run opt-in. Leave it off for real personal records: external search is not an approved private health-data path. Search is general education only, never evidence about the user.
+- `POST /v1/agent/runs` requires per-run consent. Ask can retrieve the selected health records, health areas, links and separately selected care context. It streams activity, uses exact references returned by evidence tools, and keeps model proposals separate from saved facts. Broad health and personal cross-measure questions synthesize supported marker comparisons and same-date BMI context. Personal results still need units suitable for comparison; uncertain units are not classified.
+- `POST /v1/intake/extract` accepts configured document, image, audio and video types up to the local 15 MiB request cap. Medical and insurance policy extraction share the source-review flow. Extracted values remain pending suggestions with quotes and source locations until the user approves, edits or rejects them. The loopback repository saves source metadata, hashes, review candidates and decisions; it does not store uploaded file bytes.
+- Audio requires both the existing general file approval and the exact versioned audio approval header. The server checks duration locally, sends the recording to OpenAI for timestamped transcription, then sends transcript segments to OpenAI to suggest personal details. Only first-person details with an exact timestamped quote are eligible; third-party or unclear attributions are dropped. Transcript text is not persisted as a source. Suggestions remain pending for user review. The application does not analyze audio extracted from videos.
+- Video review samples up to six still frames and sends those frames for visible-text extraction. It preserves the sampled time on each candidate and ignores video audio. Video content is untrusted evidence; appearance, symptoms and advice are not inferred.
+- Explore combines trusted health articles with videos from configured, trusted YouTube channels. Video feed items require valid playable YouTube URLs and expose validated YouTube thumbnail URLs. Ask’s optional public-source lane uses a fixed domain allowlist. Neither public search lane is evidence about the user.
+- `/healthz` reports non-secret provider availability for Ask, file extraction, trusted search, YouTube and audio transcription.
 
-Exact file hashes and full source/claim content persist under `server/.nura-dev/repository.json` (or `NURA_DEMO_DATA_DIR`) for this local demo; the directory is ignored by Git. Use synthetic documents only. The adapter requests `store: false`, but provider data handling still applies. This is not an encrypted production data store.
+## Data and safety boundaries
 
-## Not implemented in this slice
+Exact file hashes, source metadata, extracted claims and user decisions persist in the private local demo repository under `server/.nura-dev/repository.json` (or `NURA_DEMO_DATA_DIR`). Provider requests use `store: false` where supported. That setting does not change provider data-handling terms. This repository is not an encrypted production store; use generated synthetic records for live evaluations.
 
-- No specialist coverage analysis; policy phrases may appear as generic extracted candidates, but there is no policy comparison workflow.
-- No specialized insurance-policy agent or coverage comparison; policy terms can appear as extracted candidates only.
-- No account identity, profile-level authorization/isolation, family permissions, cloud sync, production retention/deletion controls, or production compliance safeguards.
-- No video understanding. The Expo picker can select video, but the analysis flow rejects it. A later slice needs timestamped frame extraction plus audio transcription, preserving frame/timecode provenance through the same review-only claim flow; do not send a video as though it were a supported direct Responses input.
-- The current Expo flow handles one selected document per extraction. Batch intake and shared cloud source storage are not implemented.
-- No personalized health feed, external video ingestion, or care-team integrations.
+The server persists only safe event envelopes, not prompts, answers, filenames, health values or tool arguments. Provider error bodies are not shown to users. Activity milestones describe actual processing stages and do not claim access to hidden reasoning.
 
-Activity milestones report real server actions; they do not expose hidden model reasoning. Errors do not include provider response bodies. Synthetic Ask, PDF extraction, candidate review/acceptance, persisted retrieval and exact-duplicate smoke checks passed on 2026-09-23; no real health data was used. The image extraction path has not yet had its own live-file check.
+## Live AI quality evaluation
+
+Run `npm run eval:live-ai` after adding server-only provider keys. It calls configured live providers using generated synthetic data only and checks fourteen paths: overall-health Ask synthesis and citations, selected-video explanation and contextual follow-ups, policy-bounded Ask answers, urgent symptom safety, consented Explore personalization, PDF extraction, image extraction, sampled-video extraction, insurance-term extraction, consented audio transcription and suggestions, third-party audio attribution safety, Ask trusted-source search, playable Explore videos and thumbnails, and live YouTube search. It creates synthetic report files and speech in the system temporary directory and removes them afterward. `NURA_LIVE_AI_EVAL_FILTER` can select scenarios for focused debugging.
+
+This is a repeatable integration smoke and answer-quality check, not clinical validation or production acceptance. The live response remains subject to evidence quality, provider variability and clinician review. The media evaluation expects local `ffprobe`, `ffmpeg`, `pdftoppm`, and macOS `say` tools.
+
+## Still open for production
+
+- Production identity, profile-level authorization and owner isolation; the demo session is not a real account boundary.
+- Secure cloud storage and sync, account export/deletion, retention controls, provider-aware deletion and durable consent lifecycle.
+- Native-device file-picker, audio-approval, keyboard, safe-area, restart and accessibility acceptance.
+- Independent clinical, privacy, security, legal and operational review, plus all story and release-gate acceptance.
 
 ## Provider references
 
-- [Responses API streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming)
-- [OpenAI API quickstart](https://platform.openai.com/docs/quickstart/make-your-first-api-request)
-- [File inputs](https://developers.openai.com/api/docs/guides/file-inputs)
-- [Web search tool](https://developers.openai.com/api/docs/guides/tools-web-search)
+- [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
+- [OpenAI file inputs](https://developers.openai.com/api/docs/guides/file-inputs)
+- [OpenAI speech-to-text guide](https://developers.openai.com/api/docs/guides/speech-to-text)
+- [OpenAI web-search tool](https://developers.openai.com/api/docs/guides/tools-web-search)
