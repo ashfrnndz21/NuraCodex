@@ -82,6 +82,12 @@ export function healthMarkerValueNeedsReview(label, value) {
   return false;
 }
 
+/** Convert IFCC HbA1c (mmol/mol) to NGSP percent using the NGSP master equation. */
+export function convertHba1cIfccToNgspPercent(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? (0.09148 * number) + 2.152 : null;
+}
+
 /** Returns one current numeric snapshot per marker, newest first. */
 export function selectLatestMarkerSnapshots(facts = []) {
   const seenMarkers = new Set();
@@ -210,7 +216,7 @@ export function getHealthMarkerRangeGuide({ label, value, birthday, eventDate, a
     const unit = measure.unit;
     if (marker === 'hba1c') {
       if (!['%', 'percent', 'mmol/mol'].includes(unit)) return null;
-      const percent = unit === 'mmol/mol' ? (0.09148 * measure.number) + 2.152 : measure.number;
+      const percent = unit === 'mmol/mol' ? convertHba1cIfccToNgspPercent(measure.number) : measure.number;
       parsed = { value: percent, unit: unit === 'mmol/mol' ? 'mmol/mol' : '%' };
       max = 10;
       boundaries = [5.7, 6.5];

@@ -25,6 +25,7 @@ export function canonicalHealthMarker(label: string): string | null;
 export function getHealthMarkerUnitOptions(label: string): string[];
 export function healthMarkerUnitNeedsReview(label: string, unit: string): boolean;
 export function healthMarkerValueNeedsReview(label: string, value: string): boolean;
+export function convertHba1cIfccToNgspPercent(value: number | string): number | null;
 export function selectLatestMarkerSnapshots<T extends HealthMarkerFact>(facts: T[]): T[];
 export function selectHomeMarkerSnapshots<T extends HealthMarkerFact>(facts: T[]): T[];
 export function getHealthMarkerRangeGuide(input: {

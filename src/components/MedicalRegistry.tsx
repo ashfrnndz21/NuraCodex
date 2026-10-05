@@ -391,7 +391,7 @@ export function MedicalRegistry({ ready, topics, facts, assets, treatments, visi
                   <Text style={s.recordTitle}>{group.title}</Text>
                   {group.marker ? <>
                     <Text style={s.recordDetail}>One marker history · each value keeps its own date and source. No values are converted or combined.</Text>
-                    {group.hasSameDayDifferences ? <Text style={s.markerHistoryReview}>More than one value is recorded on the same date. Check the original report to confirm whether one corrects another; both entries stay saved until verified.</Text> : null}
+                    {group.sameDayStatus === 'equivalent' ? <Text style={s.markerHistoryReview}>These same-day values appear to express the same result in different units. Each entry stays linked to its original source.</Text> : group.sameDayStatus === 'needs_confirmation' ? <Text style={s.markerHistoryReview}>This marker has same-day entries with an unclear or incompatible unit. Check the original reports to confirm whether they are the same result or a correction; each original stays saved.</Text> : group.sameDayStatus === 'possible_difference' ? <Text style={s.markerHistoryReview}>Different values are recorded for the same date. Check the original reports to confirm whether these are separate results or a correction; both source-linked entries stay saved.</Text> : null}
                     <View style={s.markerHistoryList}>{group.records.map((record) => {
                       const parsedValue = record.detail.trim().match(/^-?\d+(?:[.,]\d+)?\s*(.*)$/);
                       const unitNeedsReview = healthMarkerUnitNeedsReview(record.title, parsedValue?.[1] ?? '');

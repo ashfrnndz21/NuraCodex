@@ -11,7 +11,7 @@ export type RegistryMarkerHistoryGroup<T extends RegistryHistoryItem = RegistryH
   marker: string | null;
   title: string;
   records: T[];
-  hasSameDayDifferences: boolean;
+  sameDayStatus: 'none' | 'equivalent' | 'needs_confirmation' | 'possible_difference';
 };
 
 export function groupRegistryMarkerHistory<T extends RegistryHistoryItem>(items?: T[]): RegistryMarkerHistoryGroup<T>[];

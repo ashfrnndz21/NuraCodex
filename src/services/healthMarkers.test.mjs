@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalHealthMarker, findHealthMarkerDiscrepancy, getHealthMarkerRangeGuide, getHealthMarkerUnitOptions, getHealthMarkersForTopic, healthMarkerUnitNeedsReview, healthMarkerValueNeedsReview, selectHomeMarkerSnapshots, selectLatestMarkerSnapshots } from './healthMarkers.mjs';
+import { canonicalHealthMarker, convertHba1cIfccToNgspPercent, findHealthMarkerDiscrepancy, getHealthMarkerRangeGuide, getHealthMarkerUnitOptions, getHealthMarkersForTopic, healthMarkerUnitNeedsReview, healthMarkerValueNeedsReview, selectHomeMarkerSnapshots, selectLatestMarkerSnapshots } from './healthMarkers.mjs';
 
 test('offers specific manual markers for a selected health area', () => {
   assert.deepEqual(getHealthMarkersForTopic('Cholesterol').map(({ label }) => label), [
@@ -126,6 +126,12 @@ test('converts lipid value units for the guide and withholds ranges when age, ma
   assert.equal(getHealthMarkerRangeGuide({ ...adult, label: 'cholesterol', value: '7.9 mmol/L' }), null);
   assert.equal(getHealthMarkerRangeGuide({ birthday: '2010-06-15', eventDate: '2026-10-02', label: 'LDL cholesterol', value: '128 mg/dL' }), null);
   assert.equal(getHealthMarkerRangeGuide({ ...adult, label: 'LDL cholesterol', value: '128 mmol/mol' }), null);
+});
+
+
+test('uses the NGSP master equation for IFCC HbA1c conversion', () => {
+  assert.equal(convertHba1cIfccToNgspPercent(41), 5.90268);
+  assert.equal(convertHba1cIfccToNgspPercent('not a number'), null);
 });
 
 test('uses safe common screening guides for HbA1c and fasting glucose in either supported unit', () => {
