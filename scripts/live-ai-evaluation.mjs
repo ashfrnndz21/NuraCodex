@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { runAgent } from '../server/agent/orchestrator.mjs';
-import { extractDocumentClaims, extractVideoClaims, getLanguageModel, getLanguageModelStatus, searchHealthFeedSources, searchHealthSources } from '../server/adapters/index.mjs';
+import { assessDocumentPurpose, extractDocumentClaims, extractVideoClaims, getLanguageModel, getLanguageModelStatus, searchHealthFeedSources, searchHealthSources } from '../server/adapters/index.mjs';
 import { createAudioIntakeProcessor } from '../server/adapters/audioIntake.mjs';
 import { createOpenAIAudioTranscriptionPort } from '../server/adapters/openaiAudioTranscription.mjs';
 import { suggestAudioClaims } from '../server/adapters/openaiResponses.mjs';
@@ -285,12 +285,13 @@ try {
   });
 
   await scenario('Insurance upload · wrong holiday document pauses before policy extraction', async () => {
-    const result = await extractDocumentClaims({ bytes: travelItinerary.bytes, filename: 'synthetic-holiday-itinerary.pdf', mediaType: 'application/pdf', purpose: 'insurance' });
-    const gated = gateClaimsOnDocumentPurpose({ expectedPurpose: 'insurance', segmentResults: result.documentPurposeSegments, claims: result.claims });
+    const assessment = await assessDocumentPurpose({ bytes: travelItinerary.bytes, filename: 'synthetic-holiday-itinerary.pdf', mediaType: 'application/pdf' });
+    const gated = gateClaimsOnDocumentPurpose({ expectedPurpose: 'insurance', segmentResults: assessment.documentPurposeSegments, claims: [] });
     assert.equal(gated.documentPurposeCheck.status, 'mismatch', 'the document should be recognized as travel rather than insurance');
     assert.equal(gated.confirmationRequired, true, 'the user must confirm the detected document purpose');
     assert.deepEqual(gated.claims, [], 'travel details must not enter policy extraction or the Insurance Registry');
-    return { detectedCategory: gated.documentPurposeCheck.kind, confirmationRequired: gated.confirmationRequired, claimsReleased: gated.claims.length };
+    assert.ok(assessment.documentPurposeSegments.length > 0, 'the category-only request must assess the generated full document');
+    return { model: providerStatus.model, stage: 'category_only', detectedCategory: gated.documentPurposeCheck.kind, confirmationRequired: gated.confirmationRequired, detailClaimsReleased: gated.claims.length };
   });
 
   await scenario('Health report image · visible result extraction', async () => {
