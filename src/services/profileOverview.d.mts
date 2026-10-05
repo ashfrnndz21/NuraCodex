@@ -26,7 +26,7 @@ export type ProfileOverviewTreatment = {
 export type ProfileOverviewAsset = {
   id: string;
   name: string;
-  kind?: 'image' | 'pdf' | 'video' | 'file';
+  kind?: 'audio' | 'image' | 'pdf' | 'video' | 'file';
   mimeType?: string;
   purpose?: string;
   addedAt?: string;
@@ -75,7 +75,7 @@ export type ProfileEvidenceRow = {
   details: ProfileEvidenceDetail[];
   sourceId?: string | null;
   assetIds?: string[];
-  sourceType?: 'pdf' | 'image' | 'video' | 'file';
+  sourceType?: 'audio' | 'pdf' | 'image' | 'video' | 'file';
   /** First local attachment date for the canonical source group. */
   addedAt?: string | null;
   counts?: ProfileEvidenceCounts;

@@ -6,10 +6,11 @@ import { router } from 'expo-router';
 import { usePreviewIdentity } from '../src/state/PreviewIdentityContext';
 import { previewIdentityInstructions } from '../src/services/previewIdentity.mjs';
 import { brandScenes, colors, motion } from '../src/theme';
+import { Atmosphere } from '../src/components/ambient/Atmosphere';
 import type { PreviewIdentityChallenge, PreviewIdentityChannel } from '../src/services/previewIdentity.mjs';
 
 export default function SignInScreen() {
-  const { ready, session, requestCode, verifyCode } = usePreviewIdentity();
+  const { ready, session, sessionWarning, requestCode, verifyCode } = usePreviewIdentity();
   const [channel, setChannel] = useState<PreviewIdentityChannel>('email');
   const [destination, setDestination] = useState(previewIdentityInstructions.email);
   const [challenge, setChallenge] = useState<PreviewIdentityChallenge | null>(null);
@@ -65,8 +66,7 @@ export default function SignInScreen() {
 
   return (
     <View style={styles.page}>
-      <LinearGradient pointerEvents="none" colors={brandScenes.atmosphere.colors} locations={brandScenes.atmosphere.locations} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      <LinearGradient pointerEvents="none" colors={[brandScenes.atmosphere.peachGlow, 'rgba(237,180,145,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.warmGlow} />
+      <Atmosphere />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.brandRow}>
@@ -76,6 +76,7 @@ export default function SignInScreen() {
           </View>
 
           <Animated.View style={[styles.main, { opacity: stepOpacity }]}>
+            {sessionWarning ? <Text accessibilityRole="alert" style={styles.sessionWarning}>{sessionWarning}</Text> : null}
             <Text style={styles.eyebrow}>{isCodeStep ? 'DEMO ACCESS' : 'WELCOME TO NURA'}</Text>
             <Text style={styles.title}>{header}</Text>
             <Text style={styles.intro}>{isCodeStep ? 'Your access code is ready. Enter it below to open the demo.' : 'Sign in to begin a personal health record that stays connected to the sources you choose.'}</Text>
@@ -156,7 +157,7 @@ const styles = StyleSheet.create({
   channelText: { color: '#F1E8F0', fontSize: 15, fontWeight: '600' },
   channelTextSelected: { color: colors.plum },
   fieldLabel: { color: '#E6D8E7', fontSize: 10, letterSpacing: 1.8, fontWeight: '700', marginBottom: 8 },
-  input: { backgroundColor: '#FFFBF7', color: colors.text, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)', minHeight: 54, paddingHorizontal: 16, fontSize: 16, marginBottom: 16 },
+  input: { backgroundColor: 'rgba(255,246,236,.08)', color: '#FFF8F0', borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,226,205,.34)', minHeight: 54, paddingHorizontal: 16, fontSize: 16, marginBottom: 16 },
   notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 20 },
   noticeMark: { color: colors.plum, fontSize: 13, fontWeight: '700', textAlign: 'center', width: 22, height: 22, lineHeight: 22, borderRadius: 12, backgroundColor: '#E7D8EE', overflow: 'hidden' },
   noticeText: { flex: 1, color: '#F5EDF5', fontSize: 12, lineHeight: 18 },
@@ -172,5 +173,6 @@ const styles = StyleSheet.create({
   secondaryButton: { alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 14, marginTop: 4 },
   secondaryText: { color: '#F1E7F1', fontSize: 14, fontWeight: '600' },
   error: { color: '#FFF2EB', fontSize: 13, lineHeight: 18, marginTop: 14, paddingHorizontal: 2 },
+  sessionWarning: { color: '#FFF0DC', fontSize: 12, lineHeight: 18, marginBottom: 16, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,210,160,0.35)', backgroundColor: 'rgba(92,55,45,0.28)' },
   footer: { color: 'rgba(255,249,244,0.6)', fontSize: 11, textAlign: 'center', marginTop: 32 },
 });

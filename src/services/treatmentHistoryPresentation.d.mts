@@ -1,4 +1,12 @@
 export type TreatmentHistorySnapshot = {
+  name?: string;
+  dose?: string;
+  schedule?: string;
+  purpose?: string;
+  prescriber?: string;
+  careLocation?: string;
+  pharmacy?: string;
+  startedOn?: string;
   status?: 'current' | 'past';
   endedOn?: string;
   source?: string;
@@ -15,7 +23,13 @@ export type TreatmentHistoryPresentation = {
   sourceAssetId: string | null;
 };
 
+export type TreatmentVersionField = { label: string; value: string };
+
 export declare function presentTreatmentHistoryEvent(
   event: TreatmentHistoryEvent,
   assets?: readonly TreatmentHistoryAsset[],
 ): TreatmentHistoryPresentation;
+
+export declare function presentTreatmentVersionFields(
+  snapshot?: TreatmentHistorySnapshot,
+): TreatmentVersionField[];

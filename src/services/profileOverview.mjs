@@ -1,10 +1,11 @@
-const sourceKinds = new Set(['pdf', 'image', 'video', 'file']);
+const sourceKinds = new Set(['audio', 'pdf', 'image', 'video', 'file']);
 
 function sourceType(asset) {
   const kind = typeof asset.kind === 'string' ? asset.kind.toLowerCase() : '';
   if (sourceKinds.has(kind)) return kind;
   const mediaType = typeof asset.mimeType === 'string' ? asset.mimeType.toLowerCase().split(';')[0].trim() : '';
   if (mediaType === 'application/pdf') return 'pdf';
+  if (mediaType.startsWith('audio/')) return 'audio';
   if (mediaType.startsWith('image/')) return 'image';
   if (mediaType.startsWith('video/')) return 'video';
   return 'file';
@@ -235,7 +236,7 @@ export function buildProfileEvidenceRows({ facts = [], assets = [], treatments =
 
 function displayRecordSourceName(name, type) {
   const filename = typeof name === 'string' ? name.trim() : '';
-  const fallback = type === 'image' ? 'Health image' : type === 'video' ? 'Health video' : type === 'pdf' ? 'Health document' : 'Health record';
+  const fallback = type === 'audio' ? 'Audio recording' : type === 'image' ? 'Health image' : type === 'video' ? 'Health video' : type === 'pdf' ? 'Health document' : 'Health record';
   if (!filename) return fallback;
   const readable = filename
     .replace(/^nura[-_]synthetic[-_]/i, '')

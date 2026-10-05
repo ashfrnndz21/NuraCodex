@@ -20,3 +20,23 @@ export function presentTreatmentHistoryEvent(event, assets = []) {
     sourceAssetId: attachedAsset?.id ?? null,
   };
 }
+
+/** Return the exact saved fields for reopening a dated version in the treatment history. */
+export function presentTreatmentVersionFields(snapshot = {}) {
+  const recordedValue = (value, fallback = 'Not recorded') =>
+    typeof value === 'string' && value.trim() ? value : fallback;
+  const fields = [
+    { label: 'MEDICINE / TREATMENT', value: recordedValue(snapshot.name, 'Name not recorded') },
+    { label: 'DOSE', value: recordedValue(snapshot.dose, 'Dose not recorded') },
+    { label: 'SCHEDULE', value: recordedValue(snapshot.schedule, 'Schedule not recorded') },
+    { label: 'PURPOSE', value: recordedValue(snapshot.purpose, 'Purpose not recorded') },
+    { label: 'PRESCRIBER', value: recordedValue(snapshot.prescriber, 'Prescriber not recorded') },
+    { label: 'CARE LOCATION', value: recordedValue(snapshot.careLocation, 'Care location not recorded') },
+    { label: 'PHARMACY', value: recordedValue(snapshot.pharmacy, 'Pharmacy not recorded') },
+    { label: 'STARTED ON', value: recordedValue(snapshot.startedOn, 'Start date not recorded') },
+  ];
+  if (snapshot.status === 'past') {
+    fields.push({ label: 'ENDED ON', value: recordedValue(snapshot.endedOn, 'End date not recorded') });
+  }
+  return fields;
+}

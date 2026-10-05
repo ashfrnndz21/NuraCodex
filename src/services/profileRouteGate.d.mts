@@ -2,6 +2,7 @@ export type ProfileRouteEvidence = {
   name?: string;
   country?: string;
   birthday?: string;
+  setupProgress?: { started?: boolean; complete?: boolean };
   topics?: unknown[];
   facts?: unknown[];
   assets?: unknown[];

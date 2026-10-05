@@ -33,6 +33,16 @@ test('keeps file-only sources distinct from saved details without claiming the f
   assert.equal(rows[1].state, 'ADDED BY YOU');
 });
 
+test('preserves audio as a distinct local source type in the profile overview', () => {
+  const rows = buildProfileEvidenceRows({
+    assets: [{ id: 'audio-1', name: 'visit-notes.m4a', kind: 'audio', purpose: 'medical', addedAt: '2026-09-24T10:00:00.000Z' }],
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].sourceType, 'audio');
+  assert.equal(rows[0].state, 'FILE SAVED');
+  assert.match(rows[0].summary, /No extracted details are linked/);
+});
+
 test('does not claim a saved source with no reviewed details is linked evidence', () => {
   const rows = buildProfileEvidenceRows({
     assets: [{ id: 'asset-1', name: 'follow-up.pdf', kind: 'pdf', purpose: 'medical', serverSourceId: 'source-empty' }],
