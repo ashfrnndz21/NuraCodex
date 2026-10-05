@@ -99,11 +99,11 @@ function activityFromEvent(type: string, data: Record<string, unknown>, sequence
   const audio = typeof data.mediaType === 'string' && data.mediaType.startsWith('audio/');
   const labels: Record<string, string> = {
     intake_started: audio ? 'Preparing your recording' : localSample ? insuranceSample ? 'Checking the example policy' : 'Checking the example report' : insurancePurpose ? 'Preparing your policy file' : 'Preparing your file', source_received: audio ? 'Recording ready' : localSample ? insuranceSample ? 'Example policy ready' : 'Example report ready' : insurancePurpose ? 'Policy file ready for reading' : 'File ready for reading',
-    duplicate_detected: 'This file is already in your records', health_area_context_applied: `Considering ${getHealthAreaContext(typeof data.areaId === 'string' ? data.areaId : '')?.label ?? 'your selected area'} as a reading hint`, extraction_started: audio ? 'Checking recording length' : insurancePurpose ? 'Reading your policy document' : 'Reading your document',
+    duplicate_detected: 'This file is already in your records', health_area_context_applied: `Considering ${getHealthAreaContext(typeof data.areaId === 'string' ? data.areaId : '')?.label ?? 'your selected area'} as a reading hint`, document_purpose_check_started: insurancePurpose ? 'Checking the policy file category across its pages' : 'Checking the health file category across its pages', document_purpose_check_completed: 'Document category check complete', extraction_started: audio ? 'Checking recording length' : insurancePurpose ? 'Reading your policy document' : 'Reading your document',
     audio_transcription_started: 'Transcribing your recording', audio_transcription_completed: `Transcription ready · ${typeof data.segmentCount === 'number' ? data.segmentCount : 'Timestamped'} sections`, audio_suggestions_started: 'Preparing details for your review', audio_suggestions_completed: `${typeof data.suggestionCount === 'number' ? data.suggestionCount : 'Suggested'} health details ready for review`,
     video_sampling_started: 'Finding clear moments in the video', video_frames_ready: `${typeof data.frameCount === 'number' ? data.frameCount : 'Selected'} moments ready`, video_extraction_started: 'Reading visible details from those moments',
     purpose_confirmation_required: 'Check the document category before details are read',
-    extraction_completed: audio ? 'Recording details ready to review' : localSample ? insuranceSample ? 'Policy terms ready to review' : 'Report details ready to review' : insurancePurpose ? 'Policy reading complete' : 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} ${audio ? 'health details' : insurancePurpose ? 'policy terms' : 'details'} are ready for your review`,
+    extraction_completed: data.state === 'purpose_confirmation_required' ? 'Category checked; details were not read' : audio ? 'Recording details ready to review' : localSample ? insuranceSample ? 'Policy terms ready to review' : 'Report details ready to review' : insurancePurpose ? 'Policy reading complete' : 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} ${audio ? 'health details' : insurancePurpose ? 'policy terms' : 'details'} are ready for your review`,
     intake_completed: audio ? 'Your recording source is ready' : insurancePurpose ? 'Your policy source is ready' : 'Your file is ready', intake_cancelled: 'Reading stopped at your request', run_error: 'Nura couldn’t read this file. Check it and try again.',
   };
   const label = localSample && type === 'extraction_started' ? insuranceSample ? 'Organizing policy terms' : 'Organizing report details'
@@ -289,7 +289,7 @@ export async function extractPickedFile(asset: { uri: string; name: string; mime
     const localSampleFixture = mimeType === 'application/pdf' && isLocalSampleFixtureId(asset.localSampleFixtureId, purpose) ? asset.localSampleFixtureId : undefined;
     if (localSampleFixture) xhr.setRequestHeader('x-nura-local-sample-fixture', localSampleFixture);
     xhr.setRequestHeader('accept', 'text/event-stream');
-    xhr.timeout = 120_000;
+    xhr.timeout = 240_000;
     xhr.onprogress = consume;
     xhr.onload = () => { void finish(); };
     xhr.onerror = () => fail(new Error('Nura could not reach the local file-reading service.'));

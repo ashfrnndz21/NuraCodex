@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { createResponse as openAIResponse, extractDocumentClaims as openAIExtract, extractVideoFrameClaims as openAIVideoExtract, getOpenAIStatus, searchHealthArticles as openAIArticleSearch, searchHealthSources as openAISearch, suggestAudioClaims as openAISuggestAudioClaims } from './openaiResponses.mjs';
+import { assessDocumentPurpose as openAIAssessDocumentPurpose, createResponse as openAIResponse, extractDocumentClaims as openAIExtract, extractVideoFrameClaims as openAIVideoExtract, getOpenAIStatus, searchHealthArticles as openAIArticleSearch, searchHealthSources as openAISearch, suggestAudioClaims as openAISuggestAudioClaims } from './openaiResponses.mjs';
 import { LanguageModelUnavailableError } from '../ports/LanguageModel.mjs';
 import { sampleVideoFrames } from './videoProcessor.mjs';
 import { extractLocalSampleReport, LocalSampleMismatchError, resolveLocalSampleReport, verifyLocalSampleReport } from './localSampleReports.mjs';
@@ -55,6 +55,7 @@ export function getLanguageModelStatus() {
 }
 
 export function extractDocumentClaims(input) { return openAIExtract(input); }
+export function assessDocumentPurpose(input) { return openAIAssessDocumentPurpose(input); }
 export function extractLocalSampleDocument(input) { return resolveLocalSampleReport(input); }
 export function verifyLocalSampleDocument(input) { return verifyLocalSampleReport(input); }
 export function mapLocalSampleDocument(input) { return extractLocalSampleReport(input); }

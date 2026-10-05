@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Buffer } from 'node:buffer';
 import { PDFDocument } from 'pdf-lib';
-import { createResponse, excludeDocumentContextDuplicates, extractDocumentClaims, healthAreaContextInstruction, HEALTH_SEARCH_DOMAINS, HealthSearchConfigurationError, HealthVideoSearchUnavailableError, mapVideoFrameClaims, searchHealthSources, separateGeneralMedicalNotes } from './openaiResponses.mjs';
+import { assessDocumentPurpose, createResponse, excludeDocumentContextDuplicates, extractDocumentClaims, healthAreaContextInstruction, HEALTH_SEARCH_DOMAINS, HealthSearchConfigurationError, HealthVideoSearchUnavailableError, mapVideoFrameClaims, searchHealthSources, separateGeneralMedicalNotes } from './openaiResponses.mjs';
 import { INTAKE_MEDIA_TYPES_BY_EXTENSION, INTAKE_MIME_EXTENSIONS, resolveSupportedIntakeMediaType } from '../../src/services/intakeFileTypes.mjs';
 
 const emptyDocumentExtraction = () => ({
@@ -133,6 +133,49 @@ test('reports a clear split-file recovery when a document still exceeds the boun
       extractDocumentClaims({ bytes: Buffer.from('synthetic'), filename: 'long.pdf', mediaType: 'application/pdf' }),
       /Split it into smaller documents and retry\. No claims were saved\./,
     );
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousApiKey;
+  }
+});
+
+test('classifies every PDF segment in a category-only pass with no extraction fields in the response schema', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousApiKey = process.env.OPENAI_API_KEY;
+  const pdf = await PDFDocument.create();
+  for (let index = 0; index < 7; index += 1) pdf.addPage([612, 792]);
+  const bytes = Buffer.from(await pdf.save());
+  const requests = [];
+  process.env.OPENAI_API_KEY = 'synthetic-test-key';
+  globalThis.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    requests.push(request);
+    return { ok: true, json: async () => ({ status: 'completed', output_text: JSON.stringify({ documentAssessment: { category: 'travel_document', confidence: 0.91 } }) }) };
+  };
+  try {
+    const result = await assessDocumentPurpose({ bytes, filename: 'holiday.pdf', mediaType: 'application/pdf' });
+    assert.equal(requests.length, 2, 'all seven pages are checked in two five-page-bounded batches');
+    assert.deepEqual(result.documentPurposeSegments, [
+      { category: 'travel_document', confidence: 0.91 },
+      { category: 'travel_document', confidence: 0.91 },
+    ]);
+    const segmentInstructions = [];
+    for (const request of requests) {
+      assert.equal(request.store, false);
+      assert.equal(request.max_output_tokens, 300);
+      assert.equal(request.text.format.name, 'nura_document_purpose');
+      assert.deepEqual(request.text.format.schema.required, ['documentAssessment']);
+      assert.deepEqual(Object.keys(request.text.format.schema.properties), ['documentAssessment']);
+      const file = request.input[0].content.find((part) => part.type === 'input_file');
+      assert.ok(file);
+      assert.equal(file.detail, 'high');
+      const instruction = request.input[0].content.filter((part) => part.type === 'input_text').map((part) => part.text).join('\n');
+      assert.match(instruction, /classification-only first pass/);
+      segmentInstructions.push(instruction);
+    }
+    assert.match(segmentInstructions[0], /original PDF pages 1–5/);
+    assert.match(segmentInstructions[1], /original PDF pages 6–7/);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousApiKey === undefined) delete process.env.OPENAI_API_KEY;

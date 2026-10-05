@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { getLanguageModel, getLanguageModelStatus, getYouTubeVideoSearchStatus, extractDocumentClaims, mapLocalSampleDocument, verifyLocalSampleDocument, LocalSampleMismatchError, HealthSearchConfigurationError, HealthVideoSearchUnavailableError, extractVideoClaims, searchHealthFeedSources, getAudioIntakeProcessor } from './adapters/index.mjs';
+import { getLanguageModel, getLanguageModelStatus, getYouTubeVideoSearchStatus, assessDocumentPurpose, extractDocumentClaims, mapLocalSampleDocument, verifyLocalSampleDocument, LocalSampleMismatchError, HealthSearchConfigurationError, HealthVideoSearchUnavailableError, extractVideoClaims, searchHealthFeedSources, getAudioIntakeProcessor } from './adapters/index.mjs';
 import { gateClaimsOnDocumentPurpose, isRetryableEmptySource } from './agent/documentPurpose.mjs';
 import { getHealthAreaContext } from '../src/services/healthAreaContext.mjs';
 import { sanitizePublicHealthTopics } from '../src/services/healthSearchTopic.mjs';
@@ -136,8 +136,8 @@ function displayForEvent(type, data) {
   }
   const labels = {
     run_started: 'Nura started this request', run_finished: 'Nura completed this request', run_error: 'Nura could not complete this request', feed_items: 'Trusted health sources are ready',
-    intake_started: insurancePurpose ? 'Preparing the policy source' : 'Preparing the selected source', source_received: insurancePurpose ? 'Policy source received for this local demo' : 'Source received for this local demo', duplicate_detected: 'An exact duplicate was found',
-    extraction_started: insurancePurpose ? 'Reading the policy document' : 'Reading the selected document', extraction_completed: insurancePurpose ? 'Policy document reading completed' : 'Document extraction completed',
+    intake_started: insurancePurpose ? 'Preparing the policy source' : 'Preparing the selected source', source_received: insurancePurpose ? 'Policy source received for this local demo' : 'Source received for this local demo', duplicate_detected: 'An exact duplicate was found', document_purpose_check_started: insurancePurpose ? 'Checking the policy document category across its pages' : 'Checking the health document category across its pages', document_purpose_check_completed: 'Document category check complete',
+    extraction_started: insurancePurpose ? 'Reading the policy document' : 'Reading the selected document', extraction_completed: data?.state === 'purpose_confirmation_required' ? 'Category checked; detail reading paused' : insurancePurpose ? 'Policy document reading completed' : 'Document extraction completed',
     video_sampling_started: 'Selecting clear moments from the video', video_frames_ready: 'Video moments are ready for review', video_extraction_started: 'Reading visible details in the selected moments',
     claims_ready_for_review: insurancePurpose ? 'Policy suggestions are ready for your review' : 'Extracted items are ready for your review', intake_completed: insurancePurpose ? 'Policy source review is ready' : 'The selected source is ready', intake_cancelled: 'File processing stopped', review_completed: 'Your review was saved', self_report_started: 'Nura organized a description locally', self_report_completed: 'Quoted suggestions are ready for review', trace: 'Nura updated its activity', evidence: 'Nura checked selected evidence', answer: 'Nura prepared an answer',
   };
@@ -248,7 +248,8 @@ async function handleExtraction(request, response, operation = null) {
     if (healthAreaContext && !localSample && !contentType.startsWith('video/')) emit('health_area_context_applied', { sourceId, areaId: healthAreaContext.id, areaLabel: healthAreaContext.label });
     await localDemoRepository.setSourceState(sourceId, 'extracting', { documentPurpose: effectivePurpose });
     const isVideo = contentType.startsWith('video/');
-    emit('extraction_started', isAudio
+    const categoryCheckBeforeDetails = !isAudio && !isVideo && !localSample && !purposeConfirmed;
+    emit(categoryCheckBeforeDetails ? 'document_purpose_check_started' : 'extraction_started', isAudio
       ? syntheticAudioFixture
         ? { sourceId, mediaType: contentType, processingMode, processor: 'synthetic_test_only', externalProviderCall: false }
         : { sourceId, mediaType: contentType, processingMode, provider: 'openai_audio_transcriptions_and_responses', realProviderCall: true }
@@ -270,10 +271,25 @@ async function handleExtraction(request, response, operation = null) {
         },
       });
     } else if (!localSample) {
-      extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: effectivePurpose, purposeConfirmed, signal: abortController.signal, healthAreaLabel: healthAreaContext?.label });
+      let categoryAssessment = null;
+      if (!purposeConfirmed) {
+        categoryAssessment = await assessDocumentPurpose({ bytes, filename, mediaType: contentType, signal: abortController.signal });
+        const categoryGate = gateClaimsOnDocumentPurpose({ expectedPurpose: effectivePurpose, segmentResults: categoryAssessment.documentPurposeSegments, claims: [] });
+        documentPurposeCheck = categoryGate.documentPurposeCheck;
+        emit('document_purpose_check_completed', { sourceId, documentPurpose: effectivePurpose, documentPurposeCheck });
+        if (categoryGate.confirmationRequired) {
+          purposeConfirmationRequired = true;
+          extraction = { claims: [], documentContext: { documentType: null, dates: [], entities: [], notes: [] }, documentPurposeSegments: categoryAssessment.documentPurposeSegments };
+        }
+      }
+      if (!purposeConfirmationRequired) {
+        if (categoryAssessment || purposeConfirmed) emit('extraction_started', { sourceId, mediaType: contentType, documentPurpose: effectivePurpose, provider: 'openai_responses', realProviderCall: true });
+        extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: effectivePurpose, purposeConfirmed, purposePrechecked: Boolean(categoryAssessment), signal: abortController.signal, healthAreaLabel: healthAreaContext?.label });
+        if (categoryAssessment) extraction.documentPurposeSegments = categoryAssessment.documentPurposeSegments;
+      }
       const purposeGate = gateClaimsOnDocumentPurpose({ expectedPurpose: effectivePurpose, segmentResults: extraction.documentPurposeSegments, claims: extraction.claims, purposeConfirmed });
-      documentPurposeCheck = purposeGate.documentPurposeCheck;
-      purposeConfirmationRequired = purposeGate.confirmationRequired;
+      documentPurposeCheck = documentPurposeCheck ?? purposeGate.documentPurposeCheck;
+      purposeConfirmationRequired = purposeConfirmationRequired || purposeGate.confirmationRequired;
       extraction.claims = purposeGate.claims;
     }
     if (abortController.signal.aborted) {

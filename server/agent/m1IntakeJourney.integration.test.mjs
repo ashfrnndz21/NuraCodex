@@ -89,6 +89,9 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
     const attempts = new Map();
     const outputFor = (filename) => {
       const common = { documentType: 'Fictional sample laboratory report', dates: [], entities: [], notes: [] };
+      if (filename.toLowerCase().includes('holiday')) return { claims: [
+        { kind: 'coverage_term', label: 'Annual medical limit', value: 'SGD 100,000', unit: null, referenceRange: null, method: null, effectiveAt: null, confidence: 0.9, page: 1, quote: 'Annual medical limit: SGD 100,000' },
+      ], documentContext: { ...common, documentType: 'Fictional sample insurance policy' }, documentAssessment: { category: 'insurance_policy', confidence: 0.94 } };
       if (filename.toLowerCase().includes('january')) return { claims: [
         { kind: 'measurement', label: 'Total cholesterol', value: '4.2', unit: 'mmol/L', referenceRange: null, method: null, effectiveAt: '2026-01-12', confidence: 0.9, page: 1, quote: 'Total cholesterol 4.2 mmol/L on 2026-01-12' },
         { kind: 'measurement', label: 'LDL cholesterol', value: '2.8', unit: 'mmol/L', referenceRange: null, method: null, effectiveAt: '2026-01-12', confidence: 0.9, page: 1, quote: 'LDL cholesterol 2.8 mmol/L on 2026-01-12' },
@@ -111,7 +114,8 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
         const attempt = (attempts.get(filename) ?? 0) + 1;
         attempts.set(filename, attempt);
         const encodedNoteIncluded = String(options.body).includes(process.env.NURA_TEST_NOTE_MARKER);
-        appendFileSync(process.env.NURA_SYNTHETIC_INTERCEPT_LOG, JSON.stringify({ filename, attempt, noteTextIncluded: encodedNoteIncluded }) + '\\n');
+        const purposeOnly = request.text?.format?.name === 'nura_document_purpose';
+        appendFileSync(process.env.NURA_SYNTHETIC_INTERCEPT_LOG, JSON.stringify({ filename, attempt, purposeOnly, noteTextIncluded: encodedNoteIncluded }) + '\\n');
         if (filename.includes('retry') && attempt === 1) return new Response(JSON.stringify({ error: { message: 'synthetic first-attempt extraction failure' } }), { status: 503 });
         if (filename.includes('cancel')) return await new Promise((resolve, reject) => {
           const signal = options.signal;
@@ -120,7 +124,10 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
           signal?.addEventListener('abort', onAbort, { once: true });
           const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(new Response(JSON.stringify({ output_text: JSON.stringify(outputFor(filename)) }), { status: 200, headers: { 'content-type': 'application/json' } })); }, 10_000);
         });
-        return new Response(JSON.stringify({ output_text: JSON.stringify(outputFor(filename)) }), { status: 200, headers: { 'content-type': 'application/json' } });
+        const output = purposeOnly
+          ? { documentAssessment: { category: filename.toLowerCase().includes('holiday') ? 'travel_document' : 'medical_record', confidence: 0.94 } }
+          : outputFor(filename);
+        return new Response(JSON.stringify({ output_text: JSON.stringify(output) }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       if (typeof url === 'string' && url.startsWith('https://')) {
         appendFileSync(process.env.NURA_EXTERNAL_ATTEMPT_LOG, url + '\\n');
@@ -169,9 +176,9 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
       const decoder = new TextDecoder();
       let stream = '';
       let sourceId = '';
-      while (!stream.includes('event: extraction_started')) {
+      while (!stream.includes('event: document_purpose_check_started')) {
         const { value, done } = await reader.read();
-        if (done) throw new Error('The cancel fixture ended before extraction started.');
+        if (done) throw new Error('The cancel fixture ended before the category check started.');
         stream += decoder.decode(value, { stream: true });
         const sourceEvent = parseSse(stream).find((event) => event.type === 'source_received');
         sourceId = sourceEvent?.data?.sourceId ?? sourceId;
@@ -212,6 +219,45 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
   const completedSources = firstBatch.filter((item) => item.status === 'complete').map((item) => item.value.source);
   assert.equal(completedSources.length, 2);
   assert.ok(completedSources.every((source) => source.origin === 'document_extraction' && source.state === 'candidate_review'));
+
+  const holidayBytes = fixturePdf('holiday itinerary with flights, hotels, and daily activities');
+  const uploadHoliday = async (confirmCategory = false) => fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/extract`, server.authorization, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/pdf',
+      'x-nura-file-name': encodeURIComponent('Holiday itinerary.pdf'),
+      'x-nura-document-purpose': 'insurance',
+      'x-nura-consent-confirmed': 'true',
+      ...(confirmCategory ? { 'x-nura-document-purpose-confirmed': 'insurance' } : {}),
+    },
+    body: holidayBytes,
+  });
+  const categoryOnlyResponse = await uploadHoliday();
+  const categoryOnlyEvents = parseSse(await categoryOnlyResponse.text());
+  const categoryOnlyTerminal = categoryOnlyEvents.find((event) => event.type === 'intake_completed');
+  const holidaySourceId = categoryOnlyTerminal?.data?.sourceId;
+  assert.ok(holidaySourceId, 'the category check must create a source that the person can confirm, change, or remove');
+  assert.ok(categoryOnlyEvents.some((event) => event.type === 'document_purpose_check_completed'));
+  assert.equal(categoryOnlyEvents.some((event) => event.type === 'extraction_started'), false, 'a mismatch must stop before detail extraction starts');
+  assert.equal(categoryOnlyTerminal.data.state, 'purpose_confirmation_required');
+  const unconfirmedResponse = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(holidaySourceId)}/claims`, server.authorization);
+  const unconfirmed = await unconfirmedResponse.json();
+  assert.equal(unconfirmed.source.state, 'purpose_confirmation_required');
+  assert.equal(unconfirmed.source.documentPurposeCheck.kind, 'travel_document');
+  assert.equal(unconfirmed.claims.length, 0, 'the category-only response must not create or save health or policy details');
+  let holidayCalls = (await readFile(interceptedLog, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)).filter((call) => call.filename === 'Holiday itinerary.pdf');
+  assert.deepEqual(holidayCalls.map((call) => call.purposeOnly), [true], 'the mismatched file gets exactly one category-only provider call before user confirmation');
+
+  const confirmedResponse = await uploadHoliday(true);
+  const confirmedEvents = parseSse(await confirmedResponse.text());
+  const confirmedTerminal = confirmedEvents.find((event) => event.type === 'intake_completed');
+  assert.equal(confirmedTerminal?.data?.sourceId, holidaySourceId, 'confirmation retries the same source');
+  assert.equal(confirmedTerminal?.data?.state, 'candidate_review');
+  const confirmedClaimsResponse = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(holidaySourceId)}/claims`, server.authorization);
+  const confirmedClaims = await confirmedClaimsResponse.json();
+  assert.deepEqual(confirmedClaims.claims.map((claim) => [claim.label, claim.value]), [['Annual medical limit', 'SGD 100,000']], 'detail extraction starts only after explicit category confirmation');
+  holidayCalls = (await readFile(interceptedLog, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)).filter((call) => call.filename === 'Holiday itinerary.pdf');
+  assert.deepEqual(holidayCalls.map((call) => call.purposeOnly), [true, false]);
 
   const retryAsset = stagedFiles.find((file) => file.id === 'file-retry');
   const retryBatch = await processIntakeBatch([retryAsset], (asset) => processFile(asset, new AbortController().signal));

@@ -1,5 +1,11 @@
 # Nura build board
 
+## 5 October 2026 — approved two-stage insurance check and end-to-end status
+
+- **Passed:** insurance files now receive a separate category-only check across every page before detailed extraction. A likely wrong or uncertain category pauses the upload with no claims; a user confirmation is required before the detail-reading request. The confirmation stays attached to the same saved source, and the consent screen describes the transfer and pause.
+- **Verification:** document-purpose/extraction **26/26**; intake integration **1/1**; repository suite **563/563**; reduced-motion synthetic browser journey **99/99**; typecheck, no-cache lint and `git diff --check` pass. Browser rehearsal covers connected journeys across setup, Home/Health, markers, registries, Explore, Ask, Insurance, Care, Privacy, and session re-entry.
+- **Limit:** this is end-to-end synthetic web evidence, not proof that every product story is accepted. We did not run live-provider evaluation for the newly split request or native-device acceptance. Strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages**. Production identity and owner isolation, secure cloud storage/sync, family profiles, provider-aware deletion/retention, native accessibility/device checks, operations, and independent clinical/privacy/security review remain open.
+
 ## 5 October 2026 — production startup guard and dependency triage
 
 - **Passed:** the synthetic local API is regression-tested to exit before listening when `NODE_ENV=production` or when configured to bind a public address. Focused session-auth integration passes **2/2**; repository suite **562/562**; TypeScript, lint and diff checks pass.
