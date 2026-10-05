@@ -74,11 +74,16 @@ async function runServerStartupGuard(overrides) {
   });
   let stderr = '';
   child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+  let timedOut = false;
+  const timeout = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, 2_000);
+  const forceKill = setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL'); }, 3_500);
   const result = await new Promise((resolveResult, rejectResult) => {
     child.once('error', rejectResult);
     child.once('close', (code, signal) => resolveResult({ code, signal, stderr }));
   });
-  return result;
+  clearTimeout(timeout);
+  clearTimeout(forceKill);
+  return { ...result, timedOut };
 }
 
 const sampleSignIn = () => ({
@@ -89,10 +94,12 @@ const sampleSignIn = () => ({
 
 test('development API fails closed in production and for non-loopback binds', async () => {
   const production = await runServerStartupGuard({ NODE_ENV: 'production', NURA_BIND_HOST: '127.0.0.1' });
+  assert.equal(production.timedOut, false, 'production mode must be refused before a server can start listening');
   assert.notEqual(production.code, 0, 'the synthetic development server must not start in production mode');
   assert.match(production.stderr, /cannot be started in production/i);
 
   const publicBind = await runServerStartupGuard({ NODE_ENV: 'test', NURA_BIND_HOST: '0.0.0.0' });
+  assert.equal(publicBind.timedOut, false, 'public network binding must be refused before a server can start listening');
   assert.notEqual(publicBind.code, 0, 'the synthetic development server must refuse a public network bind');
   assert.match(publicBind.stderr, /binds to loopback only/i);
 });
