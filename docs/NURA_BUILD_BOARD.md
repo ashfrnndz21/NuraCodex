@@ -1,5 +1,11 @@
 # Nura build board
 
+## 5 October 2026 — Explore summary disclosure verified
+
+- **Passed:** Explore’s mobile card preview exposes “Read full summary” for longer supplied summaries, and expanding it reveals the final source sentence. This covers the case where a five-line preview could visually truncate text before the old character-only control appeared.
+- The reduced-motion connected Health → Insurance → Ask rehearsal passes **123/123**; the full repository suite passes **561/561**; TypeScript, no-cache lint and `git diff --check` pass.
+- This verifies text supplied by the source/provider; it cannot recover material the source itself did not provide. Whole-build acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages**.
+
 ## 5 October 2026 — insurer response journey verified
 
 - **Passed:** the connected browser flow records an insurer’s reply as user-reported, ties it to the exact accepted policy claim, keeps it out of AI context, edits it across reload, and removes it without changing the policy record.
