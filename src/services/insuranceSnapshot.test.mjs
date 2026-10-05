@@ -187,12 +187,14 @@ test('organizes source-quoted extracted insurance terms into a stable coverage r
       extractedPolicyClaim('Claims notification deadline', '30 days'),
       extractedPolicyClaim('HbA1c', '5.8%', { kind: 'measurement' }),
     ],
-    documentContext: { documentType: 'Medical insurance policy', entities: [{ kind: 'insurer', value: 'Example Mutual' }] },
+    documentContext: { documentType: 'Medical insurance policy', dates: [{ kind: 'renewal_date', value: '2027-01-01', page: 2, quote: 'Renewal date: 1 January 2027' }], entities: [{ kind: 'insurer', value: 'Example Mutual', page: 2, quote: 'Example Mutual' }, { kind: 'plan_name', value: 'Example Plus', page: 2, quote: 'Plan: Example Plus' }] },
   });
 
   assert.equal(review.insurer, 'Example Mutual');
   assert.equal(review.documentType, 'Medical insurance policy');
-  assert.deepEqual(review.sections.filter((section) => section.status === 'identified').map((section) => section.id), ['eligibility', 'benefits', 'limits', 'member_costs', 'exclusions', 'claims']);
+  assert.ok(review.sections.find((section) => section.id === 'identity').evidence.some((item) => item.value === 'Example Plus'));
+  assert.ok(review.sections.find((section) => section.id === 'dates').evidence.some((item) => item.value === '2027-01-01'));
+  assert.deepEqual(review.sections.filter((section) => section.status === 'identified').map((section) => section.id), ['identity', 'dates', 'eligibility', 'benefits', 'limits', 'member_costs', 'exclusions', 'claims']);
   assert.ok(review.sections.every((section) => section.evidence.every((item) => item.quote && item.page === 2)));
   assert.equal(review.counts.total, 11);
   assert.match(review.note, /not a completeness guarantee/i);

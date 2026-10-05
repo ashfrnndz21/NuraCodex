@@ -16,6 +16,7 @@ const root = process.cwd();
 const tempRoot = await mkdtemp(join(tmpdir(), 'nura-m1-connected-'));
 const wrongCategoryScreenshotPath = join(tmpdir(), 'nura-insurance-purpose-pause.png');
 const policyDossierScreenshotPath = join(tmpdir(), 'nura-insurance-policy-dossier.png');
+const policyDossierDetailsScreenshotPath = join(tmpdir(), 'nura-insurance-policy-dossier-details.png');
 const dataDir = join(tempRoot, 'synthetic-repository');
 const browserProfile = join(tempRoot, 'chrome-profile');
 const providerLogPath = join(tempRoot, 'synthetic-provider.jsonl');
@@ -467,7 +468,7 @@ async function runOrdinaryUploadAskJourney() {
   await waitText('ordinary-retry-report.pdf');
   record('Ordinary-upload Ask answer and both source citations survive app route re-entry', true);
   await navigate(`${appOrigin}/insurance`);
-  await waitText('POLICY AT A GLANCE');
+  await waitText('Coverage details');
 }
 
 async function startLocalServices() {
@@ -867,17 +868,23 @@ async function runRehearsal() {
   await waitPath('/insurance');
   await waitText('Room and board limit');
   const savedPolicyRegistry = await bodyText();
-  const dossierHeadingIndex = savedPolicyRegistry.indexOf('POLICY DOSSIER · APPROVED DETAILS');
-  const overviewHeadingIndex = savedPolicyRegistry.indexOf('POLICY AT A GLANCE');
-  assert(savedPolicyRegistry.includes('SGD 300 per day') && savedPolicyRegistry.includes('VIEW SOURCE QUOTE') && savedPolicyRegistry.includes('OPEN ORIGINAL SOURCE AND REVIEW'), 'The accepted policy term did not appear in the Insurance Registry with its quote control and source action.');
-  assert(dossierHeadingIndex >= 0 && overviewHeadingIndex > dossierHeadingIndex, 'The Insurance Registry must lead each policy with its source-linked dossier details before summary counters.');
+  const dossierHeadingIndex = savedPolicyRegistry.indexOf('Policy dossier');
+  const overviewHeadingIndex = savedPolicyRegistry.indexOf('Coverage details');
+  assert(savedPolicyRegistry.includes('SGD 300 per day') && savedPolicyRegistry.includes('VIEW SOURCE QUOTE') && savedPolicyRegistry.includes('Review original'), 'The accepted policy term did not appear in the reference-matched dossier with its evidence and original-source actions.');
+  assert(dossierHeadingIndex >= 0 && overviewHeadingIndex > dossierHeadingIndex && savedPolicyRegistry.includes('Policy summary') && savedPolicyRegistry.includes('Explicit exclusions') && savedPolicyRegistry.includes('Missing details'), 'The Insurance Registry dossier must show policy summary, coverage, exclusions and missing details in the requested order.');
   const dossierVisible = await evaluate(`(() => { const dossier = document.querySelector('[data-testid="policy-dossier"]'); dossier?.scrollIntoView({ block: 'start', behavior: 'instant' }); return Boolean(dossier); })()`);
   assert(dossierVisible, 'Could not locate the rendered policy dossier for visual inspection.');
   await delay(250);
   const dossierScreenshot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   await writeFile(policyDossierScreenshotPath, Buffer.from(dossierScreenshot.data, 'base64'), { mode: 0o600 });
   record('Captured the selected Policy Dossier layout from the rendered mobile registry', true, policyDossierScreenshotPath);
-  record('Insurance Registry leads with the source-linked policy dossier, then shows coverage and missing-detail counts', true);
+  const dossierDetailsVisible = await evaluate(`(() => { const target = [...document.querySelectorAll('*')].find((node) => node.children.length === 0 && node.textContent?.trim() === 'All approved policy details'); if (!target) return false; target.scrollIntoView({ block: 'end', behavior: 'instant' }); return true; })()`);
+  assert(dossierDetailsVisible, 'Could not locate the lower policy dossier details for visual inspection.');
+  await delay(150);
+  const dossierDetailsScreenshot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  await writeFile(policyDossierDetailsScreenshotPath, Buffer.from(dossierDetailsScreenshot.data, 'base64'), { mode: 0o600 });
+  record('Captured the lower missing-detail and approved-term sections from the rendered mobile dossier', true, policyDossierDetailsScreenshotPath);
+  record('Insurance Registry renders the reference-matched dossier with policy summary, coverage, exclusions, missing fields and source actions', true);
   if (askEnabled) await runOrdinaryUploadAskJourney();
   await navigate(homeUrl);
   await waitPath((path) => path.includes('home'));

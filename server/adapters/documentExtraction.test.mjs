@@ -203,7 +203,7 @@ test('splits long insurance PDFs into page batches and combines all candidate te
     const page = number === 1 ? 2 : 6;
     return { ok: true, json: async () => ({ status: 'completed', output_text: JSON.stringify({
       claims: [{ kind: 'coverage_term', label: `Term ${number}`, value: `Value ${number}`, unit: null, referenceRange: null, method: null, effectiveAt: null, confidence: 0.9, page, quote: `Printed policy quote ${number}` }],
-      documentContext: { documentType: 'Insurance policy', dates: [{ kind: 'issued_at', value: `2026-09-0${number}`, page, quote: `Issued ${number}` }], entities: [{ kind: 'insurer', value: 'Example insurer', page: null, quote: null }], notes: [] },
+      documentContext: { documentType: 'Insurance policy', dates: [{ kind: 'issued_at', value: `2026-09-0${number}`, page, quote: `Issued ${number}` }, { kind: 'renewal_date', value: '2027-01-01', page, quote: 'Renewal 1 January 2027' }], entities: [{ kind: 'insurer', value: 'Example insurer', page, quote: 'Example insurer' }, { kind: 'plan_name', value: 'Example Plus', page, quote: 'Plan Example Plus' }, { kind: 'policy_type', value: 'Medical', page, quote: 'Medical plan' }, { kind: 'document_version', value: '2026 schedule', page, quote: 'Schedule 2026' }], notes: [] },
       documentAssessment: { category: 'insurance_policy', confidence: 0.95 },
     }) }) };
   };
@@ -214,11 +214,18 @@ test('splits long insurance PDFs into page batches and combines all candidate te
     assert.match(batches[1].note, /original PDF pages 6–7/);
     assert.equal(requests.every((request) => request.store === false), true);
     assert.equal(requests.every((request) => request.input[0].content.some((part) => part.type === 'input_text' && part.text.includes('insurance policy'))), true);
+    const contextSchema = requests[0].text.format.schema.properties.documentContext.properties;
+    assert.ok(contextSchema.entities.items.properties.kind.enum.includes('plan_name'));
+    assert.ok(contextSchema.entities.items.properties.kind.enum.includes('document_version'));
+    assert.ok(contextSchema.dates.items.properties.kind.enum.includes('renewal_date'));
+    assert.ok(contextSchema.dates.items.properties.kind.enum.includes('expiry_date'));
     assert.deepEqual(result.claims.map((claim) => claim.label), ['Term 1', 'Term 2']);
     assert.deepEqual(result.claims.map((claim) => claim.page), [2, 6]);
     assert.equal(result.documentContext.documentType, 'Insurance policy');
-    assert.equal(result.documentContext.dates.length, 2);
-    assert.equal(result.documentContext.entities.length, 1);
+    assert.equal(result.documentContext.dates.length, 4);
+    assert.deepEqual(result.documentContext.dates.filter((entry) => entry.kind === 'renewal_date').map((entry) => [entry.value, entry.page]), [['2027-01-01', 2], ['2027-01-01', 6]]);
+    assert.deepEqual(result.documentContext.entities.map((entry) => [entry.kind, entry.page]), [['insurer', 2], ['plan_name', 2], ['policy_type', 2], ['document_version', 2], ['insurer', 6], ['plan_name', 6], ['policy_type', 6], ['document_version', 6]]);
+    assert.deepEqual(result.documentContext.entities.filter((entry) => entry.kind === 'plan_name').map((entry) => entry.value), ['Example Plus', 'Example Plus']);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousApiKey === undefined) delete process.env.OPENAI_API_KEY;

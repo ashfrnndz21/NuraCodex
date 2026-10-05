@@ -93,6 +93,7 @@ export default function InsuranceRegistry() {
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
   const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
   const [expandedKeyDetails, setExpandedKeyDetails] = useState<string | null>(null);
+  const [expandedMissingDetails, setExpandedMissingDetails] = useState<string | null>(null);
   const [replyForClaim, setReplyForClaim] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [savingReplyClaim, setSavingReplyClaim] = useState<string | null>(null);
@@ -537,26 +538,66 @@ export default function InsuranceRegistry() {
       const overview = buildInsuranceRegistryOverview(policy.currentTerms);
       const namedPolicy = snapshot.keyDetails.find(({ key }) => key === 'policy-name')?.term;
       const namedInsurer = snapshot.keyDetails.find(({ key }) => key === 'insurer')?.term;
-      const policyTitle = namedPolicy ? displayTermValue(namedPolicy) : namedInsurer ? displayTermValue(namedInsurer) : policySourceName(policy.sourceId);
+      const policyTitle = namedPolicy ? displayTermValue(namedPolicy) : namedInsurer ? displayTermValue(namedInsurer) : 'Policy details';
       const sourceAsset = sourceAssetById.get(policy.sourceId);
+      const detailTerm = (key: string) => snapshot.keyDetails.find((item) => item.key === key)?.term;
+      const statusTerm = detailTerm('policy-status');
+      const statusText = statusTerm ? displayTermValue(statusTerm) : 'Status unconfirmed';
+      const statusIsCurrent = /\b(active|current|in force)\b/i.test(statusText);
+      const startDate = detailTerm('commencement-date') ? displayTermValue(detailTerm('commencement-date')!) : null;
+      const endDate = detailTerm('expiry-date') ? displayTermValue(detailTerm('expiry-date')!) : null;
+      const datePeriod = [startDate ? displayDate(startDate) ?? startDate : null, endDate ? displayDate(endDate) ?? endDate : null].filter(Boolean).join(' – ')
+        || (detailTerm('policy-term') ? displayTermValue(detailTerm('policy-term')!) : 'Policy dates not identified');
+      const premiumTerm = detailTerm('premium-amount') ?? detailTerm('current-premium');
+      const annualLimitTerm = detailTerm('annual-medical-limit');
+      const summaryLines = overview.coverageDetails.slice(0, 3).map((term) => `${term.label}${term.value ? ` · ${displayTermValue(term)}` : ''}`);
+      const summaryText = summaryLines.length
+        ? `The approved wording lists ${summaryLines.join('; ')}.${overview.exclusions.length ? ` ${overview.exclusions.length} explicit exclusion${overview.exclusions.length === 1 ? ' is' : 's are'} recorded below.` : ''}${overview.missingDetails.length ? ` ${overview.missingDetails.length} common details were not identified in this extraction; see the checklist below.` : ''}`
+        : 'No coverage details have been approved yet. Review the original wording and choose which source-quoted terms to save.';
+      const sourceName = sourceAsset ? documentOriginalName(sourceAsset) : policy.sourceName || 'Saved policy source';
+      const renderDossierTerm = (term: HealthFact, value?: string) => {
+        const evidenceLabel = evidenceActionLabel(term, assets);
+        return <Pressable key={term.id} accessibilityRole="button" disabled={!evidenceLabel} accessibilityLabel={`${evidenceLabel ?? 'Source unavailable'} for ${term.label}`} onPress={() => openPolicyTermEvidence(term)} style={styles.dossierCoverageRow}>
+          <View style={styles.dossierCoverageCopy}><Text style={styles.dossierCoverageLabel}>{term.label}</Text><Text style={styles.dossierCoverageValue}>{value ?? displayTermValue(term)}</Text></View><Text style={styles.dossierCoverageArrow}>{evidenceLabel ? '↗' : '·'}</Text>
+        </Pressable>;
+      };
       return <Surface tone="dark" key={policy.sourceId} style={styles.policyCard}>
-      <View style={styles.policyHead}><View style={styles.policyMark}><Text style={styles.policyMarkText}>▤</Text></View><View style={{ flex: 1 }}><Text style={styles.policyEyebrow}>INSURANCE POLICY</Text><Text style={styles.policyName}>{policyTitle}</Text></View><Text style={styles.sourceLinked}>SOURCE LINKED</Text></View>
-      <View style={styles.sourceBand}><Text style={styles.sourceBandIcon}>⌑</Text><Text style={styles.sourceBandText}>{sourceAsset ? `Source file · ${documentOriginalName(sourceAsset)}` : 'Saved policy details'} · {policy.currentTerms.length} current entr{policy.currentTerms.length === 1 ? 'y' : 'ies'} · {policy.previousTerms.length} earlier · {policy.removedTerms.length} removed</Text></View>
-      <View testID="policy-dossier" style={styles.keyDetailsCard}>
-        <View style={styles.keyDetailsHeading}><Text style={styles.keyDetailsEyebrow}>POLICY DOSSIER · APPROVED DETAILS</Text><Text style={styles.keyDetailsCount}>{snapshot.keyDetails.length}</Text></View>
-        {snapshot.keyDetails.length > 0 ? <>
-          {(expandedKeyDetails === policy.sourceId ? snapshot.keyDetails : snapshot.keyDetails.slice(0, 4)).map(({ key, label, term }) => {
+      <View testID="policy-dossier" style={styles.dossierScreenCard}>
+        <View style={styles.dossierIntro}><Text style={styles.dossierScreenTitle}>Policy dossier</Text><Text style={styles.dossierScreenSub}>Structured details from your document.</Text></View>
+        <View style={styles.dossierHero}>
+          <View style={styles.dossierHeroTop}><View style={styles.dossierShield}><Text style={styles.dossierShieldText}>✦</Text></View><View style={styles.dossierHeroName}><Text numberOfLines={2} style={styles.dossierPlanName}>{policyTitle}</Text><Text numberOfLines={2} style={styles.dossierPeriod}>{datePeriod}</Text></View></View>
+          <View style={styles.dossierStatusRow}><Text style={[styles.dossierStatus, statusIsCurrent ? styles.dossierStatusActive : styles.dossierStatusUnknown]}>{statusText}</Text></View>
+          <View style={styles.dossierHeroMetrics}>
+            <View style={styles.dossierMetric}><Text style={styles.dossierMetricValue}>{premiumTerm ? displayTermValue(premiumTerm) : 'Not identified'}</Text><Text style={styles.dossierMetricLabel}>Premium</Text></View>
+            <View style={styles.dossierMetricRule} />
+            <View style={styles.dossierMetric}><Text style={styles.dossierMetricValue}>{annualLimitTerm ? displayTermValue(annualLimitTerm) : 'Not identified'}</Text><Text style={styles.dossierMetricLabel}>Annual limit</Text></View>
+          </View>
+        </View>
+        <View style={styles.dossierSummaryCard}>
+          <View style={styles.dossierSummaryTop}><Text style={styles.dossierSpark}>✦</Text><Text style={styles.dossierSummaryTitle}>Policy summary</Text><Text style={styles.dossierReviewed}><Text style={styles.dossierCheck}>✓</Text> Based on approved terms</Text></View>
+          <Text style={styles.dossierSummaryText}>{summaryText}</Text>
+          <View style={styles.dossierSourceLine}><Text style={styles.dossierSourceIcon}>▤</Text><Text numberOfLines={1} style={styles.dossierSourceText}>Source: {sourceName}</Text><Text style={styles.dossierSourceMeta}>{policy.currentTerms.length} terms</Text></View>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Review original policy ${sourceName}`} onPress={() => openPolicySource(policy.sourceId)} style={styles.dossierOriginalButton}><Text style={styles.dossierOriginalIcon}>▤</Text><Text style={styles.dossierOriginalText}>Review original</Text><Text style={styles.dossierOriginalArrow}>›</Text></Pressable>
+        </View>
+        <View style={styles.dossierCoverageSection}>
+          <Text style={styles.dossierSectionTitle}>Coverage details</Text>
+          <View style={styles.dossierCoverageCard}>
+            {overview.coverageDetails.length ? overview.coverageDetails.map((term) => renderDossierTerm(term)) : <Text style={styles.dossierEmptyText}>No approved coverage terms in this summary.</Text>}
+            <View style={styles.dossierSubsection}><View style={styles.dossierSubsectionHead}><Text style={styles.dossierSubsectionIcon}>⊖</Text><Text style={styles.dossierSubsectionTitle}>Explicit exclusions</Text></View>{overview.exclusions.length ? overview.exclusions.map((term) => renderDossierTerm(term, displayTermValue(term))) : <Text style={styles.dossierEmptyText}>No explicit exclusions were identified in the approved terms. Check the full policy wording.</Text>}</View>
+            {overview.missingDetails.length > 0 && <View style={styles.dossierSubsection}><View style={styles.dossierSubsectionHead}><Text style={styles.dossierSubsectionIcon}>?</Text><Text style={styles.dossierSubsectionTitle}>Missing details</Text></View>{(expandedMissingDetails === policy.sourceId ? overview.missingDetails : overview.missingDetails.slice(0, 2)).map((item) => <View key={item.label} style={styles.dossierMissingRow}><Text style={styles.dossierMissingLabel}>{item.label} not identified</Text><Text style={styles.dossierMissingNote}>This detail was not found in the approved summary. Check the full policy; it does not mean the benefit is excluded.</Text></View>)}{overview.missingDetails.length > 2 && <Pressable accessibilityRole="button" accessibilityLabel={expandedMissingDetails === policy.sourceId ? 'Show fewer missing policy details' : `Show all ${overview.missingDetails.length} missing policy details`} accessibilityState={{ expanded: expandedMissingDetails === policy.sourceId }} onPress={() => { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpandedMissingDetails((current) => current === policy.sourceId ? null : policy.sourceId); }} style={styles.keyDetailsFooterAction}><Text style={styles.keyDetailsFooter}>{expandedMissingDetails === policy.sourceId ? 'SHOW FEWER DETAILS  ↑' : `SHOW ALL ${overview.missingDetails.length} DETAILS  ↓`}</Text></Pressable>}</View>}
+          </View>
+        </View>
+        <View style={styles.dossierMoreDetails}>
+          <View style={styles.dossierMoreHeading}><Text style={styles.dossierMoreTitle}>All approved policy details</Text><Text style={styles.dossierMoreCaption}>Source-linked</Text></View>
+          {snapshot.keyDetails.length > 0 ? (expandedKeyDetails === policy.sourceId ? snapshot.keyDetails : snapshot.keyDetails.slice(0, 4)).map(({ key, label, term }) => {
             const evidenceLabel = evidenceActionLabel(term, assets);
             return <Pressable key={`${key}:${term.id ?? term.label}`} accessibilityRole="button" accessibilityState={{ disabled: !evidenceLabel }} disabled={!evidenceLabel} accessibilityLabel={`${evidenceLabel ?? 'Source unavailable'} for ${term.label}`} onPress={() => openPolicyTermEvidence(term)} style={({ pressed }) => [styles.keyDetailRow, pressed && styles.keyDetailPressed, !evidenceLabel && styles.disabled]}>
               <View style={styles.keyDetailCopy}><Text style={styles.keyDetailLabel}>{label}</Text><Text style={styles.keyDetailValue}>{displayTermValue(term)}</Text><Text style={styles.keyDetailEvidence}>{evidenceLabel ? `${evidenceLabel} ↗` : 'SOURCE UNAVAILABLE'}</Text></View><Text style={styles.keyDetailArrow}>↗</Text>
             </Pressable>;
-          })}
-          {snapshot.keyDetails.length > 4 && <Pressable accessibilityRole="button" accessibilityLabel={expandedKeyDetails === policy.sourceId ? 'Show fewer approved policy terms' : `Show all ${snapshot.keyDetails.length} approved policy terms`} accessibilityHint="Expands or collapses the approved policy wording shown in this summary." accessibilityState={{ expanded: expandedKeyDetails === policy.sourceId }} onPress={() => {
-            if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setExpandedKeyDetails((current) => current === policy.sourceId ? null : policy.sourceId);
-          }} style={styles.keyDetailsFooterAction}><Text style={styles.keyDetailsFooter}>{expandedKeyDetails === policy.sourceId ? 'SHOW FEWER APPROVED TERMS  ↑' : `SHOW ALL ${snapshot.keyDetails.length} APPROVED TERMS  ↓`}</Text></Pressable>}
-        </> : <Text style={styles.dossierEmpty}>No key policy details have been approved yet. Open the source review to inspect the document and choose which quoted terms to save.</Text>}
-        <Text style={styles.dossierNote}>These are details you approved from this source. They do not confirm current eligibility or an insurer’s decision.</Text>
+          }) : <Text style={styles.dossierEmpty}>No approved policy details have been saved yet.</Text>}
+          {snapshot.keyDetails.length > 4 && <Pressable accessibilityRole="button" accessibilityLabel={expandedKeyDetails === policy.sourceId ? 'Show fewer approved policy terms' : `Show all ${snapshot.keyDetails.length} approved policy terms`} accessibilityHint="Expands or collapses the approved policy wording shown in this summary." accessibilityState={{ expanded: expandedKeyDetails === policy.sourceId }} onPress={() => { if (!reducedMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpandedKeyDetails((current) => current === policy.sourceId ? null : policy.sourceId); }} style={styles.keyDetailsFooterAction}><Text style={styles.keyDetailsFooter}>{expandedKeyDetails === policy.sourceId ? 'SHOW FEWER TERMS  ↑' : `SHOW ALL ${snapshot.keyDetails.length} TERMS  ↓`}</Text></Pressable>}
+        </View>
+        <Text style={styles.dossierDisclaimer}>These are details approved by you from this source. They do not confirm current eligibility or an insurer’s decision. “Not identified” means not found in this summary, not necessarily absent from the full policy.</Text>
       </View>
       {confirmRemoveSourceId === policy.sourceId ? <View style={styles.removeSourceConfirm}>
         <Text style={styles.removeSourceConfirmText}>Remove this policy document and the details derived from it from Nura? This cannot be undone.</Text>
@@ -566,16 +607,6 @@ export default function InsuranceRegistry() {
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: removingSourceId === policy.sourceId, busy: removingSourceId === policy.sourceId }} disabled={removingSourceId === policy.sourceId} onPress={() => void removePolicySource(policy.sourceId)} style={styles.removeSourceButton}><Text style={styles.removeSourceButtonText}>{removingSourceId === policy.sourceId ? 'Removing…' : 'Remove policy'}</Text></Pressable>
         </View>
       </View> : <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${policySourceName(policy.sourceId)} and its saved details from Nura`} onPress={() => { setRemoveSourceError(null); setConfirmRemoveSourceId(policy.sourceId); }} style={styles.removeSourceLink}><Text style={styles.removeSourceLinkText}>REMOVE THIS SOURCE AND ITS SAVED DETAILS</Text></Pressable>}
-      <View style={styles.registryOverview}>
-        <View style={styles.registryOverviewHeading}><Text style={styles.registryOverviewTitle}>POLICY AT A GLANCE</Text><Text style={styles.registryOverviewCaption}>Approved wording only</Text></View>
-        <View style={styles.registryOverviewGrid}>
-          <View style={[styles.registryOverviewCell, styles.registryOverviewCoverage]}><Text style={styles.registryOverviewCount}>{overview.coverageDetails.length}</Text><Text style={styles.registryOverviewLabel}>STATED BENEFITS & LIMITS</Text></View>
-          <View style={[styles.registryOverviewCell, styles.registryOverviewExcluded]}><Text style={styles.registryOverviewCount}>{overview.exclusions.length}</Text><Text style={styles.registryOverviewLabel}>EXPLICIT EXCLUSIONS</Text></View>
-          <View style={[styles.registryOverviewCell, styles.registryOverviewClarify]}><Text style={styles.registryOverviewCount}>{overview.clarifications.length}</Text><Text style={styles.registryOverviewLabel}>WORDING TO CONFIRM</Text></View>
-          <View style={[styles.registryOverviewCell, styles.registryOverviewMissing]}><Text style={styles.registryOverviewCount}>{overview.missingDetails.length}</Text><Text style={styles.registryOverviewLabel}>DETAILS NOT FOUND</Text></View>
-        </View>
-        <Text style={styles.registryOverviewNote}>A missing detail is unknown, not an exclusion. Open a source-linked term to check its wording.</Text>
-      </View>
       {replacementError?.sourceId === policy.sourceId && <Text accessibilityRole="alert" style={styles.replacementError}>{replacementError.message}</Text>}
       {independentChoices.length > 0 && <View>
         <Pressable accessibilityRole="button" accessibilityState={{ expanded: comparisonPickerFor === policy.sourceId }} accessibilityLabel={comparisonPickerFor === policy.sourceId ? 'Close side-by-side policy comparison' : 'Compare this policy with another saved policy'} onPress={() => {
@@ -777,6 +808,62 @@ export default function InsuranceRegistry() {
 }
 
 const styles = StyleSheet.create({
+  dossierScreenCard: { marginTop: 6, gap: 12 },
+  dossierIntro: { paddingHorizontal: 4, marginBottom: 1 },
+  dossierScreenTitle: { color: '#FFF7EF', fontSize: 23, lineHeight: 28, fontWeight: '700' },
+  dossierScreenSub: { color: 'rgba(255,244,234,.72)', fontSize: 13, lineHeight: 19, marginTop: 2 },
+  dossierHero: { padding: 14, borderRadius: 17, borderWidth: 1, borderColor: 'rgba(255,232,211,.25)', backgroundColor: 'rgba(80,47,37,.72)' },
+  dossierHeroTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dossierShield: { width: 42, height: 42, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(151,202,151,.32)' },
+  dossierShieldText: { color: '#D5EBC9', fontSize: 19, fontWeight: '800' },
+  dossierHeroName: { flex: 1 },
+  dossierPlanName: { color: '#FFF7EF', fontSize: 16, lineHeight: 21, fontWeight: '700' },
+  dossierPeriod: { color: 'rgba(255,244,234,.72)', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  dossierStatusRow: { marginLeft: 43, marginTop: 7, alignItems: 'flex-start' },
+  dossierStatus: { maxWidth: '100%', overflow: 'hidden', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, fontSize: 10, fontWeight: '800', textAlign: 'center' },
+  dossierStatusActive: { color: '#20422D', backgroundColor: '#A8D89E' },
+  dossierStatusUnknown: { color: '#FFE4C9', backgroundColor: 'rgba(220,147,104,.24)' },
+  dossierHeroMetrics: { flexDirection: 'row', alignItems: 'center', marginTop: 15, paddingTop: 11, borderTopWidth: 1, borderTopColor: 'rgba(255,232,211,.15)' },
+  dossierMetric: { flex: 1, minHeight: 48, justifyContent: 'center' },
+  dossierMetricValue: { color: '#FFF7EF', fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  dossierMetricLabel: { color: 'rgba(255,244,234,.72)', fontSize: 11, lineHeight: 16, marginTop: 2 },
+  dossierMetricRule: { width: 1, height: 38, backgroundColor: 'rgba(255,232,211,.2)', marginHorizontal: 13 },
+  dossierSummaryCard: { padding: 14, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,232,211,.2)', backgroundColor: 'rgba(89,53,42,.52)' },
+  dossierSummaryTop: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+  dossierSpark: { color: '#F2BD9D', fontSize: 16, fontWeight: '800' },
+  dossierSummaryTitle: { flex: 1, color: '#FFF7EF', fontSize: 14, fontWeight: '700' },
+  dossierReviewed: { color: 'rgba(255,244,234,.74)', fontSize: 9, fontWeight: '600' },
+  dossierCheck: { color: '#A8D89E', fontSize: 13, fontWeight: '900' },
+  dossierSummaryText: { color: '#FFF7EF', fontSize: 13, lineHeight: 19, marginTop: 10 },
+  dossierSourceLine: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 9, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,232,211,.22)', marginTop: 11 },
+  dossierSourceIcon: { color: '#F2BD9D', fontSize: 13 },
+  dossierSourceText: { flex: 1, color: 'rgba(255,244,234,.88)', fontSize: 10 },
+  dossierSourceMeta: { color: 'rgba(255,244,234,.64)', fontSize: 9 },
+  dossierOriginalButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,232,211,.22)', paddingHorizontal: 10, marginTop: 8 },
+  dossierOriginalIcon: { color: '#F2BD9D', fontSize: 13 },
+  dossierOriginalText: { flex: 1, color: '#FFF7EF', fontSize: 11, fontWeight: '600' },
+  dossierOriginalArrow: { color: 'rgba(255,244,234,.84)', fontSize: 22 },
+  dossierCoverageSection: { marginTop: 1 },
+  dossierSectionTitle: { color: '#FFF7EF', fontSize: 16, lineHeight: 22, fontWeight: '700', marginBottom: 7 },
+  dossierCoverageCard: { borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,232,211,.22)', backgroundColor: 'rgba(89,53,42,.52)', paddingHorizontal: 12, paddingVertical: 3 },
+  dossierCoverageRow: { minHeight: 43, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,232,211,.12)' },
+  dossierCoverageCopy: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  dossierCoverageLabel: { flex: 1, color: 'rgba(255,244,234,.88)', fontSize: 12, lineHeight: 17 },
+  dossierCoverageValue: { color: '#FFF7EF', fontSize: 12, lineHeight: 17, fontWeight: '600', textAlign: 'right' },
+  dossierCoverageArrow: { color: '#A8D8FF', fontSize: 16, width: 17, textAlign: 'center' },
+  dossierSubsection: { borderTopWidth: 1, borderTopColor: 'rgba(255,232,211,.22)', paddingTop: 10, paddingBottom: 4, marginTop: 7 },
+  dossierSubsectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  dossierSubsectionIcon: { width: 18, color: '#F2BD9D', fontSize: 16, fontWeight: '800', textAlign: 'center' },
+  dossierSubsectionTitle: { color: '#FFF7EF', fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  dossierMissingRow: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,232,211,.12)', paddingVertical: 8, paddingLeft: 26 },
+  dossierMissingLabel: { color: '#FFF7EF', fontSize: 11, fontWeight: '600' },
+  dossierMissingNote: { color: 'rgba(255,244,234,.65)', fontSize: 10, lineHeight: 15, marginTop: 3 },
+  dossierEmptyText: { color: 'rgba(255,244,234,.72)', fontSize: 11, lineHeight: 17, paddingVertical: 10 },
+  dossierMoreDetails: { borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,232,211,.18)', paddingHorizontal: 12, paddingTop: 11, paddingBottom: 5, backgroundColor: 'rgba(89,53,42,.32)' },
+  dossierMoreHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 },
+  dossierMoreTitle: { color: '#FFF7EF', fontSize: 13, fontWeight: '700' },
+  dossierMoreCaption: { color: '#A8D8FF', fontSize: 9, fontWeight: '700' },
+  dossierDisclaimer: { color: 'rgba(255,244,234,.62)', fontSize: 10, lineHeight: 15, paddingHorizontal: 4, marginTop: -2 },
   extractionReview: { marginTop: 12, padding: 11, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(168,216,255,.34)', backgroundColor: 'rgba(108,158,193,.10)' }, extractionReviewHeading: { flexDirection: 'row', alignItems: 'flex-start' }, extractionReviewEyebrow: { color: '#A8D8FF', fontSize: 8, fontWeight: '800', letterSpacing: .75 }, extractionReviewTitle: { color: '#FFF8F0', fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 4 }, extractionReviewSection: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.15)', marginTop: 9, paddingTop: 8 }, extractionReviewRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, extractionReviewSectionTitle: { flex: 1, color: '#FFF8F0', fontSize: 10, lineHeight: 15, fontWeight: '700' }, extractionReviewStatus: { maxWidth: 105, textAlign: 'right', fontSize: 7, fontWeight: '800', letterSpacing: .4, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }, extractionReviewStatusFound: { color: '#A5E0C4', backgroundColor: 'rgba(143,216,180,.14)' }, extractionReviewStatusCheck: { color: '#F2BD9D', backgroundColor: 'rgba(242,189,157,.14)' }, extractionReviewStatusMissing: { color: 'rgba(255,248,240,.72)', backgroundColor: 'rgba(255,248,240,.09)' }, extractionEvidence: { marginTop: 6, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: 'rgba(168,216,255,.32)' }, extractionEvidenceLabel: { color: '#FFF8F0', fontSize: 9, lineHeight: 14, fontWeight: '600' }, extractionEvidenceQuote: { color: 'rgba(255,248,240,.78)', fontSize: 9, lineHeight: 14, marginTop: 2 }, extractionNotFound: { color: 'rgba(255,248,240,.68)', fontSize: 9, lineHeight: 14, marginTop: 4 }, extractionReviewToggle: { minHeight: 40, justifyContent: 'center', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.15)', marginTop: 8 }, extractionReviewToggleText: { color: '#A8D8FF', fontSize: 8, fontWeight: '800', letterSpacing: .5 }, extractionReviewNote: { color: 'rgba(255,248,240,.62)', fontSize: 8, lineHeight: 13, marginTop: 7 },
   unregisteredSources: { marginBottom: 17 }, unregisteredSourceCard: { marginBottom: 9, padding: 13 }, unregisteredSourceNote: { color: 'rgba(255,248,240,.82)', fontSize: 9, lineHeight: 14, marginTop: 9 }, sourceTypeCallout: { backgroundColor: 'rgba(108,158,193,.12)', borderWidth: 1, borderColor: 'rgba(168,216,255,.28)', borderRadius: 12, padding: 10, marginTop: 10 }, sourceTypeCalloutWarning: { backgroundColor: 'rgba(206,139,105,.16)', borderColor: 'rgba(242,189,157,.40)' }, sourceTypeCalloutTitle: { color: '#F2BD9D', fontSize: 8, fontWeight: '800', letterSpacing: .65 }, sourceTypeCalloutBody: { color: '#FFF8F0', fontSize: 10, lineHeight: 15, marginTop: 5 }, sourceFitActions: { gap: 7, marginTop: 9 }, sourceFitKeep: { minHeight: 38, justifyContent: 'center', borderRadius: 10, backgroundColor: 'rgba(108,158,193,.25)', paddingHorizontal: 10 }, sourceFitKeepText: { color: '#A8D8FF', fontSize: 9, fontWeight: '700' }, sourceFitRemove: { minHeight: 38, justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(242,189,157,.40)', paddingHorizontal: 10 }, sourceFitRemoveText: { color: '#F2BD9D', fontSize: 9, fontWeight: '700' }, removeSourceLink: { minHeight: 38, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 5, marginTop: 3 }, removeSourceLinkText: { color: '#F2BD9D', fontSize: 8, fontWeight: '800', letterSpacing: .55 }, removeSourceConfirm: { backgroundColor: 'rgba(206,139,105,.16)', borderWidth: 1, borderColor: 'rgba(242,189,157,.40)', borderRadius: 12, padding: 10, marginTop: 8 }, removeSourceConfirmText: { color: '#FFF8F0', fontSize: 10, lineHeight: 15 }, removeSourceActions: { flexDirection: 'row', gap: 8, marginTop: 9 }, removeSourceCancel: { minHeight: 38, flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,232,211,.24)' }, removeSourceCancelText: { color: '#FFF8F0', fontSize: 9, fontWeight: '700' }, removeSourceButton: { minHeight: 38, flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: 'rgba(206,99,91,.34)' }, removeSourceButtonText: { color: '#FFF8F0', fontSize: 9, fontWeight: '800' }, candidatePolicyTerm: { borderTopWidth: 1, borderTopColor: 'rgba(255,232,211,.18)', paddingTop: 8, marginTop: 8 }, candidatePolicyTermTitle: { color: '#FFF8F0', fontSize: 10, lineHeight: 14, fontWeight: '700' }, candidatePolicyQuote: { color: 'rgba(255,248,240,.72)', fontSize: 8, lineHeight: 12, marginTop: 4 }, unregisteredSourceAction: { minHeight: 42, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(108,158,193,.2)', borderWidth: 1, borderColor: 'rgba(168,216,255,.34)', borderRadius: 12, paddingHorizontal: 12, marginTop: 11 }, unregisteredSourceActionText: { color: '#A8D8FF', fontSize: 8, fontWeight: '800', letterSpacing: .65, textAlign: 'center' },
   registryOverview: { backgroundColor: 'rgba(255,248,240,.09)', borderWidth: 1, borderColor: 'rgba(255,232,211,.22)', borderRadius: 13, padding: 12, marginTop: 10 }, registryOverviewHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, registryOverviewTitle: { color: '#F2BD9D', fontSize: 10, fontWeight: '800', letterSpacing: .65 }, registryOverviewCaption: { color: 'rgba(255,248,240,.64)', fontSize: 10 }, registryOverviewGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 }, registryOverviewCell: { width: '48%', minHeight: 60, justifyContent: 'center', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }, registryOverviewCoverage: { backgroundColor: 'rgba(108,158,193,.17)' }, registryOverviewExcluded: { backgroundColor: 'rgba(206,139,105,.16)' }, registryOverviewClarify: { backgroundColor: 'rgba(206,139,105,.16)' }, registryOverviewMissing: { backgroundColor: 'rgba(255,248,240,.09)' }, registryOverviewCount: { color: '#FFF8F0', fontSize: 16, fontWeight: '700' }, registryOverviewLabel: { color: 'rgba(255,248,240,.82)', fontSize: 9, lineHeight: 13, fontWeight: '800', letterSpacing: .35, marginTop: 3 }, registryOverviewNote: { color: 'rgba(255,248,240,.82)', fontSize: 11, lineHeight: 16, marginTop: 9 },

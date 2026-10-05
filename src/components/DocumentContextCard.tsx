@@ -4,10 +4,10 @@ import type { DocumentContext, DocumentContextEntry } from '../services/intakeCl
 import { GlassMaterial } from './GlassMaterial';
 
 const dateLabels: Record<string, string> = {
-  report_date: 'Report date', collected_at: 'Collected', issued_at: 'Issued', effective_period: 'Effective period',
+  report_date: 'Report date', collected_at: 'Collected', issued_at: 'Issued', effective_period: 'Effective period', policy_effective_date: 'Policy effective date', renewal_date: 'Renewal date', expiry_date: 'Expiry date',
 };
 const entityLabels: Record<string, string> = {
-  laboratory: 'Laboratory', provider: 'Provider', insurer: 'Insurer',
+  laboratory: 'Laboratory', provider: 'Provider', insurer: 'Insurer', plan_name: 'Plan name', policy_type: 'Policy type', document_version: 'Document version', jurisdiction: 'Jurisdiction',
 };
 const noteLabels: Record<string, string> = {
   fasting_guidance: 'Fasting guidance', clinical_significance: 'Clinical note',
@@ -18,6 +18,7 @@ function ContextRows({ rows, labels }: { rows: DocumentContextEntry[]; labels: R
   return <>{rows.map((row, index) => <View key={`${row.kind}-${index}`} style={styles.row}>
     <Text style={styles.rowLabel}>{labels[row.kind]}</Text>
     <Text style={styles.rowValue}>{row.value}</Text>
+    {row.quote ? <Text style={styles.quote}>“{row.quote}”</Text> : null}
     {row.page ? <Text style={styles.page}>Page {row.page}</Text> : null}
   </View>)}</>;
 }
@@ -28,12 +29,13 @@ export function DocumentContextCard({ context, compact = false }: { context: Doc
   const rows = useMemo(() => {
     if (!context) return { dates: [], entities: [], notes: [] };
     return {
-      dates: context.dates.filter((row) => Boolean(dateLabels[row.kind])).slice(0, 2),
-      entities: context.entities.filter((row) => Boolean(entityLabels[row.kind])).slice(0, 2),
-      notes: context.notes.filter((row) => Boolean(noteLabels[row.kind])).slice(0, 2),
+      dates: context.dates.filter((row) => Boolean(dateLabels[row.kind])),
+      entities: context.entities.filter((row) => Boolean(entityLabels[row.kind])),
+      notes: context.notes.filter((row) => Boolean(noteLabels[row.kind])),
     };
   }, [context]);
   const detailCount = rows.dates.length + rows.entities.length + rows.notes.length;
+  const contextHeading = /policy|insurance/i.test(context?.documentType ?? '') ? 'ABOUT THIS POLICY' : 'ABOUT THIS REPORT';
   if (!context || (!context.documentType && detailCount === 0)) return null;
 
   return <View style={[styles.card, compact && styles.compact]}>
@@ -46,7 +48,7 @@ export function DocumentContextCard({ context, compact = false }: { context: Doc
       style={styles.disclosure}
     >
       <View style={styles.disclosureCopy}>
-        <Text style={styles.heading}>ABOUT THIS REPORT</Text>
+        <Text style={styles.heading}>{contextHeading}</Text>
         {context.documentType ? <Text numberOfLines={expanded ? 2 : 1} style={styles.documentType}>{context.documentType}</Text> : null}
       </View>
       <Text style={styles.disclosureAction}>{expanded ? 'HIDE −' : 'DETAILS +'}</Text>
@@ -72,6 +74,7 @@ const styles = StyleSheet.create({
   row: { marginTop: 8, paddingTop: 7, borderTopWidth: 1, borderTopColor: 'rgba(255,238,224,.16)' },
   rowLabel: { color: 'rgba(255,244,234,.66)', fontSize: 9, fontWeight: '600' },
   rowValue: { color: '#FFF7EF', fontSize: 11, lineHeight: 16, marginTop: 2 },
+  quote: { color: 'rgba(255,244,234,.76)', fontSize: 9, lineHeight: 13, marginTop: 3 },
   page: { color: '#AFCDFB', fontSize: 8, fontWeight: '700', marginTop: 3 },
   empty: { color: 'rgba(255,244,234,.7)', fontSize: 9, lineHeight: 13, marginTop: 7 },
 });

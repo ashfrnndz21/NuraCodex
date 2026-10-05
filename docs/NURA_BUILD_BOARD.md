@@ -1,5 +1,11 @@
 # Nura build board
 
+## 5 October 2026 — policy metadata extraction schema aligned with dossier checklist
+
+- **Fixed:** strict provider output now supports policy plan name, policy type, document version, jurisdiction, effective date, renewal date and expiry date as source-level document context. The health policy extractor explicitly requests those metadata fields while keeping status and coverage obligations as reviewable claims and excluding policy/member identifiers.
+- **Displayed:** expanded source details show all supported metadata, original quotes and page references; no longer silently truncates at two entries. Identity and lifecycle-date checklist sections now count source-cited metadata as evidence.
+- **Verified:** provider schema and multi-batch metadata merge are covered by extraction tests; focused extraction and dossier checks pass **36/36**. Overall Insurance Registry acceptance remains partial.
+
 ## 5 October 2026 — health-policy extraction checklist expanded
 
 - **Added:** the policy brief now tracks 11 common health-insurance areas: identity/document version, dates/status, eligibility, benefits, limits, member cost-sharing, premiums, exclusions/conditions, provider network/geographic scope, claims/appeals, and coordination with other cover. The extraction instructions now explicitly ask the model to inspect declarations, schedules, definitions, endorsements, amendments, tables, and footnotes for those terms.
@@ -1139,6 +1145,13 @@ The user should review a stable story slice, not act as the team's error detecto
 - Verification: the synthetic browser journey passes **88/88**, including a first-viewport geometry assertion for the Health cholesterol band; `npm run test:repo` passes **450/450**; TypeScript passes; `git diff --check` passes; ESLint reports zero errors and two unused-symbol warnings in `app/ask.tsx`. See the inspected screenshots at `/private/tmp/nura-health-ranges-final.png`, `/private/tmp/nura-home-default.png` and `/private/tmp/nura-final-ask.png`.
 - The separate combined reduced-motion run passed 98 checks before a Chrome navigation-acknowledgement timeout at zero-topic re-entry; a retry lost its DevTools websocket after three setup checks. Standard-motion base passed 86/86, but full combined standard-motion acceptance remains unverified. The app has no `simctl` here; native device/restart, real YouTube provider results (last credential response HTTP 401), production identity/storage, and independent clinical/privacy/security review remain open.
 - Strict acceptance is still **0/11 stories, 0/8 production gates, 0/19 packages (0%)**. These are implemented and tested demo/design slices, not whole-story or production acceptance.
+
+### Insurance dossier reference-layout pass — 5 October 2026
+
+- Reworked the Insurance Registry card to follow the selected mobile policy-dossier reference: policy identity/status/term, premium and annual limit, approved-term summary, source and original-document actions, coverage list, explicit exclusions, missing-detail explanation, and expandable source-linked approved terms. The narrow-screen header no longer squeezes the title beside the status badge. Missing checklist rows collapse to two with an accessible “show all” action.
+- Extraction schema and review context now retain policy name/type/version/jurisdiction and effective/renewal/expiry dates with page quotes across split batches. Expanded source context shows those identity/date quotes. Unidentified fields remain unknown; they are not filled from assumptions.
+- Visual evidence: `/var/folders/3t/7k7bzrp14lxfh_g8265_9t2w0000gn/T/nura-insurance-policy-dossier.png` and `/var/folders/3t/7k7bzrp14lxfh_g8265_9t2w0000gn/T/nura-insurance-policy-dossier-details.png`. The synthetic PDF deliberately contains only one approved coverage quote; therefore the preview correctly shows the remaining policy fields as not identified rather than reproducing the reference’s populated values.
+- Verification: connected-upload mobile rehearsal **33/33**; repository suite **564/564**; TypeScript, no-cache Expo lint, and `git diff --check` passed. These synthetic checks do not complete Insurance story acceptance; native visual review, complete policy source coverage, replacement/conflict recovery and production requirements remain open. Whole-app strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 accepted packages**.
 
 ### Live AI across provider-backed journeys — 4 October 2026
 

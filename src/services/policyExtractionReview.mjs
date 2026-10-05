@@ -45,8 +45,25 @@ export function buildPolicyExtractionReview(input = {}) {
       const item = evidenceFor(claim);
       return item ? [item] : [];
     });
+  const context = documentContext && typeof documentContext === 'object' ? documentContext : {};
+  const contextEvidence = (entries, prefix) => (Array.isArray(entries) ? entries : []).flatMap((entry) => {
+    const value = typeof entry?.value === 'string' ? entry.value.trim() : '';
+    if (!value) return [];
+    return [{
+      claimId: null,
+      label: `${prefix}: ${String(entry.kind ?? 'source detail').replaceAll('_', ' ')}`,
+      kind: typeof entry.kind === 'string' ? entry.kind : '',
+      value,
+      quote: typeof entry.quote === 'string' ? entry.quote.trim() : '',
+      page: Number.isInteger(entry.page) ? entry.page : null,
+      needsReview: !(typeof entry.quote === 'string' && entry.quote.trim()),
+    }];
+  });
+  const policyIdentityEvidence = contextEvidence(context.entities, 'Policy detail').filter((item) => ['insurer', 'plan_name', 'policy_type', 'document_version', 'jurisdiction'].includes(item.kind));
+  const policyDateEvidence = contextEvidence(context.dates, 'Policy date').filter((item) => ['issued_at', 'effective_period', 'policy_effective_date', 'renewal_date', 'expiry_date'].includes(item.kind));
   const sections = POLICY_REVIEW_SECTIONS.map((section) => {
-    const evidence = policyClaims.filter((item) => section.match.test(`${item.label} ${item.value}`));
+    const contextItems = section.id === 'identity' ? policyIdentityEvidence : section.id === 'dates' ? policyDateEvidence : [];
+    const evidence = [...policyClaims.filter((item) => section.match.test(`${item.label} ${item.value}`)), ...contextItems];
     const duplicateValues = new Map();
     for (const item of evidence) {
       const key = item.label.normalize('NFKC').toLowerCase();
@@ -62,7 +79,6 @@ export function buildPolicyExtractionReview(input = {}) {
         : 'identified';
     return { id: section.id, title: section.title, status, evidence };
   });
-  const context = documentContext && typeof documentContext === 'object' ? documentContext : {};
   const insurer = Array.isArray(context.entities)
     ? context.entities.find((entity) => entity?.kind === 'insurer' && typeof entity.value === 'string' && entity.value.trim())?.value.trim() ?? null
     : null;
