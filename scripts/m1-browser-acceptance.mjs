@@ -1813,7 +1813,7 @@ async function runJourney() {
     const retrievedAt = new Date().toISOString();
     if (!snapshot.topics.some((topic) => topic.label === 'Cholesterol')) snapshot.topics.push({ id: 'cholesterol', label: 'Cholesterol' });
     snapshot.feedItems = [
-      { id: 'synthetic-reading-save', title: 'Synthetic reading · cholesterol overview', detail: 'Synthetic acceptance item for the saved reading journey.', url: 'https://example.test/health/cholesterol-overview', publisher: 'Synthetic publisher', topic: 'Cholesterol', retrievedAt, saved: false, dismissed: false },
+      { id: 'synthetic-reading-save', title: 'Synthetic reading · cholesterol overview', detail: 'A complete source summary about cholesterol results, what the values mean, and which parts of a lipid panel help interpret them. This deliberately long synthetic description verifies that Explore exposes the full text when a mobile card shows only a preview. FINAL SOURCE SENTENCE REMAINS VISIBLE.', url: 'https://example.test/health/cholesterol-overview', publisher: 'Synthetic publisher', topic: 'Cholesterol', retrievedAt, saved: false, dismissed: false },
       { id: 'synthetic-reading-hide', title: 'Synthetic reading · understanding a lipid panel', detail: 'Synthetic acceptance item for the hidden reading journey.', url: 'https://example.test/health/lipid-panel', publisher: 'Synthetic publisher', topic: 'Cholesterol', retrievedAt: new Date(Date.now() - 1000).toISOString(), saved: false, dismissed: false },
       { id: 'synthetic-reading-current-ldl', title: 'Synthetic reading · LDL cholesterol and your report', detail: 'How to understand an LDL cholesterol result in a lipid panel.', url: 'https://example.test/health/ldl-report', publisher: 'Synthetic publisher', topic: 'Cholesterol', retrievedAt: new Date(Date.now() - 2000).toISOString(), saved: false, dismissed: false },
     ];
@@ -1845,6 +1845,9 @@ async function runJourney() {
   assert(sourceCopy.includes('PUBLISHED HEADLINE') && sourceCopy.includes('SOURCE SUMMARY'), 'An unpersonalized feed card did not clearly distinguish publisher copy from Nura notes.');
   assert(sourceCopy.includes('On this device, this source matches your saved LDL cholesterol'), 'Relevant saved context was not shown as an on-device relevance cue.');
   assert(!sourceCopy.includes('Your LDL result, in context'), 'A template headline was presented as a personalized reading note.');
+  await clickVisible({ aria: 'Read full source summary for Synthetic reading · cholesterol overview' });
+  await waitText('FINAL SOURCE SENTENCE REMAINS VISIBLE.');
+  record('Explore card summaries reveal their complete source text from an accessible expand control');
   await clickVisible({ aria: 'Save Synthetic reading · cholesterol overview for later' });
   await waitFor(async () => evaluate(`JSON.parse(localStorage.getItem('nura-local-demo-v1') || '{}').feedItems?.find((item) => item.id === 'synthetic-reading-save')?.saved === true`), 'The saved reading choice was not written to the browser profile.');
   await clickVisible({ text: 'Saved · 1', exact: true });
