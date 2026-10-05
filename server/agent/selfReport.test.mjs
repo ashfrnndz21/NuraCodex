@@ -4,18 +4,16 @@ import { interpretSelfReportRequest, sanitizeSelfReportInterpretation, validateS
 
 const request = (overrides = {}) => ({
   consentForThisNote: true,
-  syntheticDemoConfirmed: true,
   noteId: 'note-demo-01',
   text: 'My knee feels stiff after running. It started on 2026-09-20.',
   topic: { id: 'joints', label: 'Joints and movement' },
   ...overrides,
 });
 
-test('self-report consent is specific to one selected note and is required before the interpreter runs', async () => {
+test('self-report consent is specific to one selected note and is required before local organization', async () => {
   let calls = 0;
   const interpret = async () => { calls += 1; return { claims: [], unknowns: [] }; };
   await assert.rejects(interpretSelfReportRequest(request({ consentForThisNote: false }), { interpret }), /Approve this one description/);
-  await assert.rejects(interpretSelfReportRequest(request({ syntheticDemoConfirmed: false }), { interpret }), /fictional sample information/);
   assert.equal(calls, 0);
 });
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { resolveLocalSampleReport, LocalSampleMismatchError } from './localSampleReports.mjs';
@@ -6,9 +7,15 @@ import { isLocalSampleFixtureId } from '../../src/services/localSampleFixtures.m
 
 const root = new URL('../../assets/samples/', import.meta.url);
 
-test('only the two bundled report IDs enable local sample handling in the app', () => {
+test('only bundled medical and insurance sample IDs enable local sample handling in the app', () => {
   assert.equal(isLocalSampleFixtureId('lipid-panel-jan-2025'), true);
   assert.equal(isLocalSampleFixtureId('lipid-panel-apr-2025'), true);
+  assert.equal(isLocalSampleFixtureId('insurance-sample-standard-2025'), true);
+  assert.equal(isLocalSampleFixtureId('insurance-independent-sample-2024'), true);
+  assert.equal(isLocalSampleFixtureId('insurance-sample-standard-2025', 'insurance'), true);
+  assert.equal(isLocalSampleFixtureId('insurance-independent-sample-2024', 'insurance'), true);
+  assert.equal(isLocalSampleFixtureId('insurance-sample-standard-2025', 'medical'), false);
+  assert.equal(isLocalSampleFixtureId('lipid-panel-jan-2025', 'insurance'), false);
   assert.equal(isLocalSampleFixtureId('unknown-fixture'), false);
   assert.equal(isLocalSampleFixtureId(''), false);
   assert.equal(isLocalSampleFixtureId(null), false);
@@ -46,6 +53,22 @@ test('maps only the exact April follow-up PDF and preserves its distinct date an
   assert.equal(result.extraction.documentContext.dates[0].value, '22 Apr 2025');
 });
 
+test('maps only the independent 2024 policy PDF to its own source-quoted coverage terms', async () => {
+  const bytes = await readFile(new URL('Nura-Independent-Policy-2024.pdf', root));
+  const result = resolveLocalSampleReport({
+    bytes, filename: 'Nura-Independent-Policy-2024.pdf', mediaType: 'application/pdf',
+    purpose: 'insurance', fixtureId: 'insurance-independent-sample-2024',
+  });
+  assert.equal(result.processingMode, 'local_sample_fixture');
+  assert.equal(result.extraction.claims.find((claim) => claim.label === 'Annual medical limit')?.value, 'SGD 35,000 per insured person');
+  assert.equal(result.extraction.claims.find((claim) => claim.label === 'Annual medical limit')?.quote, 'Annual medical limit: SGD 35,000 per insured person');
+  assert.equal(result.extraction.claims.find((claim) => claim.label === 'Room and board limit')?.value, 'SGD 220 per day');
+  assert.equal(result.extraction.claims.find((claim) => claim.label === 'Outpatient follow-up')?.value, '14 days after an eligible inpatient discharge');
+  assert.ok(result.extraction.claims.every((claim) => claim.effectiveAt === '2024-07-01'));
+  assert.equal(result.extraction.documentContext.entities[0].value, 'Meadow Sample Cooperative');
+  assert.ok(JSON.stringify(result).includes('SAMPLE-ONLY-2037'));
+});
+
 test('ordinary uploads stay on the connected path; a requested sample never accepts a lookalike', async () => {
   assert.equal(resolveLocalSampleReport({ bytes: Buffer.from('other file'), filename: 'report.pdf', mediaType: 'application/pdf' }), null);
   const exactBytes = await readFile(new URL('PL0005-sample-lipid-profile.pdf', root));
@@ -56,4 +79,9 @@ test('ordinary uploads stay on the connected path; a requested sample never acce
     { bytes: exactBytes, filename: 'PL0005-sample-lipid-profile.pdf', mediaType: 'application/pdf', purpose: 'insurance', fixtureId: 'lipid-panel-jan-2025' },
     { bytes: exactBytes, filename: 'PL0005-sample-lipid-profile.pdf', mediaType: 'application/pdf', purpose: 'medical', fixtureId: 'unknown-fixture' },
   ]) assert.throws(() => resolveLocalSampleReport(input), LocalSampleMismatchError);
+  const secondPolicy = await readFile(new URL('Nura-Independent-Policy-2024.pdf', root));
+  assert.throws(() => resolveLocalSampleReport({
+    bytes: secondPolicy, filename: 'Nura-Independent-Policy-2024.pdf', mediaType: 'application/pdf',
+    purpose: 'medical', fixtureId: 'insurance-independent-sample-2024',
+  }), LocalSampleMismatchError);
 });

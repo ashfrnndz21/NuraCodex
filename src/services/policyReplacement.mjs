@@ -64,6 +64,29 @@ function normalizedValue(value) {
   return String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+/** Return saved policies outside this document's replacement-history component. */
+export function independentPolicyComparisonCandidates(sourceId, policies, relationships = []) {
+  if (!sourceId) return [];
+  const related = new Set([sourceId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const link of relationships ?? []) {
+      if (!related.has(link.newerSourceId) && !related.has(link.olderSourceId)) continue;
+      for (const linkedId of [link.newerSourceId, link.olderSourceId]) {
+        if (linkedId && !related.has(linkedId)) {
+          related.add(linkedId);
+          changed = true;
+        }
+      }
+    }
+  }
+  return (policies ?? []).filter((policy) => policy.sourceId
+    && policy.sourceId !== sourceId
+    && !related.has(policy.sourceId)
+    && (policy.currentTerms ?? []).length > 0);
+}
+
 /** Compare only accepted current terms with the same explicit label; never infer coverage from an absent entry. */
 export function comparePolicyDocuments(newerPolicy, olderPolicy) {
   const collect = (policy) => {

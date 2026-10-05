@@ -4,6 +4,7 @@ export type InsuranceFactForHistory = {
   source: string;
   category: string;
   date: string;
+  status: 'confirmed' | 'reviewed';
   validFrom?: string;
   validUntil?: string | null;
   reviewState?: 'user_confirmed' | 'user_retracted';

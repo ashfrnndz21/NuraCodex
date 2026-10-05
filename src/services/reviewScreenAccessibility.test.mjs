@@ -27,15 +27,14 @@ test('review decisions expose accessible names, states, edited-field labels and 
   assert.match(routeSource, /accessibilityLiveRegion="assertive" aria-live="assertive" style=\{styles\.noticeBody\}/);
 });
 
-test('review avoids uncalibrated AI confidence percentages and states how to verify a suggestion', () => {
+test('review avoids uncalibrated confidence percentages and prompts verification when a quote is absent', () => {
   assert.doesNotMatch(routeSource, /AI confidence estimate/);
-  assert.match(routeSource, /Automated suggestion · check the value and result date against this source/);
-  assert.match(routeSource, /No exact source wording found · keep this pending or open the original/);
+  assert.match(routeSource, /No source quote\. Check the report before saving\./);
 });
 
 test('review activity shows a completed marker for completed intake milestones', () => {
   assert.match(routeSource, /item\.status === 'progress'/);
-  assert.match(intakeClientSource, /source_received: localSample \? 'Sample report verified locally' : 'File ready for reading'/);
+  assert.match(intakeClientSource, /source_received: localSample \? insuranceSample \? 'Example policy ready' : 'Example report ready' : insurancePurpose \? 'Policy file ready for reading' : 'File ready for reading'/);
 });
 
 test('review keeps source claims grouped and collapsed behind accessible source-detail rows', () => {
@@ -47,20 +46,22 @@ test('review keeps source claims grouped and collapsed behind accessible source-
   assert.match(routeSource, /Review details ↓/);
 });
 
-test('file extraction uses one event-backed activity surface with its stop action', () => {
-  assert.match(routeSource, /\(extracting \|\| activity\.length > 0\) && <Surface style=\{styles\.activity\}/);
+test('file extraction uses event-backed activity surfaces with its stop action', () => {
+  assert.match(routeSource, /extracting && <Surface tone=\"dark\" style=\{styles\.activity\}/);
+  assert.match(routeSource, /!extracting && activity\.length > 0 && <Surface tone=\"dark\" style=\{styles\.activity\}/);
+  assert.match(routeSource, /accessibilityLabel=\"Stop file review\"/);
   assert.match(routeSource, /styles\.activityStatusRow/);
   assert.doesNotMatch(routeSource, /Nura is reviewing your files/);
 });
 
 test('bundled sample review is distinguished from provider-backed file consent', () => {
   assert.match(routeSource, /function isBuiltInLocalSample\(asset: IntakeAsset\)/);
-  assert.match(routeSource, /Local sample · /);
-  assert.match(routeSource, /Connected AI · /);
-  assert.match(routeSource, /If one does not match, it stops without being sent/);
-  assert.match(routeSource, /isLocalSampleFixtureId\(asset\.localSampleFixtureId\)/);
+  assert.match(routeSource, /Example files are checked on this device/);
+  assert.match(routeSource, /Your files are sent to Nura’s AI service for reading/);
+  assert.match(routeSource, /Each file gets its own review\. You choose what to save\./);
+  assert.match(routeSource, /isLocalSampleFixtureId\(asset\.localSampleFixtureId, asset\.purpose \?\? 'medical'\)/);
   assert.match(intakeClientSource, /asset\.localSampleFixtureId/);
-  assert.match(intakeClientSource, /isLocalSampleFixtureId\(asset\.localSampleFixtureId\)/);
+  assert.match(intakeClientSource, /isLocalSampleFixtureId\(asset\.localSampleFixtureId, purpose\)/);
   assert.match(intakeClientSource, /x-nura-local-sample-fixture/);
-  assert.match(localFixtureSource, /fixtureIds = new Set\(\['lipid-panel-jan-2025', 'lipid-panel-apr-2025'\]\)/);
+  assert.match(localFixtureSource, /\['insurance-sample-standard-2025', 'insurance'\]/);
 });

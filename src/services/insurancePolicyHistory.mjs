@@ -8,6 +8,12 @@ export function groupInsurancePolicyTerms(facts) {
 
   for (const fact of facts) {
     if (fact.category !== 'Insurance coverage' || !fact.sourceId) continue;
+    // Pending or otherwise unreviewed extraction candidates must never enter
+    // the accepted policy snapshot or a two-document comparison. Retracted
+    // entries are retained below as user-removal history, not as current terms.
+    if (fact.reviewState !== 'user_retracted'
+      && (!['confirmed', 'reviewed'].includes(fact.status)
+        || (fact.reviewState != null && fact.reviewState !== 'user_confirmed'))) continue;
 
     let group = groups.get(fact.sourceId);
     if (!group) {

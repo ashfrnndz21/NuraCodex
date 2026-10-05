@@ -2,7 +2,7 @@ export const MAX_SELF_REPORT_CHARACTERS = 2_000;
 export const MAX_SELF_REPORT_BYTES = 8_000;
 const allowedKinds = new Set(['measurement', 'reported_condition', 'symptom', 'medication', 'allergy', 'care_event', 'other']);
 const allowedUnknownReasons = new Set(['unclear', 'missing_detail', 'not_a_health_fact']);
-const allowedRequestKeys = new Set(['consentForThisNote', 'syntheticDemoConfirmed', 'noteId', 'text', 'topic']);
+const allowedRequestKeys = new Set(['consentForThisNote', 'noteId', 'text', 'topic']);
 
 function cleanText(value, limit) {
   return typeof value === 'string'
@@ -23,12 +23,11 @@ function validateTopic(topic) {
   return { id, label };
 }
 
-/** Validates the one-note, fictional-demo consent before any model adapter is called. */
+/** Validates one-note local-processing consent before the organizer runs. */
 export function validateSelfReportRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('The description could not be validated.');
   if (Object.keys(body).some((key) => !allowedRequestKeys.has(key))) throw new Error('The description request included unsupported details.');
   if (body.consentForThisNote !== true) throw new Error('Approve this one description before Nura organizes it on the local demo service.');
-  if (body.syntheticDemoConfirmed !== true) throw new Error('Use fictional sample information only in this preview.');
   const noteId = typeof body.noteId === 'string' ? body.noteId.trim() : '';
   if (!/^[A-Za-z0-9:_-]{1,96}$/.test(noteId)) throw new Error('The description could not be matched to this review.');
   if (typeof body.text !== 'string') throw new Error('Add a short description before asking Nura to organize it.');

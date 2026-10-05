@@ -11,6 +11,8 @@ import { processIntakeBatch } from '../../src/services/intakeBatch.mjs';
 import { commitReviewBatch } from '../../src/services/reviewBatch.mjs';
 import { readBrowserDemoSnapshot, writeBrowserDemoSnapshot } from '../../src/state/browserDemoPersistence.mjs';
 
+import { createSyntheticDemoAuthorization, fetchWithSyntheticDemoSession } from './demoTestSession.mjs';
+
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const serverEntry = join(projectRoot, 'server/index.mjs');
 const NOTE_MARKER = 'sample dizziness after a fictional walk';
@@ -56,7 +58,7 @@ async function startServer({ tempDir, dataDir, interceptedLog, externalLog }) {
     if (child.exitCode !== null) throw new Error(`Local server exited before starting: ${output}`);
     try {
       const response = await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(700) });
-      if (response.ok) return { child, baseUrl, output: () => output };
+      if (response.ok) { const authorization = await createSyntheticDemoAuthorization(baseUrl); return { child, baseUrl, output: () => output, authorization }; }
     } catch { /* Wait while the local server starts. */ }
     await sleep(100);
   }
@@ -150,7 +152,7 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
     assert.equal(batchConsent.confirmed, true);
     assert.ok(batchConsent.fileIds.includes(asset.id), 'each request is covered by the single batch approval');
     assert.ok(approvedFileIds.has(asset.id));
-    const response = await fetch(`${server.baseUrl}/v1/intake/extract`, {
+    const response = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/extract`, server.authorization, {
       method: 'POST',
       headers: {
         'content-type': 'application/pdf',
@@ -191,7 +193,7 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
       failure.sourceId = sourceId;
       throw failure;
     }
-    const sourceResponse = await fetch(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(sourceId)}/claims`);
+    const sourceResponse = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(sourceId)}/claims`, server.authorization);
     const source = await sourceResponse.json();
     return { sourceId, source: source.source, claims: source.claims };
   };
@@ -218,13 +220,13 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
   assert.equal(retriedSource.state, 'candidate_review');
 
   assert.ok(interruptedSourceId, 'cancellation retains a source reference for safe recovery');
-  const interruptedSourceResponse = await fetch(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(interruptedSourceId)}/claims`);
+  const interruptedSourceResponse = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(interruptedSourceId)}/claims`, server.authorization);
   const interruptedSource = await interruptedSourceResponse.json();
   if (interruptedSource.source.state !== 'failed') {
     const deadline = Date.now() + 2_000;
     while (Date.now() < deadline && interruptedSource.source.state !== 'failed') {
       await sleep(25);
-      const retryResponse = await fetch(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(interruptedSourceId)}/claims`);
+      const retryResponse = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(interruptedSourceId)}/claims`, server.authorization);
       Object.assign(interruptedSource, await retryResponse.json());
     }
   }
@@ -268,7 +270,7 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
       writeBrowserDemoSnapshot(storage, 'nura-demo', { ...loaded, intakeNotes: loaded.intakeNotes.filter((item) => item.id !== note.id), facts: [fact, ...loaded.facts] });
       return;
     }
-    const response = await fetch(`${server.baseUrl}/v1/intake/claims/${encodeURIComponent(operation.claimId)}/decision`, {
+    const response = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/claims/${encodeURIComponent(operation.claimId)}/decision`, server.authorization, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ decision: operation.decision, ...(operation.editedValue ? { editedValue: operation.editedValue } : {}) }),
     });
@@ -287,7 +289,7 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
   assert.deepEqual(retrySave.map(({ id, status }) => [id, status]), [[`edit:${sepTotal.id}`, 'saved']]);
 
   const getClaim = async (claim) => {
-    const response = await fetch(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(claim.sourceId)}/claims`);
+    const response = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(claim.sourceId)}/claims`, server.authorization);
     const body = await response.json();
     return body.claims.find((item) => item.id === claim.id);
   };

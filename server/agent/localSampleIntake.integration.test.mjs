@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { createServer as createTcpServer } from 'node:net';
@@ -11,6 +12,8 @@ import { processIntakeBatch } from '../../src/services/intakeBatch.mjs';
 import { analyzeIntakeBatch } from '../../src/services/intakeBatchAnalysis.mjs';
 import { commitReviewBatch } from '../../src/services/reviewBatch.mjs';
 import { createSourceRecord, DEMO_PROFILE_ID } from '../contracts.mjs';
+
+import { createSyntheticDemoAuthorization, fetchWithSyntheticDemoSession } from './demoTestSession.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
@@ -67,7 +70,7 @@ async function startServer(tempDir, initialRepository) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Local service exited before starting: ${output}`);
-    try { if ((await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(500) })).ok) return { child, baseUrl, dataDir, externalLog }; }
+    try { if ((await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(500) })).ok) { const authorization = await createSyntheticDemoAuthorization(baseUrl); return { child, baseUrl, dataDir, externalLog, authorization }; } }
     catch { /* Wait for the loopback-only service to start. */ }
     await sleep(60);
   }
@@ -102,7 +105,7 @@ test('M1 bundled sample batch uses local-only mapping, supports review/save and 
   })();
   const processFile = async (file) => {
     assert.equal(approvals.has(file.id), true, 'one explicit batch approval covers both named samples');
-    const response = await fetch(`${server.baseUrl}/v1/intake/extract`, {
+    const response = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/extract`, server.authorization, {
       method: 'POST',
       headers: {
         'content-type': 'application/pdf',
@@ -122,7 +125,7 @@ test('M1 bundled sample batch uses local-only mapping, supports review/save and 
     assert.equal(extractionStart?.data.provider, undefined);
     const completed = events.find((event) => event.type === 'intake_completed');
     assert.equal(completed?.data.state, 'candidate_review');
-    const sourceResponse = await fetch(`${server.baseUrl}/v1/intake/sources/${completed.data.sourceId}/claims`);
+    const sourceResponse = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${completed.data.sourceId}/claims`, server.authorization);
     const sourceBody = await sourceResponse.json();
     assert.equal(sourceBody.source.processingMode, 'local_sample_fixture');
     assert.ok(sourceBody.claims.every((claim) => claim.sourceLocation.locationConfidence === 'verified_fixture'));
@@ -147,7 +150,7 @@ test('M1 bundled sample batch uses local-only mapping, supports review/save and 
     { id: `claim:${rejected.id}`, claimId: rejected.id, decision: 'reject' },
   ];
   const saved = await commitReviewBatch(decisions, async (operation) => {
-    const response = await fetch(`${server.baseUrl}/v1/intake/claims/${operation.claimId}/decision`, {
+    const response = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/claims/${operation.claimId}/decision`, server.authorization, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ decision: operation.decision, ...(operation.editedValue ? { editedValue: operation.editedValue } : {}) }),
     });
@@ -161,7 +164,7 @@ test('M1 bundled sample batch uses local-only mapping, supports review/save and 
   assert.equal(await readFile(server.externalLog, 'utf8').catch(() => ''), '', 'no external request was attempted');
   assert.equal(consentCount, 1, 'both files were processed under one approval');
 
-  const duplicateResponse = await fetch(`${server.baseUrl}/v1/intake/extract`, {
+  const duplicateResponse = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/extract`, server.authorization, {
     method: 'POST',
     headers: {
       'content-type': 'application/pdf',
@@ -177,7 +180,7 @@ test('M1 bundled sample batch uses local-only mapping, supports review/save and 
   assert.equal(duplicateEvents.find((event) => event.type === 'intake_completed')?.data.processingMode, 'local_sample_fixture');
   assert.equal(duplicateEvents.some((event) => event.type === 'extraction_started'), false);
 
-  const spoofed = await fetch(`${server.baseUrl}/v1/intake/extract`, {
+  const spoofed = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/extract`, server.authorization, {
     method: 'POST',
     headers: { 'content-type': 'application/pdf', 'x-nura-file-name': encodeURIComponent(files[0].name), 'x-nura-document-purpose': 'medical', 'x-nura-consent-confirmed': 'true', 'x-nura-local-sample-fixture': files[0].fixtureId },
     body: Buffer.from('%PDF-1.4\nnot the bundled sample\n%%EOF'),
@@ -202,7 +205,7 @@ test('local sample processing will not reuse an identical source saved through a
   const server = await startServer(tempDir, { schemaVersion: 1, sources: [previousSource], claims: [], assertions: [], runEvents: [] });
   t.after(async () => { await stopServer(server.child); await rm(tempDir, { recursive: true, force: true }); });
 
-  const response = await fetch(`${server.baseUrl}/v1/intake/extract`, {
+  const response = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/extract`, server.authorization, {
     method: 'POST',
     headers: {
       'content-type': 'application/pdf',

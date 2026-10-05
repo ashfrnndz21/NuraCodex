@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createSyntheticDemoAuthorization, fetchWithSyntheticDemoSession } from './demoTestSession.mjs';
+
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const serverEntry = join(projectRoot, 'server/index.mjs');
 const pause = (ms) => new Promise((resolvePause) => setTimeout(resolvePause, ms));
@@ -49,7 +51,7 @@ async function startLocalServer({ dataDir, tempDir, callsFile }) {
     if (child.exitCode !== null) throw new Error(`Local Nura test server exited before starting: ${output}`);
     try {
       const response = await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(700) });
-      if (response.ok) return { child, baseUrl, output: () => output };
+      if (response.ok) { const authorization = await createSyntheticDemoAuthorization(baseUrl); return { child, baseUrl, output: () => output, authorization }; }
     } catch { /* The loopback server is still starting. */ }
     await pause(100);
   }
@@ -90,17 +92,17 @@ test('POST self-report stays local, requires per-note consent, and persists only
   const server = await startLocalServer({ dataDir, tempDir, callsFile });
   t.after(async () => { await stopLocalServer(server.child); await rm(tempDir, { recursive: true, force: true }); });
 
-  const denied = await fetch(`${server.baseUrl}/v1/intake/self-report`, {
+  const denied = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/self-report`, server.authorization, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ consentForThisNote: false, syntheticDemoConfirmed: true, noteId: 'note-consent-denied', text: deniedNote }),
+    body: JSON.stringify({ consentForThisNote: false, noteId: 'note-consent-denied', text: deniedNote }),
   });
   assert.equal(denied.status, 400);
   assert.match((await readJson(denied)).message, /Approve this one description/);
 
-  const accepted = await fetch(`${server.baseUrl}/v1/intake/self-report`, {
+  const accepted = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/self-report`, server.authorization, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      consentForThisNote: true, syntheticDemoConfirmed: true, noteId: 'note-synthetic-01',
+      consentForThisNote: true, noteId: 'note-synthetic-01',
       text: rawNote, topic: { id: 'blood-pressure', label: 'Blood pressure' },
     }),
   });
@@ -114,7 +116,7 @@ test('POST self-report stays local, requires per-note consent, and persists only
   assert.ok(response.claims.every((claim) => claim.evidenceState === 'needs_review'));
   assert.ok(response.claims.every((claim) => claim.sourceLocation.quote && rawNote.includes(claim.sourceLocation.quote)));
 
-  const reopened = await fetch(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(response.source.id)}/claims`);
+  const reopened = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/sources/${encodeURIComponent(response.source.id)}/claims`, server.authorization);
   assert.equal(reopened.status, 200);
   const reopenedBody = await readJson(reopened);
   assert.equal(reopenedBody.source.id, response.source.id);
@@ -156,9 +158,9 @@ test('POST self-report returns a generic failure and leaves no note behind when 
 
   const server = await startLocalServer({ dataDir: blockedDataPath, tempDir, callsFile });
   t.after(async () => { await stopLocalServer(server.child); await rm(tempDir, { recursive: true, force: true }); });
-  const failed = await fetch(`${server.baseUrl}/v1/intake/self-report`, {
+  const failed = await fetchWithSyntheticDemoSession(`${server.baseUrl}/v1/intake/self-report`, server.authorization, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ consentForThisNote: true, syntheticDemoConfirmed: true, noteId: 'note-storage-failure', text: failedNote }),
+    body: JSON.stringify({ consentForThisNote: true, noteId: 'note-storage-failure', text: failedNote }),
   });
   assert.equal(failed.status, 500);
   const failureBody = await readJson(failed);

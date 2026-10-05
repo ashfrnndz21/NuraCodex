@@ -14,3 +14,8 @@ test('keeps browser-stored files and medical videos reviewable', () => {
 test('does not offer videos to the insurance registry', () => {
   assert.equal(isReviewableIntakeAsset({ uri: 'file:///policy.mp4', kind: 'video' }, 'insurance'), false);
 });
+
+test('audio can be staged as medical history but is excluded from insurance review', () => {
+  assert.equal(isReviewableIntakeAsset({ uri: 'file:///visit.m4a', kind: 'audio' }, 'medical'), true);
+  assert.equal(isReviewableIntakeAsset({ uri: 'file:///policy.m4a', kind: 'audio' }, 'insurance'), false);
+});

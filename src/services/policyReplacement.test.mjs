@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { comparePolicyDocuments, resolvePolicyReplacementLinks, summarizePolicyDifferences, validatePolicyReplacement } from './policyReplacement.mjs';
+import { comparePolicyDocuments, independentPolicyComparisonCandidates, resolvePolicyReplacementLinks, summarizePolicyDifferences, validatePolicyReplacement } from './policyReplacement.mjs';
 
 const sources = ['new', 'old', 'mid'].map((sourceId) => ({ sourceId }));
 
@@ -42,6 +42,25 @@ test('marks a relationship ready only when both documents have current accepted 
   const links = [{ id: 'link-3', newerSourceId: 'new', olderSourceId: 'old' }];
   const policies = ['new', 'old'].map((sourceId) => ({ sourceId, currentTerms: [{ id: `${sourceId}-term` }], previousTerms: [], removedTerms: [] }));
   assert.equal(resolvePolicyReplacementLinks(links, policies, ['new', 'old'])[0].status, 'ready');
+});
+
+test('independent comparison choices exclude replacement-linked policy history and unreviewed records', () => {
+  const policies = [
+    { sourceId: 'current', currentTerms: [{ id: 'c1' }] },
+    { sourceId: 'prior', currentTerms: [{ id: 'p1' }] },
+    { sourceId: 'older', currentTerms: [{ id: 'o1' }] },
+    { sourceId: 'unrelated', currentTerms: [{ id: 'u1' }] },
+    { sourceId: 'unreviewed', currentTerms: [] },
+  ];
+  const relationships = [
+    { newerSourceId: 'current', olderSourceId: 'prior' },
+    { newerSourceId: 'prior', olderSourceId: 'older' },
+  ];
+  assert.deepEqual(
+    independentPolicyComparisonCandidates('current', policies, relationships).map((policy) => policy.sourceId),
+    ['unrelated'],
+  );
+  assert.deepEqual(independentPolicyComparisonCandidates('', policies, relationships), []);
 });
 
 const term = (id, label, value) => ({ id, label, value });
