@@ -1,5 +1,11 @@
 # Nura build board
 
+## 5 October 2026 — insurer response journey verified
+
+- **Passed:** the connected browser flow records an insurer’s reply as user-reported, ties it to the exact accepted policy claim, keeps it out of AI context, edits it across reload, and removes it without changing the policy record.
+- Updated insurer-reply journey brings the reduced-motion Health → Insurance → Ask run to **122/122**; the full repository suite remains **561/561**, with typecheck, lint and `git diff --check` green.
+- This closes only the insurer-reply capture slice. Broader M3 recovery/term-conflict handling, supported-native review, and production gates remain open; strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages**.
+
 ## 5 October 2026 — full current-provider and app-journey validation
 
 - **Passed:** live synthetic provider evaluation **16/16** across Ask, selected media, policy, urgent symptoms, document/media extraction, audio, trusted sources and live video search. Inputs were generated synthetic data only.
