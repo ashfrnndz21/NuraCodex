@@ -66,10 +66,35 @@ async function stopServer(child) {
   await Promise.race([exited, pause(1_500).then(() => child.kill('SIGKILL'))]);
 }
 
+async function runServerStartupGuard(overrides) {
+  const child = spawn(process.execPath, [serverEntry], {
+    cwd: projectRoot,
+    env: { ...process.env, NURA_AGENT_PORT: '0', ...overrides },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+  const result = await new Promise((resolveResult, rejectResult) => {
+    child.once('error', rejectResult);
+    child.once('close', (code, signal) => resolveResult({ code, signal, stderr }));
+  });
+  return result;
+}
+
 const sampleSignIn = () => ({
   channel: 'email',
   destination: previewIdentityInstructions.email,
   code: previewIdentityInstructions.code,
+});
+
+test('development API fails closed in production and for non-loopback binds', async () => {
+  const production = await runServerStartupGuard({ NODE_ENV: 'production', NURA_BIND_HOST: '127.0.0.1' });
+  assert.notEqual(production.code, 0, 'the synthetic development server must not start in production mode');
+  assert.match(production.stderr, /cannot be started in production/i);
+
+  const publicBind = await runServerStartupGuard({ NODE_ENV: 'test', NURA_BIND_HOST: '0.0.0.0' });
+  assert.notEqual(publicBind.code, 0, 'the synthetic development server must refuse a public network bind');
+  assert.match(publicBind.stderr, /binds to loopback only/i);
 });
 
 test('local API requires an expiring synthetic server session and denies replay after sign-out', async (t) => {

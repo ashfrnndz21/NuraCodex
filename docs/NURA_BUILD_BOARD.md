@@ -1,5 +1,11 @@
 # Nura build board
 
+## 5 October 2026 — production startup guard and dependency triage
+
+- **Passed:** the synthetic local API is regression-tested to exit before listening when `NODE_ENV=production` or when configured to bind a public address. Focused session-auth integration passes **2/2**; repository suite **562/562**; TypeScript, lint and diff checks pass.
+- **Still open:** fresh `npm audit --omit=dev` reports **23 advisories (3 moderate, 20 high)**. Expo/Metro transitives include `braces` and `node-forge` with no patched upstream releases listed; the patched decoder is ESM-only and the current SDK 57-compatible Expo Router line remains 57.x. The blanket npm force fix proposes a destructive Expo 44 downgrade and was not applied.
+- This hardens the demo boundary but does not make the service production-ready. Hosted identity/storage, patched dependency paths, monitoring, incident recovery, and security review remain open; strict acceptance remains **0/11 stories, 0/8 production gates, 0/19 packages**.
+
 ## 5 October 2026 — Explore summary disclosure verified
 
 - **Passed:** Explore’s mobile card preview exposes “Read full summary” for longer supplied summaries, and expanding it reveals the final source sentence. This covers the case where a five-line preview could visually truncate text before the old character-only control appeared.
