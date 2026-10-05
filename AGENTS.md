@@ -1,5 +1,14 @@
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
+## Canonical repository and change hygiene
+
+- This Git checkout is the canonical Nura codebase. Start Nura tasks from the repository root and confirm the root with `git rev-parse --show-toplevel` before editing. Do not create another Nura copy, unpack an older ZIP over this checkout, or move Nura files into a different repository.
+- `SingleIDContext` is a separate codebase. Keep its files, history, tasks, and project entry separate from Nura.
+- Before editing, inspect `git status --short`. Preserve existing user changes; never reset, clean, stage, or commit the whole workspace as a shortcut. Work on one feature slice at a time and review only the files that slice changes.
+- Use [`docs/REPOSITORY_STRUCTURE.md`](docs/REPOSITORY_STRUCTURE.md) for the code map and contributor workflow. Use [`docs/NURA_BUILD_AUDIT.md`](docs/NURA_BUILD_AUDIT.md) for the latest verified state, [`docs/NURA_BUILD_BOARD.md`](docs/NURA_BUILD_BOARD.md) for dated progress, and [`docs/USER_STORY_ACCEPTANCE.md`](docs/USER_STORY_ACCEPTANCE.md) plus [`docs/NURA_COMPLETE_BUILD_SCOPE.md`](docs/NURA_COMPLETE_BUILD_SCOPE.md) for acceptance. Historical checkpoints are not current implementation evidence.
+- Keep routes in the repository-root `app/` directory. Put reusable UI in `src/components/`, domain and presentation logic in `src/services/`, persistence/state in `src/state/`, and local API orchestration, ports, and adapters in `server/`. Do not create a second route root under `src/app/`.
+- Keep additions in the existing feature/domain area. Move or delete files only after checking imports, platform resolution, tests, package scripts, documentation links, and runtime use. Add new tests to the relevant npm test script so repository verification actually runs them.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
@@ -25,7 +34,7 @@ Run lint and typecheck before declaring any task done.
 
 ## Navigation & Routing
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
+- Use **Expo Router** for all navigation. Routes live in the repository-root `app/` directory — every route file there is a screen, and `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utilities) outside `app/`.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
