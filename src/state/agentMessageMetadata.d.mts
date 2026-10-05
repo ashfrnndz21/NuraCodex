@@ -1,4 +1,12 @@
 export type AgentMessageMetadata = {
+  readingSource?: {
+    title: string;
+    publisher?: string;
+    topic?: string;
+    mediaType?: 'article' | 'video';
+    summary?: string;
+    url?: string;
+  };
   meaning?: { text: string; citations: string[] };
   unknowns?: string[];
   nextSteps?: string[];
@@ -20,6 +28,7 @@ export type AgentMessageMetadata = {
 
 export type AgentMessageRow = {
   id: string;
+  conversation_id?: string | null;
   run_id: string;
   role: 'user' | 'assistant';
   text: string;
@@ -33,6 +42,7 @@ export type PersistableAgentMessage = {
   id: string;
   runId: string;
   role: 'user' | 'assistant';
+  conversationId?: string;
   text: string;
   citations: Array<{
     reference: string;

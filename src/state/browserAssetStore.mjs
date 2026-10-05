@@ -60,6 +60,14 @@ export async function deleteBrowserAsset(id) {
   await done;
 }
 
+export async function deleteBrowserAssetCopies(assets) {
+  const ids = [...new Set((Array.isArray(assets) ? assets : [])
+    .map((asset) => browserAssetId(typeof asset?.uri === 'string' ? asset.uri : ''))
+    .filter(Boolean))];
+  await Promise.all(ids.map((id) => deleteBrowserAsset(id)));
+  return ids.length;
+}
+
 export async function clearBrowserAssets() {
   if (typeof indexedDB === 'undefined') return;
   const db = await openDatabase();

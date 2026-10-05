@@ -4,4 +4,5 @@ export function isSyntheticPlaceholderUri(uri: string): boolean;
 export function saveBrowserAsset(id: string, blob: Blob): Promise<void>;
 export function readBrowserAsset(id: string): Promise<Blob | null>;
 export function deleteBrowserAsset(id: string): Promise<void>;
+export function deleteBrowserAssetCopies(assets: Array<{ uri: string }>): Promise<number>;
 export function clearBrowserAssets(): Promise<void>;

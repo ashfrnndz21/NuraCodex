@@ -15,7 +15,7 @@ function memoryStorage(seed = {}) {
 const fallback = {
   version: 1, demoOnly: true, name: '', birthday: '', country: '', email: '', phone: '',
   topics: [], assets: [], intakeNotes: [], facts: [], treatments: [], treatmentEvents: [], visits: [], policyReplacements: [], policyClarifications: [],
-  visitEvents: [], links: [], feedItems: [], savedQuestions: [], agentMessages: [], registryBriefs: [],
+  visitEvents: [], links: [], feedItems: [], savedQuestions: [], agentMessages: [], askConversations: [], registryBriefs: [], consentReceipts: [],
 };
 
 test('a fresh workspace clears sample profile and record data before onboarding', () => {
@@ -34,7 +34,7 @@ test('a fresh workspace clears sample profile and record data before onboarding'
   assert.equal(loaded.snapshot.demoOnly, true);
   assert.equal(loaded.snapshot.name, '');
   assert.equal(loaded.snapshot.country, '');
-  for (const field of ['topics', 'assets', 'intakeNotes', 'facts', 'treatments', 'treatmentEvents', 'visits', 'visitEvents', 'links', 'policyReplacements', 'policyClarifications', 'feedItems', 'savedQuestions', 'agentMessages', 'registryBriefs']) {
+  for (const field of ['topics', 'assets', 'intakeNotes', 'facts', 'treatments', 'treatmentEvents', 'visits', 'visitEvents', 'links', 'policyReplacements', 'policyClarifications', 'feedItems', 'savedQuestions', 'agentMessages', 'registryBriefs', 'consentReceipts']) {
     assert.deepEqual(loaded.snapshot[field], [], field);
   }
 });
@@ -43,7 +43,7 @@ test('browser demo snapshot round-trips profile, facts, source links and agent h
   const storage = memoryStorage();
   const profileSummary = { answer: 'The sample profile includes a selected cholesterol focus.', citations: ['R1'], unknowns: ['No result values were provided.'], nextSteps: ['Add a recent report if useful.'], memoryProposal: null, revision: true };
   const agentMessage = {
-    id: 'm1', runId: 'run-1', role: 'assistant', text: 'Your saved reading is 118/76.',
+    id: 'm1', runId: 'run-1', conversationId: 'ask-thread-1', role: 'assistant', text: 'Your saved reading is 118/76.',
     citations: [{ reference: 'R1', id: 'f1', title: 'Blood pressure', detail: '118/76 mmHg', date: '2025-02-18', source: 'Sample report', status: 'confirmed', kind: 'user_record' }],
     trace: [{ id: 'event-1', label: 'Checked the saved record', status: 'complete' }],
     meaning: { text: 'Blood pressure is recorded as two numbers.', citations: ['R2'] },
@@ -51,11 +51,27 @@ test('browser demo snapshot round-trips profile, facts, source links and agent h
     nextSteps: ['Add another dated reading if you want a comparison.'],
     profileSummary,
   };
-  const snapshot = { ...fallback, name: 'Riley Sample', facts: [{ id: 'f1', sourceId: 's1' }], links: [{ id: 'l1' }], agentMessages: [agentMessage] };
+  const snapshot = { ...fallback, name: 'Riley Sample', facts: [{ id: 'f1', sourceId: 's1' }], links: [{ id: 'l1' }], agentMessages: [agentMessage], askConversations: [{ id: 'ask-thread-1', title: 'Blood pressure', createdAt: '2026-10-02T10:00:00.000Z', updatedAt: '2026-10-02T10:01:00.000Z', linkedConversationIds: [] }] };
   writeBrowserDemoSnapshot(storage, 'nura-demo', snapshot);
   const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.equal(loaded.warning, null);
   assert.deepEqual(loaded.snapshot, snapshot);
+});
+
+test('older browser history migrates into one titled conversation and keeps every message in that thread', () => {
+  const storage = memoryStorage();
+  const oldMessages = [
+    { id: 'old-user', runId: 'old-run', role: 'user', text: 'What does my cholesterol result mean?', createdAt: '2026-10-02T10:00:00.000Z' },
+    { id: 'old-assistant', runId: 'old-run', role: 'assistant', text: 'The saved result needs its original unit confirmed.', createdAt: '2026-10-02T10:00:10.000Z' },
+  ];
+  writeBrowserDemoSnapshot(storage, 'nura-demo', { ...fallback, agentMessages: oldMessages });
+
+  const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback).snapshot;
+  assert.equal(loaded.askConversations.length, 1);
+  assert.equal(loaded.askConversations[0].id, 'legacy-ask-history');
+  assert.equal(loaded.askConversations[0].title, 'Cholesterol result');
+  assert.deepEqual(loaded.agentMessages.map((message) => message.conversationId), ['legacy-ask-history', 'legacy-ask-history']);
+  assert.deepEqual(loaded.askConversations[0].linkedConversationIds, []);
 });
 
 test('browser re-entry preserves which bundled sample must use the local-only review path', () => {
@@ -133,7 +149,7 @@ test('an explicitly cleared empty workspace stays empty after refresh', () => {
 
 test('older version-one workspaces migrate with an empty policy relationship list', () => {
   const storage = memoryStorage();
-  const { policyReplacements: _policyReplacements, ...oldSnapshot } = fallback;
+  const { policyReplacements: _policyReplacements, consentReceipts: _consentReceipts, ...oldSnapshot } = fallback;
   storage.setItem('nura-demo', JSON.stringify(oldSnapshot));
   const loaded = readBrowserDemoSnapshot(storage, 'nura-demo', fallback);
   assert.equal(loaded.warning, null);

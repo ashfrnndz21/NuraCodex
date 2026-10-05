@@ -1,9 +1,12 @@
+import { normalizeConsentReceipts } from '../services/consentReceipts.mjs';
+import { createConversationTitle } from '../services/conversationHistory.mjs';
+
 const arrayFields = [
   'topics', 'assets', 'facts', 'treatments', 'treatmentEvents', 'visits',
   'visitEvents', 'links', 'feedItems', 'savedQuestions', 'agentMessages', 'registryBriefs',
 ];
 const stringFields = ['name', 'birthday', 'country', 'email', 'phone'];
-const optionalArrayFields = ['policyReplacements', 'policyClarifications', 'intakeNotes'];
+const optionalArrayFields = ['policyReplacements', 'policyClarifications', 'intakeNotes', 'consentReceipts', 'askConversations'];
 
 export function createEmptyBrowserDemoSnapshot(seed) {
   return {
@@ -110,7 +113,24 @@ export function readBrowserDemoSnapshot(storage, key, fallback) {
       ...parsed,
       policyReplacements: parsed.policyReplacements ?? fallback.policyReplacements ?? [],
       policyClarifications: parsed.policyClarifications ?? fallback.policyClarifications ?? [],
+      consentReceipts: normalizeConsentReceipts(parsed.consentReceipts ?? fallback.consentReceipts ?? []),
     };
+    const legacyMessages = (snapshot.agentMessages ?? []).filter((message) => !message.conversationId);
+    const existingConversationIds = new Set((snapshot.askConversations ?? []).map((conversation) => conversation.id));
+    if (legacyMessages.length && !existingConversationIds.has('legacy-ask-history')) {
+      const orderedMessages = [...legacyMessages].sort((left, right) => String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')));
+      const firstQuestion = orderedMessages.find((message) => message.role === 'user')?.text ?? 'Earlier Ask Nura conversation';
+      snapshot.askConversations = [...(snapshot.askConversations ?? []), {
+        id: 'legacy-ask-history',
+        title: createConversationTitle(firstQuestion),
+        createdAt: orderedMessages[0]?.createdAt ?? new Date(0).toISOString(),
+        updatedAt: orderedMessages.at(-1)?.createdAt ?? new Date(0).toISOString(),
+        linkedConversationIds: [],
+      }];
+    }
+    snapshot.agentMessages = (snapshot.agentMessages ?? []).map((message) => message.conversationId
+      ? message
+      : { ...message, conversationId: 'legacy-ask-history' });
     return { snapshot: migrateRedundantSeedExamples(migrateUnchangedLegacySeed(snapshot, fallback)), warning: null };
   } catch {
     return { snapshot: fallback, warning: 'Browser storage could not be read. Changes may not survive a refresh.' };

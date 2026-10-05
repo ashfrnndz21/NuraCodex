@@ -5,19 +5,22 @@ export function readAgentMessageMetadata(serialized) {
 }
 
 export function writeAgentMessageMetadata(message) {
-  return JSON.stringify({
+  const metadata = {
     meaning: message.meaning,
     unknowns: message.unknowns ?? [],
     nextSteps: message.nextSteps ?? [],
     coverageAssessments: message.coverageAssessments ?? [],
     profileSummary: message.profileSummary,
-  });
+  };
+  if (message.readingSource) metadata.readingSource = message.readingSource;
+  return JSON.stringify(metadata);
 }
 
 export function agentMessageFromRow(row) {
   const metadata = readAgentMessageMetadata(row.answer_metadata_json);
   return {
     id: row.id,
+    ...(row.conversation_id ? { conversationId: row.conversation_id } : {}),
     runId: row.run_id,
     role: row.role,
     text: row.text,
@@ -28,13 +31,14 @@ export function agentMessageFromRow(row) {
     nextSteps: metadata.nextSteps,
     coverageAssessments: metadata.coverageAssessments,
     profileSummary: metadata.profileSummary,
+    ...(metadata.readingSource ? { readingSource: metadata.readingSource } : {}),
     createdAt: row.created_at,
   };
 }
 
 export async function persistAgentMessage(database, message) {
   await database.runAsync(
-    'INSERT INTO agent_messages (id,run_id,role,text,citations_json,trace_json,created_at,answer_metadata_json) VALUES (?,?,?,?,?,?,?,?)',
+    'INSERT INTO agent_messages (id,run_id,role,text,citations_json,trace_json,created_at,answer_metadata_json,conversation_id) VALUES (?,?,?,?,?,?,?,?,?)',
     message.id,
     message.runId,
     message.role,
@@ -43,5 +47,6 @@ export async function persistAgentMessage(database, message) {
     JSON.stringify(message.trace),
     message.createdAt,
     writeAgentMessageMetadata(message),
+    message.conversationId ?? null,
   );
 }
