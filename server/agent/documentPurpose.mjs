@@ -1,14 +1,10 @@
-const INSURANCE_SIGNAL = /\b(?:insurance|policy|coverage|benefits? schedule|certificate of cover|explanation of benefits|member handbook|plan booklet)\b/i;
-
-/** Use an explicit route choice first, then clear document wording; otherwise keep health-record handling. */
-export function resolveDocumentPurpose({ requestedPurpose = 'medical', filename = '', documentType = '' } = {}) {
-  if (requestedPurpose === 'insurance') return 'insurance';
-  if (INSURANCE_SIGNAL.test(String(filename)) || INSURANCE_SIGNAL.test(String(documentType))) return 'insurance';
-  return 'medical';
+/** The user's selected category is authoritative. Filenames and model guesses can only prompt clarification. */
+export function resolveDocumentPurpose({ requestedPurpose = 'medical' } = {}) {
+  return requestedPurpose === 'insurance' ? 'insurance' : 'medical';
 }
 
 export function isRetryableEmptySource(source) {
-  return source?.state === 'extracted_empty' || source?.state === 'failed';
+  return source?.state === 'extracted_empty' || source?.state === 'failed' || source?.state === 'purpose_confirmation_required';
 }
 
 const PURPOSE_CHECK_KINDS = new Set(['insurance_policy', 'medical_record', 'travel_document', 'identity_document', 'financial_document', 'other', 'unclear']);
@@ -18,7 +14,7 @@ export function summarizeDocumentPurposeCheck({ expectedPurpose = 'insurance', s
   if (expectedPurpose !== 'insurance' && expectedPurpose !== 'medical') throw new TypeError('Choose a supported document purpose.');
   if (!Array.isArray(segmentResults) || segmentResults.length === 0) throw new TypeError('A purpose check needs at least one document segment.');
   const results = segmentResults.map((item) => {
-    const kind = typeof item?.kind === 'string' ? item.kind : 'unclear';
+    const kind = typeof item?.category === 'string' ? item.category : typeof item?.kind === 'string' ? item.kind : 'unclear';
     const confidence = Number(item?.confidence);
     if (!PURPOSE_CHECK_KINDS.has(kind) || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       throw new TypeError('The document purpose check was incomplete.');
@@ -37,4 +33,15 @@ export function summarizeDocumentPurposeCheck({ expectedPurpose = 'insurance', s
       ? 'mismatch'
       : 'unclear';
   return { expectedPurpose, kind, status, confidence: Number(confidence.toFixed(2)), segmentsReviewed: results.length };
+}
+
+/** Do not expose candidate detail from a confidently mismatched or uncertain category. */
+export function gateClaimsOnDocumentPurpose({ expectedPurpose, segmentResults, claims = [], purposeConfirmed = false } = {}) {
+  const documentPurposeCheck = summarizeDocumentPurposeCheck({ expectedPurpose, segmentResults });
+  const confirmationRequired = documentPurposeCheck.status !== 'match' && purposeConfirmed !== true;
+  return {
+    documentPurposeCheck,
+    confirmationRequired,
+    claims: confirmationRequired ? [] : claims,
+  };
 }

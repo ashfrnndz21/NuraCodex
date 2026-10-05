@@ -11,7 +11,8 @@ import { AUDIO_PROCESSING_CONSENT_VERSION, isSupportedAudioMediaType, resolveSta
 
 export type DocumentContextEntry = { kind: string; value: string; page: number | null; quote: string | null };
 export type DocumentContext = { documentType: string | null; dates: DocumentContextEntry[]; entities: DocumentContextEntry[]; notes: DocumentContextEntry[] };
-export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only'; healthAreaId?: string; documentPurpose?: 'medical' | 'insurance'; origin?: 'user_entered' | 'document_extraction'; processingMode?: 'local_sample_fixture' | 'connected_ai_provider' | 'local_rule_based' | null; documentContext?: DocumentContext | null };
+export type DocumentPurposeCheck = { expectedPurpose: 'medical' | 'insurance'; kind: 'insurance_policy' | 'medical_record' | 'travel_document' | 'identity_document' | 'financial_document' | 'other' | 'unclear'; status: 'match' | 'mismatch' | 'unclear'; confidence: number; segmentsReviewed: number };
+export type LocalSource = { id: string; displayName: string; mediaType: string; sizeBytes: number; sha256: string; state: string; importedAt: string; storage: 'device_original_only'; healthAreaId?: string; documentPurpose?: 'medical' | 'insurance'; documentPurposeCheck?: DocumentPurposeCheck | null; origin?: 'user_entered' | 'document_extraction'; processingMode?: 'local_sample_fixture' | 'connected_ai_provider' | 'local_rule_based' | null; documentContext?: DocumentContext | null };
 export type CandidateClaim = {
   id: string; sourceId: string; kind: string; label: string; value: string; unit: string | null;
   referenceRange?: string | null; method?: string | null;
@@ -101,6 +102,7 @@ function activityFromEvent(type: string, data: Record<string, unknown>, sequence
     duplicate_detected: 'This file is already in your records', health_area_context_applied: `Considering ${getHealthAreaContext(typeof data.areaId === 'string' ? data.areaId : '')?.label ?? 'your selected area'} as a reading hint`, extraction_started: audio ? 'Checking recording length' : insurancePurpose ? 'Reading your policy document' : 'Reading your document',
     audio_transcription_started: 'Transcribing your recording', audio_transcription_completed: `Transcription ready · ${typeof data.segmentCount === 'number' ? data.segmentCount : 'Timestamped'} sections`, audio_suggestions_started: 'Preparing details for your review', audio_suggestions_completed: `${typeof data.suggestionCount === 'number' ? data.suggestionCount : 'Suggested'} health details ready for review`,
     video_sampling_started: 'Finding clear moments in the video', video_frames_ready: `${typeof data.frameCount === 'number' ? data.frameCount : 'Selected'} moments ready`, video_extraction_started: 'Reading visible details from those moments',
+    purpose_confirmation_required: 'Check the document category before details are read',
     extraction_completed: audio ? 'Recording details ready to review' : localSample ? insuranceSample ? 'Policy terms ready to review' : 'Report details ready to review' : insurancePurpose ? 'Policy reading complete' : 'Document reading complete', claims_ready_for_review: `${typeof data.count === 'number' ? data.count : 'Suggested'} ${audio ? 'health details' : insurancePurpose ? 'policy terms' : 'details'} are ready for your review`,
     intake_completed: audio ? 'Your recording source is ready' : insurancePurpose ? 'Your policy source is ready' : 'Your file is ready', intake_cancelled: 'Reading stopped at your request', run_error: 'Nura couldn’t read this file. Check it and try again.',
   };
@@ -203,7 +205,7 @@ export async function analyzeSelfReport(input: { noteId: string; text: string; t
   if (!response.ok || !body.source) throw new Error(body.message || 'Nura could not organize this description.');
   return { source: body.source, claims: body.claims ?? [], duplicate: body.duplicate ?? false };
 }
-export async function extractPickedFile(asset: { uri: string; name: string; mimeType?: string; size?: number; localSampleFixtureId?: string }, onActivity?: (activity: IntakeActivity) => void, purpose: 'medical' | 'insurance' = 'medical', signal?: AbortSignal, healthAreaId?: string, audioProcessingConsent = false): Promise<IntakeResult> {
+export async function extractPickedFile(asset: { uri: string; name: string; mimeType?: string; size?: number; localSampleFixtureId?: string }, onActivity?: (activity: IntakeActivity) => void, purpose: 'medical' | 'insurance' = 'medical', signal?: AbortSignal, healthAreaId?: string, audioProcessingConsent = false, purposeConfirmed = false): Promise<IntakeResult> {
   const mimeType = resolveIntakeMediaType(asset);
   const isAudio = isSupportedAudioMediaType(mimeType);
   if (!isSupportedIntakeMediaType(mimeType) && !isAudio) throw new Error(`Choose a ${ACCEPTED_DOCUMENT_FORMATS}, image or supported video file.`);
@@ -279,6 +281,7 @@ export async function extractPickedFile(asset: { uri: string; name: string; mime
     xhr.setRequestHeader('x-nura-file-name', encodeURIComponent(asset.name));
     xhr.setRequestHeader('x-nura-consent-confirmed', 'true');
     xhr.setRequestHeader('x-nura-document-purpose', purpose);
+    if (purposeConfirmed) xhr.setRequestHeader('x-nura-document-purpose-confirmed', purpose);
     if (isAudio) xhr.setRequestHeader('x-nura-audio-processing-consent', AUDIO_PROCESSING_CONSENT_VERSION);
     const areaContext = purpose === 'medical' ? getHealthAreaContext(healthAreaId ?? '') : null;
     if (areaContext) xhr.setRequestHeader('x-nura-health-area', areaContext.id);

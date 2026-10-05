@@ -118,7 +118,6 @@ export default function InsuranceRegistry() {
   const [setupChoiceBusy, setSetupChoiceBusy] = useState(false);
   const [setupChoiceError, setSetupChoiceError] = useState('');
   const [confirmRemoveSourceId, setConfirmRemoveSourceId] = useState<string | null>(null);
-  const [confirmedInsuranceSourceIds, setConfirmedInsuranceSourceIds] = useState<string[]>([]);
   const [removingSourceId, setRemovingSourceId] = useState<string | null>(null);
   const [removeSourceError, setRemoveSourceError] = useState<{ sourceId: string; message: string } | null>(null);
   const [confirmRemovePendingAssetId, setConfirmRemovePendingAssetId] = useState<string | null>(null);
@@ -449,10 +448,10 @@ export default function InsuranceRegistry() {
         const policyClaims = review?.claims.filter((claim) => claim.kind === 'coverage_term') ?? [];
         const extractionReview = review ? buildPolicyExtractionReview({ claims: review.claims, documentContext: review.source.documentContext }) : null;
         const reviewableTerms = policyClaims.filter((claim) => ['candidate', 'needs_review'].includes(claim.evidenceState));
-        const retryNeeded = review?.source.state === 'extracted_empty' || review?.source.state === 'failed';
-        const detectedType = asset.documentType?.trim() || review?.source.documentContext?.documentType?.trim() || '';
-        const typeLooksLikePolicy = /insurance|policy|coverage|benefit|member handbook|plan booklet|certificate of cover/i.test(detectedType);
-        const likelyWrongDocument = Boolean(detectedType && !typeLooksLikePolicy);
+        const purposeNeedsConfirmation = review?.source.state === 'purpose_confirmation_required';
+        const retryNeeded = review?.source.state === 'extracted_empty' || review?.source.state === 'failed' || purposeNeedsConfirmation;
+        const detectedType = asset.documentType?.trim() || review?.source.documentContext?.documentType?.trim() || review?.source.documentPurposeCheck?.kind.replaceAll('_', ' ') || '';
+        const likelyWrongDocument = purposeNeedsConfirmation;
         return <Surface tone="dark" key={asset.id} style={styles.unregisteredSourceCard}>
           <View style={styles.policyHead}><View style={styles.policyMark}><Text style={styles.policyMarkText}>▤</Text></View><View style={{ flex: 1 }}><Text style={styles.policyEyebrow}>{reviewableTerms.length ? `${reviewableTerms.length} TERMS NEED YOUR REVIEW` : 'SOURCE DETAILS · NO APPROVED TERMS'}</Text><Text style={styles.policyName}>{documentDisplayName(asset, facts)}</Text></View><Text style={styles.sourceLinked}>SAVED</Text></View>
           <Text style={styles.unregisteredSourceNote}>{unregisteredSourceReviews.loading || review === undefined
@@ -461,19 +460,18 @@ export default function InsuranceRegistry() {
               ? 'Nura could not reopen the saved extraction. Open source review to check it again.'
               : reviewableTerms.length
                 ? 'These are suggestions from the policy. They stay out of your Insurance Registry until you review and approve them.'
-                : retryNeeded
-                  ? 'The insurer details identify the document, but no coverage terms were readable. Nothing has been added to your Insurance Registry.'
-                  : 'The source has document details but no pending coverage terms. Insurer information is not a coverage benefit.'}</Text>
+              : purposeNeedsConfirmation
+                ? 'Nura could not confirm this is an insurance policy. No policy details have been extracted or added. Open source review to confirm the category, change it, or remove the file.'
+              : retryNeeded
+                ? 'The insurer details identify the document, but no coverage terms were readable. Nothing has been added to your Insurance Registry.'
+                : 'The source has document details but no pending coverage terms. Insurer information is not a coverage benefit.'}</Text>
           {detectedType ? <View style={[styles.sourceTypeCallout, likelyWrongDocument && styles.sourceTypeCalloutWarning]}>
-            <Text style={styles.sourceTypeCalloutTitle}>{likelyWrongDocument ? 'CHECK THIS DOCUMENT TYPE' : 'DOCUMENT TYPE READ BY NURA'}</Text>
-            <Text style={styles.sourceTypeCalloutBody}>Nura read this as “{detectedType}.” {likelyWrongDocument ? 'That may not be an insurance policy. Confirm the category before saving any suggested terms.' : 'Check that this matches the policy you intended to add.'}</Text>
-            {likelyWrongDocument && !confirmedInsuranceSourceIds.includes(sourceId) ? <View style={styles.sourceFitActions}>
-              <Pressable accessibilityRole="button" onPress={() => setConfirmedInsuranceSourceIds((current) => [...new Set([...current, sourceId])])} style={styles.sourceFitKeep}><Text style={styles.sourceFitKeepText}>Yes, review it as a policy</Text></Pressable>
-              <Pressable accessibilityRole="button" onPress={() => { setRemoveSourceError(null); setConfirmRemoveSourceId(sourceId); }} style={styles.sourceFitRemove}><Text style={styles.sourceFitRemoveText}>No, remove this file</Text></Pressable>
-            </View> : null}
+            <Text style={styles.sourceTypeCalloutTitle}>{likelyWrongDocument ? 'CATEGORY NEEDS YOUR CONFIRMATION' : 'DOCUMENT TYPE READ BY NURA'}</Text>
+            <Text style={styles.sourceTypeCalloutBody}>Nura identified this source as “{detectedType}.” {likelyWrongDocument ? 'No policy terms were extracted. Confirm or change its category in source review before reading details.' : 'Check that this matches the policy you intended to add.'}</Text>
+            {likelyWrongDocument ? <Pressable accessibilityRole="button" onPress={() => openPolicySource(sourceId)} style={styles.sourceFitKeep}><Text style={styles.sourceFitKeepText}>Confirm document category →</Text></Pressable> : null}
           </View> : null}
           {review?.source.documentContext ? <DocumentContextCard context={review.source.documentContext} compact /> : null}
-          {extractionReview && <View style={styles.extractionReview}>
+          {!purposeNeedsConfirmation && extractionReview && <View style={styles.extractionReview}>
             <View style={styles.extractionReviewHeading}><View style={{ flex: 1 }}><Text style={styles.extractionReviewEyebrow}>POLICY BRIEF · EXTRACTION CHECK</Text><Text style={styles.extractionReviewTitle}>{extractionReview.counts.identified} areas identified · {extractionReview.counts.needsReview} to check · {extractionReview.counts.notIdentified} not identified</Text></View></View>
             {(expandedExtractionReviewId === sourceId ? extractionReview.sections : extractionReview.sections.slice(0, 4)).map((section) => <View key={section.id} style={styles.extractionReviewSection}>
               <View style={styles.extractionReviewRow}><Text style={styles.extractionReviewSectionTitle}>{section.title}</Text><Text style={[styles.extractionReviewStatus, section.status === 'identified' ? styles.extractionReviewStatusFound : section.status === 'needs_review' ? styles.extractionReviewStatusCheck : styles.extractionReviewStatusMissing]}>{section.status === 'identified' ? 'IDENTIFIED' : section.status === 'needs_review' ? 'CHECK' : 'NOT IDENTIFIED'}</Text></View>
@@ -485,13 +483,13 @@ export default function InsuranceRegistry() {
             {extractionReview.sections.length > 4 && <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedExtractionReviewId === sourceId }} onPress={() => setExpandedExtractionReviewId((current) => current === sourceId ? null : sourceId)} style={styles.extractionReviewToggle}><Text style={styles.extractionReviewToggleText}>{expandedExtractionReviewId === sourceId ? 'SHOW FEWER AREAS  ↑' : `SHOW ALL ${extractionReview.sections.length} AREAS  ↓`}</Text></Pressable>}
             <Text style={styles.extractionReviewNote}>{extractionReview.note}</Text>
           </View>}
-          {reviewableTerms.slice(0, 4).map((claim) => <View key={claim.id} style={styles.candidatePolicyTerm}>
+          {!purposeNeedsConfirmation && reviewableTerms.slice(0, 4).map((claim) => <View key={claim.id} style={styles.candidatePolicyTerm}>
             <Text style={styles.candidatePolicyTermTitle}>{claim.label}{claim.value ? ` · ${formatClaimValue(claim.value, claim.unit)}` : ''}</Text>
             {claim.sourceLocation.quote ? <Text numberOfLines={3} style={styles.candidatePolicyQuote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · Page ${claim.sourceLocation.page}` : ''}</Text> : null}
           </View>)}
-          {(!likelyWrongDocument || confirmedInsuranceSourceIds.includes(sourceId)) ? <Pressable accessibilityRole="button" accessibilityLabel={`${retryNeeded ? 'Retry reading' : 'Review'} policy source ${documentDisplayName(asset, facts)}`} accessibilityHint={retryNeeded ? 'Opens the source review where you can retry this file.' : 'Opens the quoted policy terms so you can review what to save.'} onPress={() => openPolicySource(sourceId)} style={styles.unregisteredSourceAction}>
-            <Text style={styles.unregisteredSourceActionText}>{retryNeeded ? 'RETRY READING THIS POLICY' : reviewableTerms.length ? 'REVIEW EXTRACTED TERMS' : 'OPEN SOURCE REVIEW'}  →</Text>
-          </Pressable> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel={`${retryNeeded ? 'Retry or confirm category for' : 'Review'} policy source ${documentDisplayName(asset, facts)}`} accessibilityHint={retryNeeded ? 'Opens the source review where you can check the document category or retry this file.' : 'Opens the quoted policy terms so you can review what to save.'} onPress={() => openPolicySource(sourceId)} style={styles.unregisteredSourceAction}>
+            <Text style={styles.unregisteredSourceActionText}>{purposeNeedsConfirmation ? 'CONFIRM CATEGORY' : retryNeeded ? 'RETRY READING THIS POLICY' : reviewableTerms.length ? 'REVIEW EXTRACTED TERMS' : 'OPEN SOURCE REVIEW'}  →</Text>
+          </Pressable>
           {confirmRemoveSourceId === sourceId ? <View style={styles.removeSourceConfirm}>
             <Text style={styles.removeSourceConfirmText}>Remove this document and the details derived from it from Nura? This cannot be undone.</Text>
             {removeSourceError?.sourceId === sourceId ? <Text accessibilityRole="alert" style={styles.replacementError}>{removeSourceError.message}</Text> : null}

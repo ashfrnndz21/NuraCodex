@@ -92,14 +92,14 @@ test('M1 synthetic intake journey batches files under one approval, keeps the no
       if (filename.toLowerCase().includes('january')) return { claims: [
         { kind: 'measurement', label: 'Total cholesterol', value: '4.2', unit: 'mmol/L', referenceRange: null, method: null, effectiveAt: '2026-01-12', confidence: 0.9, page: 1, quote: 'Total cholesterol 4.2 mmol/L on 2026-01-12' },
         { kind: 'measurement', label: 'LDL cholesterol', value: '2.8', unit: 'mmol/L', referenceRange: null, method: null, effectiveAt: '2026-01-12', confidence: 0.9, page: 1, quote: 'LDL cholesterol 2.8 mmol/L on 2026-01-12' },
-      ], documentContext: common };
+      ], documentContext: common, documentAssessment: { category: 'medical_record', confidence: 0.94 } };
       if (filename.toLowerCase().includes('september')) return { claims: [
         { kind: 'measurement', label: 'Total cholesterol', value: '4.8', unit: 'mmol/L', referenceRange: null, method: null, effectiveAt: '2026-09-12', confidence: 0.9, page: 1, quote: 'Total cholesterol 4.8 mmol/L on 2026-09-12' },
         { kind: 'measurement', label: 'HDL cholesterol', value: '1.2', unit: 'mmol/L', referenceRange: null, method: null, effectiveAt: '2026-09-12', confidence: 0.8, page: 1, quote: 'HDL cholesterol 1.2 mmol/L on 2026-09-12' },
-      ], documentContext: { ...common, notes: [{ kind: 'remarks', value: 'The sample report does not identify a collection time.', page: 1, quote: 'Collection time not listed' }] } };
+      ], documentContext: { ...common, notes: [{ kind: 'remarks', value: 'The sample report does not identify a collection time.', page: 1, quote: 'Collection time not listed' }] }, documentAssessment: { category: 'medical_record', confidence: 0.94 } };
       return { claims: [
         { kind: 'measurement', label: 'Blood pressure', value: '120/80', unit: 'mmHg', referenceRange: null, method: null, effectiveAt: '2026-08-18', confidence: 0.9, page: 1, quote: 'Blood pressure 120/80 mmHg on 2026-08-18' },
-      ], documentContext: common };
+      ], documentContext: common, documentAssessment: { category: 'medical_record', confidence: 0.94 } };
     };
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (input, options = {}) => {

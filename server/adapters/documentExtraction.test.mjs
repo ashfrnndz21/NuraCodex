@@ -8,6 +8,7 @@ import { INTAKE_MEDIA_TYPES_BY_EXTENSION, INTAKE_MIME_EXTENSIONS, resolveSupport
 const emptyDocumentExtraction = () => ({
   claims: [],
   documentContext: { documentType: null, dates: [], entities: [], notes: [] },
+  documentAssessment: { category: 'medical_record', confidence: 0.95 },
 });
 
 test('uses one supported document map for PDF, Word, RTF, OpenDocument and text files', () => {
@@ -74,6 +75,7 @@ test('image health extraction separates personal lipid results from the printed 
     return { ok: true, json: async () => ({ status: 'completed', output_text: JSON.stringify({
       claims,
       documentContext: { documentType: 'Biochemistry Lipid Profile', dates: [{ kind: 'report_date', value: '2023-06-24', page: null, quote: 'Report Date: 24/06/2023' }], entities: [], notes: [{ kind: 'clinical_decision_limits', value: 'General desirable, borderline high and high categories.', page: null, quote: 'Desirable Levels · Borderline High · High' }] },
+      documentAssessment: { category: 'medical_record', confidence: 0.98 },
     }) }) };
   };
   try {
@@ -87,6 +89,7 @@ test('image health extraction separates personal lipid results from the printed 
     assert.deepEqual(result.claims.map(({ label, value, unit }) => [label, value, unit]), claims.map(({ label, value, unit }) => [label, value, unit]));
     assert.equal(result.claims.every((claim) => claim.referenceRange), true);
     assert.equal(result.documentContext.notes[0].kind, 'clinical_decision_limits');
+    assert.deepEqual(result.documentPurposeSegments, [{ category: 'medical_record', confidence: 0.98 }]);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousApiKey === undefined) delete process.env.OPENAI_API_KEY;
@@ -158,6 +161,7 @@ test('splits long insurance PDFs into page batches and combines all candidate te
     return { ok: true, json: async () => ({ status: 'completed', output_text: JSON.stringify({
       claims: [{ kind: 'coverage_term', label: `Term ${number}`, value: `Value ${number}`, unit: null, referenceRange: null, method: null, effectiveAt: null, confidence: 0.9, page, quote: `Printed policy quote ${number}` }],
       documentContext: { documentType: 'Insurance policy', dates: [{ kind: 'issued_at', value: `2026-09-0${number}`, page, quote: `Issued ${number}` }], entities: [{ kind: 'insurer', value: 'Example insurer', page: null, quote: null }], notes: [] },
+      documentAssessment: { category: 'insurance_policy', confidence: 0.95 },
     }) }) };
   };
   try {

@@ -113,7 +113,7 @@ export default function Review() {
   const routeAssetId = typeof params.assetId === 'string' ? params.assetId : '';
   const [purpose, setPurpose] = useState<'medical' | 'insurance'>(params.purpose === 'insurance' ? 'insurance' : 'medical');
   const firstRun = params.firstRun === 'true';
-  const { ready, assets, intakeNotes, facts, setupProgress, addFact, correctFact, retractFact, reconcileSourceFactDate, attachSourceToAsset, saveIntakeNote, linkIntakeNoteSource, commitIntakeNote, removeIntakeNote, resolveProfileSetupSection } = useNura();
+  const { ready, assets, intakeNotes, facts, setupProgress, addFact, correctFact, retractFact, reconcileSourceFactDate, attachSourceToAsset, removeSavedSource, saveIntakeNote, linkIntakeNoteSource, commitIntakeNote, removeIntakeNote, resolveProfileSetupSection } = useNura();
   const readable = useMemo<IntakeAsset[]>(() => assets.filter((asset) => (asset.purpose ?? 'medical') === purpose && supported(asset) && isReviewableIntakeAsset(asset, purpose)), [assets, purpose]);
   const audioAssets = readable.filter((asset) => asset.kind === 'audio');
   const linkedSourceAssets = useMemo(() => readable.filter((asset) => isAudioReviewProcessable(asset) && Boolean(asset.serverSourceId)), [readable]);
@@ -124,6 +124,8 @@ export default function Review() {
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentAssetIds, setConsentAssetIds] = useState<string[]>([]);
   const [audioConsentAssetIds, setAudioConsentAssetIds] = useState<string[]>([]);
+  const [purposeConfirmedAssetIds, setPurposeConfirmedAssetIds] = useState<string[]>([]);
+  const [confirmRemovePurposeAssetId, setConfirmRemovePurposeAssetId] = useState<string | null>(null);
   const [selfReportConsentNoteId, setSelfReportConsentNoteId] = useState<string | null>(null);
   const [selfReportConsentChecked, setSelfReportConsentChecked] = useState(false);
   const [organizingNoteId, setOrganizingNoteId] = useState<string | null>(null);
@@ -170,7 +172,10 @@ export default function Review() {
   const approvedConsentFiles = consentFiles.filter((asset) => asset.kind !== 'audio' || audioConsentAssetIds.includes(asset.id));
   const linkedSourceKey = useMemo(() => linkedSourceAssets.map((asset) => `${asset.id}:${asset.serverSourceId ?? ''}`).join('|'), [linkedSourceAssets]);
   const batchSourceReviews = useMemo(() => batchReviewRun.key === linkedSourceKey ? batchReviewRun.reviews : [], [batchReviewRun, linkedSourceKey]);
-  const retryableSourceAssetIds = useMemo(() => new Set(batchSourceReviews.filter((review) => review.source?.state === 'extracted_empty' || review.source?.state === 'failed').map((review) => review.assetId)), [batchSourceReviews]);
+  const retryableSourceAssetIds = useMemo(() => new Set([
+    ...batchSourceReviews.filter((review) => ['extracted_empty', 'failed', 'purpose_confirmation_required'].includes(review.source?.state ?? '')).map((review) => review.assetId),
+    ...(selectedAssetId && ['extracted_empty', 'failed', 'purpose_confirmation_required'].includes(source?.state ?? '') ? [selectedAssetId] : []),
+  ]), [batchSourceReviews, selectedAssetId, source?.state]);
   const filesNeedingReview = readable.filter((asset) => isAudioReviewProcessable(asset) && (!asset.serverSourceId || retryableSourceAssetIds.has(asset.id) || fileStates[asset.id]?.status === 'failed' || fileStates[asset.id]?.status === 'cancelled'));
   const needsAnotherTry = (assetId: string) => retryableSourceAssetIds.has(assetId) || fileStates[assetId]?.status === 'failed' || fileStates[assetId]?.status === 'cancelled';
   const batchFindings = useMemo<IntakeBatchFinding[]>(() => analyzeIntakeBatch(batchSourceReviews.filter((item) => item.status === 'verified' && item.source).map((item) => ({
@@ -336,14 +341,15 @@ export default function Review() {
     setFileStates((current) => ({ ...current, ...Object.fromEntries(batch.map((asset) => [asset.id, { status: 'queued' as const }])) }));
     try {
       const results = await processIntakeBatch(batch, async (asset) => {
-        const result = await extractPickedFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size, localSampleFixtureId: asset.localSampleFixtureId }, (item) => setActivity((current) => appendIntakeActivity(current, item, asset.id, asset.name)), purpose, controller.signal, asset.healthAreaId, asset.kind === 'audio' && audioConsentAssetIds.includes(asset.id));
+        const result = await extractPickedFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size, localSampleFixtureId: asset.localSampleFixtureId }, (item) => setActivity((current) => appendIntakeActivity(current, item, asset.id, asset.name)), purpose, controller.signal, asset.healthAreaId, asset.kind === 'audio' && audioConsentAssetIds.includes(asset.id), purposeConfirmedAssetIds.includes(asset.id));
         const effectivePurpose = result.source.documentPurpose ?? purpose;
         await attachSourceToAsset(asset.id, result.source.id, result.source.documentContext?.documentType ?? null, effectivePurpose);
+        setPurposeConfirmedAssetIds((current) => current.filter((id) => id !== asset.id));
         if (effectivePurpose === 'insurance' && purpose === 'medical') {
           setPurpose('insurance');
           router.replace({ pathname: '/review', params: { purpose: 'insurance', assetId: asset.id } });
         }
-        return { claimsCount: result.claims.length };
+        return { claimsCount: result.claims.length, purposeConfirmationRequired: result.source.state === 'purpose_confirmation_required' };
       }, { signal: controller.signal, onStatus: (event) => {
         if (event.status === 'reading') setFileStates((current) => ({ ...current, [event.assetId]: { status: 'reading' } }));
         if (event.status === 'failed') {
@@ -356,11 +362,12 @@ export default function Review() {
       const completedResults = results.filter((result) => result.status === 'complete');
       const failed = results.filter((result) => result.status === 'failed').length;
       const completed = completedResults.length;
-      for (const result of completedResults) setFileStates((current) => ({ ...current, [result.assetId]: { status: 'complete', detail: `${result.value.claimsCount} suggestions ready` } }));
+      const categoryChecks = completedResults.filter((result) => result.value.purposeConfirmationRequired).length;
+      for (const result of completedResults) setFileStates((current) => ({ ...current, [result.assetId]: { status: 'complete', detail: result.value.purposeConfirmationRequired ? 'Category check required · no details extracted' : `${result.value.claimsCount} suggestions ready` } }));
       const lastCompletedId = completedResults.at(-1)?.assetId ?? '';
       const stopped = controller.signal.aborted || results.some((result) => result.status === 'cancelled');
       if (lastCompletedId) { setSelectedId(lastCompletedId); setSelectionChanged(true); }
-      if (completed || failed) setNotice(`${completed} of ${batch.length} ${purpose === 'insurance' ? 'policy file' : 'health file'}${batch.length === 1 ? '' : 's'} ready. Review each file below${failed ? ` · ${failed} need another try` : ''}.`);
+      if (completed || failed) setNotice(`${categoryChecks ? `${categoryChecks} file${categoryChecks === 1 ? '' : 's'} need a category check; no details were extracted. ` : ''}${completed} of ${batch.length} ${purpose === 'insurance' ? 'policy file' : 'health file'}${batch.length === 1 ? '' : 's'} ready. Review each file below${failed ? ` · ${failed} need another try` : ''}.`);
       if (!completed && failed) setError('Nura could not read the selected files. Each file’s status is shown above; you can retry the unprocessed files.');
       if (stopped) {
         setNotice(`Reading stopped at your request. ${completed} file${completed === 1 ? '' : 's'} finished and remain available to review; unstarted files are still ready.`);
@@ -660,6 +667,32 @@ export default function Review() {
     setConsentAssetIds(ids);
     setConsentOpen(true);
   }
+  function continueWithSelectedPurpose(assetId: string) {
+    setPurposeConfirmedAssetIds((current) => [...new Set([...current, assetId])]);
+    openConsentForAssets([assetId]);
+  }
+  async function removePurposeMismatch() {
+    if (!source || !selectedAssetId || busy) return;
+    setBusy(true); setError('');
+    try {
+      await removeSavedSource(source.id, selectedAssetId);
+      setSource(null); setClaims([]); setConfirmRemovePurposeAssetId(null);
+      setNotice('The file and any extracted details have been removed from this device and the local review service.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Nura could not remove this file.');
+    } finally { setBusy(false); }
+  }
+  async function changeToDetectedPurpose(assetId: string, nextPurpose: 'medical' | 'insurance') {
+    if (!source || busy) return;
+    setBusy(true); setError('');
+    try {
+      await attachSourceToAsset(assetId, source.id, source.documentContext?.documentType ?? null, nextPurpose);
+      setPurpose(nextPurpose); setSelectedId(assetId); setSelectionChanged(false);
+      setSource(null); setClaims([]); setPurposeConfirmedAssetIds((current) => current.filter((id) => id !== assetId));
+      openConsentForAssets([assetId]);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Nura could not change the document category.'); }
+    finally { setBusy(false); }
+  }
   const setupAction = canKeepReviewedSources
     ? { label: 'Continue profile setup', onPress: () => void keepReviewedSources() }
     : stagedReviewCount > 0
@@ -763,6 +796,16 @@ export default function Review() {
       <Text style={styles.sourceName}>{selected ? documentDisplayName({ ...selected, documentType: source.documentContext?.documentType ?? selected.documentType }, facts) : source.displayName}</Text>
       {sourceReviewSummary ? <Text style={styles.sourceSub}>{sourceReviewSummary}</Text> : null}
       <Text style={styles.sourceSub}>{source.origin === 'user_entered' ? 'Written by you' : `Source file · ${documentOriginalName(selected)}`}</Text>
+      {source.state === 'purpose_confirmation_required' && source.documentPurposeCheck ? <View style={styles.notice}>
+        <Text style={styles.noticeTitle}>{source.documentPurposeCheck.status === 'mismatch' ? 'Check this file category' : 'Nura could not confirm the file category'}</Text>
+        <Text style={styles.noticeBody}>{source.documentPurposeCheck.status === 'mismatch'
+          ? `Nura thinks this is ${source.documentPurposeCheck.kind.replaceAll('_', ' ')} rather than the ${purpose === 'insurance' ? 'insurance policy' : 'health record'} category you chose. No details have been extracted or added.`
+          : `Nura could not confidently identify this as a ${purpose === 'insurance' ? 'health insurance policy' : 'medical health record'}. No details have been extracted or added.`}</Text>
+        {source.documentPurposeCheck.kind === 'medical_record' && purpose !== 'medical' ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => void changeToDetectedPurpose(selectedAssetId, 'medical')} style={styles.primarySmall}><Text style={styles.primarySmallText}>Review as a health record</Text></Pressable> : null}
+        {source.documentPurposeCheck.kind === 'insurance_policy' && purpose !== 'insurance' ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => void changeToDetectedPurpose(selectedAssetId, 'insurance')} style={styles.primarySmall}><Text style={styles.primarySmallText}>Review as an insurance policy</Text></Pressable> : null}
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => continueWithSelectedPurpose(selectedAssetId)} style={styles.edit}><Text style={styles.actionText}>Continue as {purpose === 'insurance' ? 'insurance policy' : 'health record'}</Text></Pressable>
+        {confirmRemovePurposeAssetId === selectedAssetId ? <View style={styles.selfReportConfirm}><Text style={styles.selfReportFoot}>Remove this file and its local extraction from Nura?</Text><View style={styles.actions}><Pressable disabled={busy} onPress={() => void removePurposeMismatch()} style={styles.reject}><Text style={styles.actionText}>{busy ? 'Removing…' : 'Remove file'}</Text></Pressable><Pressable disabled={busy} onPress={() => setConfirmRemovePurposeAssetId(null)} style={styles.edit}><Text style={styles.actionText}>Keep file</Text></Pressable></View></View> : <Pressable accessibilityRole="button" disabled={busy} onPress={() => setConfirmRemovePurposeAssetId(selectedAssetId)} style={styles.reject}><Text style={styles.actionText}>Remove wrong file</Text></Pressable>}
+      </View> : null}
       {source.origin === 'user_entered' ? <View style={styles.unknownPassages}>
         {(source.documentContext?.notes ?? []).filter((item) => item.kind === 'unresolved_self_report').length > 0 ? <>
           <Text style={styles.historyTitle}>STILL UNCLEAR · NOT ADDED AS FACTS</Text>

@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { getLanguageModel, getLanguageModelStatus, getYouTubeVideoSearchStatus, extractDocumentClaims, mapLocalSampleDocument, verifyLocalSampleDocument, LocalSampleMismatchError, HealthSearchConfigurationError, HealthVideoSearchUnavailableError, extractVideoClaims, searchHealthFeedSources, getAudioIntakeProcessor } from './adapters/index.mjs';
-import { isRetryableEmptySource, resolveDocumentPurpose } from './agent/documentPurpose.mjs';
+import { gateClaimsOnDocumentPurpose, isRetryableEmptySource } from './agent/documentPurpose.mjs';
 import { getHealthAreaContext } from '../src/services/healthAreaContext.mjs';
 import { sanitizePublicHealthTopics } from '../src/services/healthSearchTopic.mjs';
 import { runAgent } from './agent/orchestrator.mjs';
@@ -194,7 +194,8 @@ async function handleExtraction(request, response, operation = null) {
   let filename;
   try { filename = cleanFilename(String(request.headers['x-nura-file-name'] || ''), contentType); }
   catch (error) { json(response, 400, { error: 'invalid_file_name', message: error.message }); return; }
-  let effectivePurpose = contentType.startsWith('video/') ? 'medical' : resolveDocumentPurpose({ requestedPurpose, filename });
+  let effectivePurpose = contentType.startsWith('video/') ? 'medical' : requestedPurpose;
+  const purposeConfirmed = request.headers['x-nura-document-purpose-confirmed'] === effectivePurpose;
   const fixtureId = String(request.headers['x-nura-local-sample-fixture'] || '');
   const healthAreaId = String(request.headers['x-nura-health-area'] || '').trim();
   const healthAreaContext = healthAreaId && effectivePurpose === 'medical' ? getHealthAreaContext(healthAreaId) : null;
@@ -255,6 +256,8 @@ async function handleExtraction(request, response, operation = null) {
       ? { sourceId, mediaType: 'document', processingMode, processor: 'local_sample_fixture', externalProviderCall: false }
       : { sourceId, mediaType: isVideo ? 'video' : 'document', processingMode, provider: 'openai_responses', realProviderCall: true });
     let extraction = localSample ? mapLocalSampleDocument({ fixtureId: localSample.fixtureId }) : undefined;
+    let documentPurposeCheck = null;
+    let purposeConfirmationRequired = false;
     if (isAudio) {
       extraction = await audioProcessor({ bytes, filename, mediaType: contentType, signal: abortController.signal, onProgress: (type, details = {}) => emit(type, { sourceId, mediaType: contentType, ...details }) });
     } else if (isVideo) {
@@ -267,19 +270,18 @@ async function handleExtraction(request, response, operation = null) {
         },
       });
     } else if (!localSample) {
-      extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: effectivePurpose, signal: abortController.signal, healthAreaLabel: healthAreaContext?.label });
-      const detectedPurpose = resolveDocumentPurpose({ requestedPurpose: effectivePurpose, filename, documentType: extraction.documentContext?.documentType });
-      if (effectivePurpose === 'medical' && detectedPurpose === 'insurance') {
-        effectivePurpose = detectedPurpose;
-        await localDemoRepository.setSourceState(sourceId, 'extracting', { documentPurpose: effectivePurpose });
-        extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: effectivePurpose, signal: abortController.signal });
-      }
+      extraction = await extractDocumentClaims({ bytes, filename, mediaType: contentType, purpose: effectivePurpose, purposeConfirmed, signal: abortController.signal, healthAreaLabel: healthAreaContext?.label });
+      const purposeGate = gateClaimsOnDocumentPurpose({ expectedPurpose: effectivePurpose, segmentResults: extraction.documentPurposeSegments, claims: extraction.claims, purposeConfirmed });
+      documentPurposeCheck = purposeGate.documentPurposeCheck;
+      purposeConfirmationRequired = purposeGate.confirmationRequired;
+      extraction.claims = purposeGate.claims;
     }
     if (abortController.signal.aborted) {
       await localDemoRepository.setSourceState(sourceId, 'failed');
       emit('intake_cancelled', { sourceId, state: 'failed' });
       return;
     }
+    const requiresPurposeConfirmation = purposeConfirmationRequired;
     const claims = extraction.claims.map((claim) => createCandidateClaim({
       sourceId, kind: claim.kind, label: claim.label, value: claim.value, unit: claim.unit,
       referenceRange: claim.referenceRange, method: claim.method,
@@ -292,10 +294,12 @@ async function handleExtraction(request, response, operation = null) {
       return;
     }
     await localDemoRepository.saveCandidateClaims(claims, { signal: abortController.signal });
-    await localDemoRepository.setSourceState(sourceId, claims.length ? 'candidate_review' : 'extracted_empty', { documentContext, documentPurpose: effectivePurpose });
-    emit('extraction_completed', { sourceId, mediaType: contentType, candidateCount: claims.length, state: claims.length ? 'candidate_review' : 'extracted_empty', processingMode, documentPurpose: effectivePurpose });
+    const sourceState = requiresPurposeConfirmation ? 'purpose_confirmation_required' : claims.length ? 'candidate_review' : 'extracted_empty';
+    await localDemoRepository.setSourceState(sourceId, sourceState, { documentContext, documentPurpose: effectivePurpose, ...(documentPurposeCheck ? { documentPurposeCheck } : {}) });
+    if (requiresPurposeConfirmation) emit('purpose_confirmation_required', { sourceId, documentPurpose: effectivePurpose, documentPurposeCheck });
+    emit('extraction_completed', { sourceId, mediaType: contentType, candidateCount: claims.length, state: sourceState, processingMode, documentPurpose: effectivePurpose });
     if (claims.length) emit('claims_ready_for_review', { sourceId, mediaType: contentType, claimIds: claims.map((claim) => claim.id), count: claims.length, processingMode, documentPurpose: effectivePurpose });
-    emit('intake_completed', { sourceId, mediaType: contentType, state: claims.length ? 'candidate_review' : 'extracted_empty', processingMode, documentPurpose: effectivePurpose });
+    emit('intake_completed', { sourceId, mediaType: contentType, state: sourceState, processingMode, documentPurpose: effectivePurpose });
   } catch (error) {
     if (sourceId) await localDemoRepository.setSourceState(sourceId, 'failed').catch(() => {});
     const message = abortController.signal.aborted ? 'This extraction was stopped. No claim was added to the profile.' : error instanceof Error ? error.message : 'The selected document could not be processed.';
