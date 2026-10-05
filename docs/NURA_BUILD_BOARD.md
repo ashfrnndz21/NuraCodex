@@ -1,5 +1,11 @@
 # Nura build board
 
+## 5 October 2026 — health-policy extraction checklist expanded
+
+- **Added:** the policy brief now tracks 11 common health-insurance areas: identity/document version, dates/status, eligibility, benefits, limits, member cost-sharing, premiums, exclusions/conditions, provider network/geographic scope, claims/appeals, and coordination with other cover. The extraction instructions now explicitly ask the model to inspect declarations, schedules, definitions, endorsements, amendments, tables, and footnotes for those terms.
+- **Safety behavior:** each finding still requires a source quote; uncertain/conflicting evidence remains reviewable; “not identified” does not mean excluded or absent. The checklist says applicability varies by policy and jurisdiction and is not a completeness guarantee.
+- **Verified:** focused insurance snapshot/review tests pass **18/18**. Overall insurance registry and production acceptance remain partial.
+
 ## 5 October 2026 — Policy Dossier direction B and wrong-file removal verified
 
 - **Design selected and implemented:** Insurance Registry policy cards lead with approved, source-linked policy details, then the coverage/missing-detail overview. The heading uses the saved policy or insurer name when present; source filename and review history remain visible. Mobile labels, values, and source actions are larger. The dossier makes clear that accepted extraction is not confirmation of current eligibility or an insurer decision. The design contract is recorded in `EXPERIENCE_DESIGN_SPEC.md`.

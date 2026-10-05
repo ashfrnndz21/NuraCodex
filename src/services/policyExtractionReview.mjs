@@ -1,11 +1,15 @@
 const POLICY_REVIEW_SECTIONS = Object.freeze([
-  { id: 'benefits', title: 'Benefits & covered services', match: /\b(?:benefit|benefits|cover(?:age|ed)?|covered service|inpatient|outpatient|hospital|maternity|dental|vision|critical illness|medical treatment|emergency care)\b/i },
-  { id: 'limits', title: 'Limits & sub-limits', match: /\b(?:limit|sub.?limit|maximum|max\.?|cap|annual|lifetime|room\s*(?:&|and)\s*board|sum assured|visit limit)\b/i },
-  { id: 'costs', title: 'Premiums & member costs', match: /\b(?:premium|deductible|copay|co.?pay|coinsurance|co.?insurance|excess|reimburse|cost share)\b/i },
-  { id: 'exclusions', title: 'Exclusions & conditions', match: /\b(?:exclusion|excluded|not covered|pre.?existing|condition|exception|subject to|waiting period)\b/i },
-  { id: 'eligibility', title: 'Eligibility & waiting periods', match: /\b(?:eligib|qualif|waiting period|enrol|dependent|age limit|pre.?existing)\b/i },
-  { id: 'dates', title: 'Policy dates & term', match: /\b(?:effective|commencement|renewal|expiry|expires|expiration|policy term|issued|in force|lapsed)\b/i },
-  { id: 'claims', title: 'Claims, approvals & appeals', match: /\b(?:claim|claims|appeal|pre.?authori[sz]|prior approval|notification|submit|filing deadline|claim deadline)\b/i },
+  { id: 'identity', title: 'Policy identity & document version', match: /\b(?:insurer|insurance company|plan name|policy name|product name|policy type|certificate|schedule|endorsement|version|edition|jurisdiction|governing law)\b/i },
+  { id: 'dates', title: 'Effective dates, renewal & status', match: /\b(?:effective|commencement|inception|renewal|expiry|expires|expiration|policy term|issued|in force|lapsed|grace period|cancellation|non.?renewal)\b/i },
+  { id: 'eligibility', title: 'Who can be covered & eligibility', match: /\b(?:eligib|qualif|waiting period|enrol|dependent|age limit|residen|employee|covered person|pre.?existing|continuation|portability)\b/i },
+  { id: 'benefits', title: 'Benefits & covered services', match: /\b(?:benefit|benefits|cover(?:age|ed)?|covered service|inpatient|outpatient|hospital|maternity|dental|vision|critical illness|medical treatment|emergency care|prescription|mental health|rehabilitation)\b/i },
+  { id: 'limits', title: 'Limits, sub-limits & out-of-pocket maximums', match: /\b(?:limit|sub.?limit|maximum|max\.?|cap|annual|lifetime|room\s*(?:&|and)\s*board|sum assured|visit limit|out.?of.?pocket maximum)\b/i },
+  { id: 'member_costs', title: 'Deductibles, copays & coinsurance', match: /\b(?:deductible|copay|co.?pay|coinsurance|co.?insurance|excess|reimburse|cost share|member contribution)\b/i },
+  { id: 'premiums', title: 'Premiums & payment terms', match: /\b(?:premium|payment frequency|paid to date|payment term|projected premium|remaining premium|grace period)\b/i },
+  { id: 'exclusions', title: 'Exclusions, conditions & exceptions', match: /\b(?:exclusion|excluded|not covered|pre.?existing|condition|exception|subject to|waiting period|limitation)\b/i },
+  { id: 'network', title: 'Provider network & geographic scope', match: /\b(?:network|in.?network|out.?of.?network|provider panel|territor|geographic|worldwide|overseas|emergency abroad|area of cover)\b/i },
+  { id: 'claims', title: 'Pre-approval, claims & appeals', match: /\b(?:claim|claims|appeal|pre.?authori[sz]|prior approval|notification|submit|filing deadline|claim deadline|supporting document|complaint|review process)\b/i },
+  { id: 'coordination', title: 'Coordination with other coverage', match: /\b(?:coordination of benefits|other insurance|primary payer|secondary payer|duplicate cover|portability|continuation of cover)\b/i },
 ]);
 
 function evidenceFor(claim) {
@@ -71,6 +75,6 @@ export function buildPolicyExtractionReview(input = {}) {
     documentType,
     sections,
     counts: { identified: identifiedCount, needsReview: reviewCount, notIdentified: notIdentifiedCount, total: sections.length },
-    note: 'This is a guide to what Nura identified in this extraction, not a completeness guarantee. Check the full policy for wording, definitions, exceptions, and any detail not listed here.',
+    note: 'This checklist covers common health-policy terms; which items apply depends on the plan and jurisdiction, and it is not a completeness guarantee. “Not identified” means this extraction did not find evidence, not that the policy excludes or lacks the benefit. Check the full policy, schedules, endorsements, definitions, and current insurer confirmation.',
   };
 }

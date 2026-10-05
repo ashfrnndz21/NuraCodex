@@ -192,9 +192,9 @@ test('organizes source-quoted extracted insurance terms into a stable coverage r
 
   assert.equal(review.insurer, 'Example Mutual');
   assert.equal(review.documentType, 'Medical insurance policy');
-  assert.deepEqual(review.sections.filter((section) => section.status === 'identified').map((section) => section.id), ['benefits', 'limits', 'costs', 'exclusions', 'eligibility', 'claims']);
+  assert.deepEqual(review.sections.filter((section) => section.status === 'identified').map((section) => section.id), ['eligibility', 'benefits', 'limits', 'member_costs', 'exclusions', 'claims']);
   assert.ok(review.sections.every((section) => section.evidence.every((item) => item.quote && item.page === 2)));
-  assert.equal(review.counts.total, 7);
+  assert.equal(review.counts.total, 11);
   assert.match(review.note, /not a completeness guarantee/i);
 });
 
@@ -215,15 +215,41 @@ test('marks weakly sourced, ambiguous, or conflicting extracted terms for review
     extractedPolicyClaim('Exclusion wording', 'Subject to confirmation', { confidence: 0.55 }),
   ] });
 
-  assert.equal(review.sections.find((section) => section.id === 'costs').status, 'needs_review');
+  assert.equal(review.sections.find((section) => section.id === 'member_costs').status, 'needs_review');
   assert.equal(review.sections.find((section) => section.id === 'exclusions').status, 'needs_review');
-  assert.equal(review.sections.find((section) => section.id === 'costs').evidence.length, 2);
+  assert.equal(review.sections.find((section) => section.id === 'member_costs').evidence.length, 2);
 });
 
 test('handles absent or malformed source details without fabricating evidence', () => {
   const review = buildPolicyExtractionReview({ claims: null, documentContext: null });
   assert.equal(review.insurer, null);
   assert.equal(review.documentType, null);
-  assert.equal(review.counts.notIdentified, 7);
+  assert.equal(review.counts.notIdentified, 11);
   assert.ok(review.sections.every((section) => section.status === 'not_identified' && section.evidence.length === 0));
+});
+
+
+test('the policy checklist recognizes the common fields needed for a health policy brief', () => {
+  const review = buildPolicyExtractionReview({
+    claims: [
+      extractedPolicyClaim('Plan edition', '2026 schedule and endorsement 2'),
+      extractedPolicyClaim('Renewal date and policy status', 'Renews 1 Jan 2027; in force'),
+      extractedPolicyClaim('Dependent eligibility', 'Spouse and children under 21'),
+      extractedPolicyClaim('Emergency and outpatient benefits', 'Covered subject to schedule'),
+      extractedPolicyClaim('Annual limit and out-of-pocket maximum', 'MYR 100,000 annual; MYR 5,000 maximum'),
+      extractedPolicyClaim('Copay and coinsurance', 'MYR 50 per visit; 10%'),
+      extractedPolicyClaim('Premium payment frequency', 'MYR 200 monthly'),
+      extractedPolicyClaim('Pre-existing exclusions and waiting period', '12 months'),
+      extractedPolicyClaim('Provider network and overseas scope', 'Panel providers in Malaysia'),
+      extractedPolicyClaim('Claims submission and appeal deadline', 'Submit within 30 days; appeal within 60 days'),
+      extractedPolicyClaim('Coordination of benefits with other coverage', 'This plan is secondary payer'),
+    ],
+  });
+
+  assert.deepEqual(review.sections.filter((section) => section.status === 'identified').map((section) => section.id), [
+    'identity', 'dates', 'eligibility', 'benefits', 'limits', 'member_costs', 'premiums', 'exclusions', 'network', 'claims', 'coordination',
+  ]);
+  assert.equal(review.counts.total, 11);
+  assert.ok(review.sections.every((section) => section.evidence.every((item) => item.quote && item.page === 2)));
+  assert.match(review.note, /which items apply depends on the plan and jurisdiction/i);
 });
