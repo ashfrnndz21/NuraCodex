@@ -1,5 +1,11 @@
 # Nura build board
 
+## 5 October 2026 — Explore copy hierarchy and on-device relevance
+
+- **Changed:** shortened the page heading, edition search and topic controls; removed duplicate overview/source explanations; stopped showing raw recent Ask question text. Explore now describes the local relevance match without revealing question content. Completed search activity no longer occupies the reading feed; live progress and failures stay visible.
+- **Verified:** feed presentation, recent-question context and search-consent tests pass **30/30**; the reduced-motion connected M1 browser rehearsal passes **99/99**, including the Explore topic-only search consent, local relevance order, save/hide and raw-question leak checks. TypeScript, no-cache Expo lint and `git diff --check` pass.
+- **Limit:** synthetic browser results and intercepted model calls do not prove live search freshness, native layout or whole-product acceptance. Whole-build counts remain **0/11 stories, 0/8 production gates, 0/19 packages**.
+
 ## 5 October 2026 — policy metadata extraction schema aligned with dossier checklist
 
 - **Fixed:** strict provider output now supports policy plan name, policy type, document version, jurisdiction, effective date, renewal date and expiry date as source-level document context. The health policy extractor explicitly requests those metadata fields while keeping status and coverage obligations as reviewable claims and excluding policy/member identifiers.
