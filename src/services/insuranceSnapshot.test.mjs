@@ -222,6 +222,31 @@ test('marks weakly sourced, ambiguous, or conflicting extracted terms for review
   assert.equal(review.sections.find((section) => section.id === 'member_costs').evidence.length, 2);
 });
 
+test('keeps benefit wording out of policy identity and surfaces competing plan tiers for confirmation', () => {
+  const claims = [
+    extractedPolicyClaim('Communicable disease cash benefit — Plan 1', 'RM2,000 lump sum upon hospitalisation for a covered disease listed in the schedule', { id: 'tier-1' }),
+    extractedPolicyClaim('Communicable disease cash benefit — Plan 2', 'RM3,000 lump sum upon hospitalisation for a covered disease listed in the schedule', { id: 'tier-2' }),
+    extractedPolicyClaim('Communicable disease cash benefit — Plan 3', 'RM4,000 lump sum upon hospitalisation for a covered disease listed in the schedule', { id: 'tier-3' }),
+  ];
+  const review = buildPolicyExtractionReview({ claims });
+  const identity = review.sections.find((section) => section.id === 'identity');
+  const benefits = review.sections.find((section) => section.id === 'benefits');
+
+  assert.equal(identity.status, 'not_identified');
+  assert.equal(identity.evidence.length, 0);
+  assert.equal(benefits.evidence.length, 3);
+  assert.equal(benefits.status, 'needs_review');
+  assert.deepEqual(review.planChoices, [{
+    benefit: 'Communicable disease cash benefit',
+    options: [
+      { plan: '1', claimIds: ['tier-1'], values: ['RM2,000 lump sum upon hospitalisation for a covered disease listed in the schedule'] },
+      { plan: '2', claimIds: ['tier-2'], values: ['RM3,000 lump sum upon hospitalisation for a covered disease listed in the schedule'] },
+      { plan: '3', claimIds: ['tier-3'], values: ['RM4,000 lump sum upon hospitalisation for a covered disease listed in the schedule'] },
+    ],
+  }]);
+  assert.ok(benefits.evidence.every((item) => item.needsReview && item.needsReviewReason));
+});
+
 test('handles absent or malformed source details without fabricating evidence', () => {
   const review = buildPolicyExtractionReview({ claims: null, documentContext: null });
   assert.equal(review.insurer, null);

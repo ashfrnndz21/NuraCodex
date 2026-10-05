@@ -25,9 +25,35 @@ function evidenceFor(claim) {
     value,
     quote,
     page,
+    needsReviewReason: null,
     needsReview: !quote || !Number.isFinite(confidence) || confidence < 0.72
       || /\b(?:unclear|ambiguous|subject to confirmation|not specified|not stated|depends on)\b/i.test(`${label} ${value}`),
   };
+}
+
+function findAlternativePlanChoices(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const text = `${item.label} ${item.value}`;
+    const match = text.match(/\bplan\s+([a-z0-9]+)\b/i);
+    if (!match) continue;
+    const plan = match[1].toUpperCase();
+    const baseLabel = item.label
+      .replace(/[|,;:–—-]?\s*plan\s+[a-z0-9]+\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!baseLabel) continue;
+    const key = baseLabel.normalize('NFKC').toLowerCase();
+    const group = groups.get(key) ?? { benefit: baseLabel, options: new Map() };
+    const option = group.options.get(plan) ?? { plan, claimIds: [], values: [] };
+    if (item.claimId && !option.claimIds.includes(item.claimId)) option.claimIds.push(item.claimId);
+    if (item.value && !option.values.includes(item.value)) option.values.push(item.value);
+    group.options.set(plan, option);
+    groups.set(key, group);
+  }
+  return [...groups.values()]
+    .filter((group) => group.options.size > 1)
+    .map((group) => ({ benefit: group.benefit, options: [...group.options.values()] }));
 }
 
 /**
@@ -45,6 +71,14 @@ export function buildPolicyExtractionReview(input = {}) {
       const item = evidenceFor(claim);
       return item ? [item] : [];
     });
+  const planChoices = findAlternativePlanChoices(policyClaims);
+  const alternativeClaimIds = new Set(planChoices.flatMap((group) => group.options.flatMap((option) => option.claimIds)));
+  for (const item of policyClaims) {
+    if (item.claimId && alternativeClaimIds.has(item.claimId)) {
+      item.needsReview = true;
+      item.needsReviewReason = 'This source lists multiple plan options. Confirm which option appears on your policy schedule.';
+    }
+  }
   const context = documentContext && typeof documentContext === 'object' ? documentContext : {};
   const contextEvidence = (entries, prefix) => (Array.isArray(entries) ? entries : []).flatMap((entry) => {
     const value = typeof entry?.value === 'string' ? entry.value.trim() : '';
@@ -56,6 +90,7 @@ export function buildPolicyExtractionReview(input = {}) {
       value,
       quote: typeof entry.quote === 'string' ? entry.quote.trim() : '',
       page: Number.isInteger(entry.page) ? entry.page : null,
+      needsReviewReason: null,
       needsReview: !(typeof entry.quote === 'string' && entry.quote.trim()),
     }];
   });
@@ -63,7 +98,10 @@ export function buildPolicyExtractionReview(input = {}) {
   const policyDateEvidence = contextEvidence(context.dates, 'Policy date').filter((item) => ['issued_at', 'effective_period', 'policy_effective_date', 'renewal_date', 'expiry_date'].includes(item.kind));
   const sections = POLICY_REVIEW_SECTIONS.map((section) => {
     const contextItems = section.id === 'identity' ? policyIdentityEvidence : section.id === 'dates' ? policyDateEvidence : [];
-    const evidence = [...policyClaims.filter((item) => section.match.test(`${item.label} ${item.value}`)), ...contextItems];
+    // Match extracted benefit labels, not arbitrary wording in the value or
+    // source quote. A benefit sentence mentioning “the schedule” is not a
+    // policy-identity finding.
+    const evidence = [...policyClaims.filter((item) => section.match.test(item.label)), ...contextItems];
     const duplicateValues = new Map();
     for (const item of evidence) {
       const key = item.label.normalize('NFKC').toLowerCase();
@@ -89,6 +127,7 @@ export function buildPolicyExtractionReview(input = {}) {
   return {
     insurer,
     documentType,
+    planChoices,
     sections,
     counts: { identified: identifiedCount, needsReview: reviewCount, notIdentified: notIdentifiedCount, total: sections.length },
     note: 'This checklist covers common health-policy terms; which items apply depends on the plan and jurisdiction, and it is not a completeness guarantee. “Not identified” means this extraction did not find evidence, not that the policy excludes or lacks the benefit. Check the full policy, schedules, endorsements, definitions, and current insurer confirmation.',

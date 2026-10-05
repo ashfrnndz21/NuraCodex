@@ -114,6 +114,7 @@ export default function InsuranceRegistry() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [sourceClaimValues, setSourceClaimValues] = useState<Record<string, string>>({});
   const [expandedExtractionReviewId, setExpandedExtractionReviewId] = useState<string | null>(null);
+  const [expandedExtractionSectionKey, setExpandedExtractionSectionKey] = useState<string | null>(null);
   const [sourceClaimsReadyKey, setSourceClaimsReadyKey] = useState('');
   const [unregisteredSourceReviews, setUnregisteredSourceReviews] = useState<{ key: string; results: Record<string, { source: LocalSource; claims: CandidateClaim[] } | null>; loading: boolean }>({ key: '', results: {}, loading: false });
   const [setupChoiceBusy, setSetupChoiceBusy] = useState(false);
@@ -460,7 +461,7 @@ export default function InsuranceRegistry() {
         const likelyWrongDocument = purposeNeedsConfirmation;
         return <Surface tone="dark" key={asset.id} style={styles.unregisteredSourceCard}>
           <View style={styles.policyHead}><View style={styles.policyMark}><Text style={styles.policyMarkText}>▤</Text></View><View style={{ flex: 1 }}><Text style={styles.policyEyebrow}>{reviewableTerms.length ? `${reviewableTerms.length} TERMS NEED YOUR REVIEW` : 'SOURCE DETAILS · NO APPROVED TERMS'}</Text><Text style={styles.policyName}>{documentDisplayName(asset, facts)}</Text></View><Text style={styles.sourceLinked}>SAVED</Text></View>
-          <Text style={styles.unregisteredSourceNote}>{unregisteredSourceReviews.loading || review === undefined
+          <Text style={[styles.unregisteredSourceNote, { fontSize: 11, lineHeight: 17 }]}>{unregisteredSourceReviews.loading || review === undefined
             ? 'Loading the saved source review…'
             : review === null
               ? 'Nura could not reopen the saved extraction. Open source review to check it again.'
@@ -477,22 +478,34 @@ export default function InsuranceRegistry() {
             {likelyWrongDocument ? <Pressable accessibilityRole="button" onPress={() => openPolicySource(sourceId)} style={styles.sourceFitKeep}><Text style={styles.sourceFitKeepText}>Confirm document category →</Text></Pressable> : null}
           </View> : null}
           {review?.source.documentContext ? <DocumentContextCard context={review.source.documentContext} compact /> : null}
-          {!purposeNeedsConfirmation && extractionReview && <View style={styles.extractionReview}>
-            <View style={styles.extractionReviewHeading}><View style={{ flex: 1 }}><Text style={styles.extractionReviewEyebrow}>POLICY BRIEF · EXTRACTION CHECK</Text><Text style={styles.extractionReviewTitle}>{extractionReview.counts.identified} areas identified · {extractionReview.counts.needsReview} to check · {extractionReview.counts.notIdentified} not identified</Text></View></View>
-            {(expandedExtractionReviewId === sourceId ? extractionReview.sections : extractionReview.sections.slice(0, 4)).map((section) => <View key={section.id} style={styles.extractionReviewSection}>
-              <View style={styles.extractionReviewRow}><Text style={styles.extractionReviewSectionTitle}>{section.title}</Text><Text style={[styles.extractionReviewStatus, section.status === 'identified' ? styles.extractionReviewStatusFound : section.status === 'needs_review' ? styles.extractionReviewStatusCheck : styles.extractionReviewStatusMissing]}>{section.status === 'identified' ? 'IDENTIFIED' : section.status === 'needs_review' ? 'CHECK' : 'NOT IDENTIFIED'}</Text></View>
-              {section.evidence.length > 0 ? section.evidence.map((item, index) => <View key={item.claimId ?? `${section.id}:${index}`} style={styles.extractionEvidence}>
-                <Text style={styles.extractionEvidenceLabel}>{item.label}{item.value ? ` · ${item.value}` : ''}</Text>
-                {item.quote ? <Text style={styles.extractionEvidenceQuote}>“{item.quote}”{item.page ? ` · Page ${item.page}` : ''}</Text> : <Text style={styles.extractionEvidenceQuote}>No source quote was returned for this suggestion.</Text>}
-              </View>) : <Text style={styles.extractionNotFound}>Not identified in this extraction. Check the full policy; this does not mean the detail is excluded.</Text>}
-            </View>)}
-            {extractionReview.sections.length > 4 && <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedExtractionReviewId === sourceId }} onPress={() => setExpandedExtractionReviewId((current) => current === sourceId ? null : sourceId)} style={styles.extractionReviewToggle}><Text style={styles.extractionReviewToggleText}>{expandedExtractionReviewId === sourceId ? 'SHOW FEWER AREAS  ↑' : `SHOW ALL ${extractionReview.sections.length} AREAS  ↓`}</Text></Pressable>}
-            <Text style={styles.extractionReviewNote}>{extractionReview.note}</Text>
+          {!purposeNeedsConfirmation && extractionReview && <View style={[styles.extractionReview, { padding: 14, borderRadius: 16 }]}>
+            <View style={styles.extractionReviewHeading}><View style={{ flex: 1 }}><Text style={[styles.extractionReviewEyebrow, { fontSize: 10 }]}>POLICY BRIEF · EXTRACTION CHECK</Text><Text style={[styles.extractionReviewTitle, { fontSize: 14, lineHeight: 20 }]}>{extractionReview.counts.identified} areas identified · {extractionReview.counts.needsReview} to check · {extractionReview.counts.notIdentified} not identified</Text></View></View>
+            {extractionReview.planChoices.length > 0 && <View style={{ borderRadius: 12, borderWidth: 1, borderColor: 'rgba(242,189,157,.42)', backgroundColor: 'rgba(206,139,105,.16)', padding: 12, marginTop: 12 }}>
+              <Text style={{ color: '#F2BD9D', fontSize: 10, lineHeight: 15, fontWeight: '800', letterSpacing: .7 }}>THIS SCHEDULE LISTS PLAN OPTIONS</Text>
+              {extractionReview.planChoices.map((choice) => <Text key={choice.benefit} style={{ color: '#FFF8F0', fontSize: 12, lineHeight: 18, marginTop: 5 }}>{choice.benefit}: {choice.options.map((option) => `Plan ${option.plan}`).join(', ')}</Text>)}
+              <Text style={{ color: '#FFF8F0', fontSize: 12, lineHeight: 18, marginTop: 5 }}>Nura can’t tell which option is yours. Check your policy schedule, then include only the terms that match your selected plan.</Text>
+            </View>}
+            {(expandedExtractionReviewId === sourceId ? extractionReview.sections : extractionReview.sections.slice(0, 4)).map((section) => {
+              const sectionKey = `${sourceId}:${section.id}`;
+              const sectionExpanded = expandedExtractionSectionKey === sectionKey;
+              const sectionSummary = section.evidence.length === 0
+                ? 'No matching evidence found in this extraction.'
+                : `${section.evidence.length} source ${section.evidence.length === 1 ? 'detail' : 'details'} · tap to inspect`;
+              return <View key={section.id} style={styles.extractionReviewSection}>
+                <Pressable accessibilityRole="button" accessibilityState={{ expanded: sectionExpanded }} accessibilityLabel={`${section.title}, ${section.status.replaceAll('_', ' ')}, ${sectionSummary}`} onPress={() => setExpandedExtractionSectionKey((current) => current === sectionKey ? null : sectionKey)} style={[styles.extractionReviewRow, { minHeight: 58, paddingVertical: 8 }]}>
+                  <View style={{ flex: 1 }}><Text style={[styles.extractionReviewSectionTitle, { fontSize: 12, lineHeight: 17 }]}>{section.title}</Text><Text style={{ color: 'rgba(255,248,240,.72)', fontSize: 11, lineHeight: 15, marginTop: 2 }}>{sectionSummary}</Text></View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Text style={[styles.extractionReviewStatus, section.status === 'identified' ? styles.extractionReviewStatusFound : section.status === 'needs_review' ? styles.extractionReviewStatusCheck : styles.extractionReviewStatusMissing, { fontSize: 9, maxWidth: 90 }]}>{section.status === 'identified' ? 'FOUND' : section.status === 'needs_review' ? 'CHECK' : 'NOT FOUND'}</Text><Text style={{ color: '#A8D8FF', fontSize: 19, width: 20, textAlign: 'center' }}>{sectionExpanded ? '−' : '+'}</Text></View>
+                </Pressable>
+                {sectionExpanded && (section.evidence.length > 0 ? section.evidence.map((item, index) => <View key={item.claimId ?? `${section.id}:${index}`} style={styles.extractionEvidence}>
+                  <Text style={[styles.extractionEvidenceLabel, { fontSize: 12, lineHeight: 17 }]}>{item.label}{item.value ? ` · ${item.value}` : ''}</Text>
+                  {item.needsReviewReason ? <Text style={{ color: '#F2BD9D', fontSize: 11, lineHeight: 16, marginTop: 4 }}>{item.needsReviewReason}</Text> : null}
+                  {item.quote ? <Text style={[styles.extractionEvidenceQuote, { fontSize: 11, lineHeight: 17, marginTop: 4 }]}>“{item.quote}”{item.page ? ` · Page ${item.page}` : ''}</Text> : <Text style={[styles.extractionEvidenceQuote, { fontSize: 11, lineHeight: 17 }]}>No source quote was returned for this suggestion.</Text>}
+                </View>) : <Text style={[styles.extractionNotFound, { fontSize: 11, lineHeight: 16 }]}>Not identified in this extraction. Check the full policy; this does not mean the detail is excluded.</Text>)}
+              </View>;
+            })}
+            {extractionReview.sections.length > 4 && <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedExtractionReviewId === sourceId }} onPress={() => setExpandedExtractionReviewId((current) => current === sourceId ? null : sourceId)} style={[styles.extractionReviewToggle, { minHeight: 46 }]}><Text style={[styles.extractionReviewToggleText, { fontSize: 10 }]}>{expandedExtractionReviewId === sourceId ? 'SHOW FEWER AREAS  ↑' : `SHOW ALL ${extractionReview.sections.length} AREAS  ↓`}</Text></Pressable>}
+            <Text style={[styles.extractionReviewNote, { fontSize: 10, lineHeight: 15, marginTop: 8 }]}>{extractionReview.note}</Text>
           </View>}
-          {!purposeNeedsConfirmation && reviewableTerms.slice(0, 4).map((claim) => <View key={claim.id} style={styles.candidatePolicyTerm}>
-            <Text style={styles.candidatePolicyTermTitle}>{claim.label}{claim.value ? ` · ${formatClaimValue(claim.value, claim.unit)}` : ''}</Text>
-            {claim.sourceLocation.quote ? <Text numberOfLines={3} style={styles.candidatePolicyQuote}>“{claim.sourceLocation.quote}”{claim.sourceLocation.page ? ` · Page ${claim.sourceLocation.page}` : ''}</Text> : null}
-          </View>)}
           <Pressable accessibilityRole="button" accessibilityLabel={`${retryNeeded ? 'Retry or confirm category for' : 'Review'} policy source ${documentDisplayName(asset, facts)}`} accessibilityHint={retryNeeded ? 'Opens the source review where you can check the document category or retry this file.' : 'Opens the quoted policy terms so you can review what to save.'} onPress={() => openPolicySource(sourceId)} style={styles.unregisteredSourceAction}>
             <Text style={styles.unregisteredSourceActionText}>{purposeNeedsConfirmation ? 'CONFIRM CATEGORY' : retryNeeded ? 'RETRY READING THIS POLICY' : reviewableTerms.length ? 'REVIEW EXTRACTED TERMS' : 'OPEN SOURCE REVIEW'}  →</Text>
           </Pressable>
