@@ -1,5 +1,13 @@
 # Nura build board
 
+## 5 October 2026 — insurance mismatch and fresh Explore verification
+
+- **Passed:** a live synthetic holiday-itinerary upload selected as insurance was classified as `travel_document`; no policy claims were released before the user’s purpose confirmation (**1/1**). Synthetic medical and insurance PDF extraction scenarios pass **2/2**.
+- **Passed:** focused purpose-gating, source deletion, Explore duplicate suppression, YouTube replacement candidates, local Ask-context ranking and search-consent checks pass **50/50**.
+- **Passed:** a live public YouTube search returned ten video candidates; repeating the same topic while excluding the first set returned ten different videos (**0/10 overlap**) with ten usable thumbnails.
+- **Still needs explicit authorization:** sending recent Ask question cues to public article/video search providers. Current Ask context is kept on-device and used to rank already retrieved results.
+- This targeted evidence does not change the whole-build acceptance count: **0/11 stories, 0/8 production gates, 0/19 packages**.
+
 **Build objective:** the complete Nura mobile app: all eleven user stories, the agreed visual language and motion, persistent source-linked health state, multimodal record intake, consent-scoped agentic intelligence, and production security/privacy/release readiness. Synthetic-data demo readiness is an intermediate milestone; production identity, isolated family access, secure persistence, lifecycle controls, operations, and governance are part of the 100% goal. Never present an unconnected service or simulated trace as live.
 
 **Updated:** 5 October 2026

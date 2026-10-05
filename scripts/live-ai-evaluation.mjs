@@ -13,6 +13,7 @@ import { suggestAudioClaims } from '../server/adapters/openaiResponses.mjs';
 import { createFeedPersonalizedNotes } from '../server/agent/feedPersonalizedNotes.mjs';
 import { getYouTubeVideoId } from '../src/services/youtubeVideo.mjs';
 import { searchYouTubeHealthVideos } from '../server/adapters/youtubeDataApi.mjs';
+import { gateClaimsOnDocumentPurpose } from '../server/agent/documentPurpose.mjs';
 
 const execFile = promisify(execFileCallback);
 const outcomes = [];
@@ -61,6 +62,12 @@ try {
     'SYNTHETIC BENEFIT SCHEDULE',
     'Outpatient diagnostic tests are covered up to MYR 1,000 per policy year.',
     'Pre-approval is required for non-emergency diagnostic tests.',
+  ]);
+  const travelItinerary = await fixturePdf('synthetic-holiday-itinerary.pdf', [
+    'SYNTHETIC HOLIDAY ITINERARY',
+    'Kuala Lumpur to Tokyo · 12 December 2026',
+    'Hotel reservation: Example Garden Hotel · 12–18 December 2026',
+    'Day 1: Visit the museum and local market. Day 2: Guided city tour.',
   ]);
 
   await scenario('Ask · overall health synthesis and follow-up', async () => {
@@ -275,6 +282,15 @@ try {
     assert.ok(result.claims.some((claim) => /HbA1c/i.test(claim.label) && /5\.8/.test(claim.value) && /%/.test(claim.unit ?? '') && claim.quote));
     assert.ok(result.claims.every((claim) => !/name|address|phone|email/i.test(`${claim.label} ${claim.value}`)));
     return { claims: result.claims.map(({ label, value, unit, referenceRange }) => ({ label, value, unit, referenceRange })) };
+  });
+
+  await scenario('Insurance upload · wrong holiday document pauses before policy extraction', async () => {
+    const result = await extractDocumentClaims({ bytes: travelItinerary.bytes, filename: 'synthetic-holiday-itinerary.pdf', mediaType: 'application/pdf', purpose: 'insurance' });
+    const gated = gateClaimsOnDocumentPurpose({ expectedPurpose: 'insurance', segmentResults: result.documentPurposeSegments, claims: result.claims });
+    assert.equal(gated.documentPurposeCheck.status, 'mismatch', 'the document should be recognized as travel rather than insurance');
+    assert.equal(gated.confirmationRequired, true, 'the user must confirm the detected document purpose');
+    assert.deepEqual(gated.claims, [], 'travel details must not enter policy extraction or the Insurance Registry');
+    return { detectedCategory: gated.documentPurposeCheck.kind, confirmationRequired: gated.confirmationRequired, claimsReleased: gated.claims.length };
   });
 
   await scenario('Health report image · visible result extraction', async () => {
